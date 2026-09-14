@@ -59,25 +59,6 @@ py -m venv .venv
 
 Também é possível usar `startapp.bat`. Use uma instalação do Python com Tkinter funcionando.
 
-## Contas e servidor
-
-O leitor local funciona sem servidor. Login, sincronização e comunidade exigem a API; o instalador desktop **não inclui nem inicia o backend**.
-
-Para desenvolvimento, execute em outro terminal:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn panel_backend.api.app:app --host 127.0.0.1 --port 8000
-```
-
-A entrada pelo código também tenta iniciar uma API local automaticamente quando necessário. Para conectar a outra API, configure antes de iniciar o app:
-
-```powershell
-$env:PANEL_API_BASE_URL = "https://seu-servidor.example"
-```
-
-Esse endereço é apenas um exemplo, não um servidor público do PANEL. Sem API configurada, use o modo convidado. Um servidor local em cada computador não cria uma comunidade compartilhada.
-
-Consulte `.env.example` e `startserver.bat` para a configuração de desenvolvimento. Nunca distribua `.env`, tokens, `panel.db` ou a pasta `panel_storage`. Não exponha o servidor de desenvolvimento diretamente à internet.
 
 ## Gerar executável e instalador
 
