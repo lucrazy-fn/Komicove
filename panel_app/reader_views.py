@@ -439,7 +439,7 @@ class ReaderWindow(tk.Toplevel):
                     save_progress(self._path, self._idx)
                     animate.swapped = True
                     self._prefetch_neighbors()
-                self._show(reset=True, alpha=ease_out((prog - 0.5) * 2))
+                self._show(reset=False, alpha=ease_out((prog - 0.5) * 2))
             else:
                 self._show(reset=False)
                 self._fading = False
@@ -752,4 +752,3 @@ class ReaderWindow(tk.Toplevel):
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()
-
