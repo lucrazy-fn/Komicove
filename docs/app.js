@@ -125,6 +125,6 @@ document.querySelectorAll('.questions details').forEach(details => {
 // Keep release labels current even when the static page is served from cache.
 const releaseLabels = document.querySelectorAll('body *');
 releaseLabels.forEach(node => {
-  if (node.children.length === 0) node.textContent = node.textContent.replaceAll('PANEL 1.3', 'PANEL 1.4.1').replaceAll('PANEL 1.4', 'PANEL 1.4.1').replaceAll('Android 1.3', 'Android 1.3.1').replaceAll('ANDROID 1.3', 'ANDROID 1.3.1').replaceAll('1.3.0.apk', '1.3.1.apk');
+  if (node.children.length === 0) node.textContent = node.textContent.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1)+/g, 'PANEL 1.4.1').replace(/Android 1\.3(?!\.1)/g, 'Android 1.3.1').replace(/ANDROID 1\.3(?!\.1)/g, 'ANDROID 1.3.1').replaceAll('1.3.0.apk', '1.3.1.apk');
 });
-document.title = document.title.replace('PANEL 1.3', 'PANEL 1.4.1').replace('PANEL 1.4', 'PANEL 1.4.1');
+document.title = document.title.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1)+/g, 'PANEL 1.4.1');
