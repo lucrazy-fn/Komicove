@@ -7,7 +7,10 @@ from typing import Any
 
 import requests
 
-BASE_URL = os.environ.get("PANEL_API_BASE_URL", "https://panel-api-tr1a.onrender.com/")
+BASE_URL = os.environ.get(
+    "PANEL_API_BASE_URL",
+    "https://panel-api-tr1a.onrender.com",
+).strip().rstrip("/")
 _TIMEOUT_SECONDS = 5
 
 
