@@ -1,6 +1,6 @@
 import os
 import requests
-CURRENT_VERSION="1.3.0"
+CURRENT_VERSION="1.4.0"
 def check():
     url=os.environ.get("PANEL_UPDATE_MANIFEST_URL")
     if not url:return None

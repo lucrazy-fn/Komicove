@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:theme="@style/PanelTheme" android:label="PANEL" android:icon="@drawable/panel_logo" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
+        <activity android:name=".ReaderActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" /><data android:mimeType="application/zip" /><data android:mimeType="application/x-cbz" /><data android:mimeType="application/vnd.comicbook+zip" /><data android:mimeType="application/x-cbr" /><data android:mimeType="application/vnd.comicbook-rar" /><data android:mimeType="application/x-7z-compressed" /><data android:mimeType="application/x-rar-compressed" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
