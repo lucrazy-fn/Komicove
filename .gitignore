@@ -14,3 +14,4 @@ build/
 .coverage
 htmlcov/
 panel_storage/
+.idea/
