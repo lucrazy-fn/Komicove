@@ -15,3 +15,5 @@ build/
 htmlcov/
 panel_storage/
 .idea/
+commit-site.bat
+commit-app.bat
