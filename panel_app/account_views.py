@@ -125,6 +125,24 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
     status = tk.Label(container, text="Carregando…", font=small, bg=c["bg"], fg=c["text_dim"])
     status.pack(anchor="w", padx=30)
 
+    if getattr(user, "role", "user") == "user":
+        def use_setup_token():
+            secret = simpledialog.askstring(
+                "Ativar cargo", "Cole o token de configuração do servidor:",
+                parent=root, show="•",
+            )
+            if not secret:
+                return
+            try:
+                promoted = api.claim_moderator(user.token, secret.strip())
+                user.role = promoted.role
+                user.is_moderator = True
+                status.config(text="Cargo ativado. Reabra o app para atualizar o menu.", fg=c["read_badge_text"])
+                on_updated(promoted)
+            except Exception as exc:
+                messagebox.showerror("Ativar cargo", str(exc), parent=root)
+        _pill_button(container, "Tenho um token de cargo", use_setup_token, theme, font=small, variant="ghost").pack(anchor="w", padx=30, pady=(8, 0))
+
     form = _card(container, theme)
     form.pack(fill="x", padx=30, pady=(14, 18))
     tk.Label(form, text="Informações", font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
