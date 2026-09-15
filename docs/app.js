@@ -127,4 +127,4 @@ const releaseLabels = document.querySelectorAll('body *');
 releaseLabels.forEach(node => {
   if (node.children.length === 0) node.textContent = node.textContent.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1|\.2)*/g, 'PANEL 1.5.0').replace(/Android 1\.3(?:\.1|\.2)?/g, 'Android 1.4.0').replace(/ANDROID 1\.3(?:\.1|\.2)?/g, 'ANDROID 1.4.0').replaceAll('1.3.0.apk', '1.4.0.apk');
 });
-document.title = document.title.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1|\.2)*/g, 'PANEL 1.5.0');
+document.title = document.title.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1)+/g, 'PANEL 1.4.2');

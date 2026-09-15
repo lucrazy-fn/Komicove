@@ -45,4 +45,8 @@
   android.innerHTML = '<p class="eyebrow">ANDROID 1.3</p><h2>O PANEL também<br><span>cabe no celular.</span></h2><p class="lead">Leitor nativo para Android 8+, com biblioteca, coleções, backup, gestos, modo mangá, leitura vertical e integração com a API.</p><p><strong>APK:</strong> PANEL-ComicReader-1.3.0.apk</p><p class="notice"><strong>Aviso de segurança:</strong> o Android pode alertar sobre instalação fora da Play Store. O APK é distribuído pelo GitHub e pode usar assinatura de desenvolvimento; baixe apenas da Release oficial.</p><a class="button" href="https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases">Baixar na Release <span>↓</span></a>';
   document.querySelector('.closing').before(android);
 </script>
+<script>
+  document.documentElement.innerHTML = document.documentElement.innerHTML.replace(/PANEL 1\.3|PANEL 1\.4(?:\.1|\.2)*/g, 'PANEL 1.5.0').replace(/Android 1\.3(?:\.1|\.2)?/g, 'Android 1.4.0').replace(/ANDROID 1\.3(?:\.1|\.2)?/g, 'ANDROID 1.4.0').replace(/PANEL-ComicReader-1\.3\.0\.apk/g, 'PANEL-Android-1.4.0.apk');
+  document.title = 'PANEL 1.5.0 — Seus quadrinhos. Seu universo.';
+</script>
 </body></html>
