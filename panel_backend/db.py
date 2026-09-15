@@ -71,6 +71,11 @@ def _migrate_legacy_schema() -> None:
             connection.execute(text("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64)"))
         if "totp_enabled" not in columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT 0"))
+        for name, sql_type in (("totp_pending_secret", "VARCHAR(64)"),
+                               ("totp_pending_session", "VARCHAR(64)"),
+                               ("totp_pending_expires_at", "TIMESTAMP")):
+            if name not in columns:
+                connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {sql_type}"))
     if "library_states" in inspector.get_table_names():
         library_columns = {column["name"] for column in inspector.get_columns("library_states")}
         if "client_updated_at" not in library_columns:

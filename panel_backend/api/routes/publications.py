@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from panel_backend.accounts import service as accounts
@@ -115,10 +115,21 @@ async def upload_file(
         PublicationAsset.publication_id == publication_id
     )) is not None:
         raise HTTPException(status_code=409, detail="Esta publicação já possui um arquivo.")
+    record = db.get(ModerationRecordRow, publication.moderation_record_id)
+    if record is None or record.manual_override_status is not None:
+        raise HTTPException(409,"Não é possível anexar arquivo após a decisão. Faça um novo envio.")
     try:
         stored_name, original, size, sha256 = await save_upload(file)
     except UnsafeAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    gate = db.execute(update(ModerationRecordRow).where(
+        ModerationRecordRow.id == publication.moderation_record_id,
+        ModerationRecordRow.manual_override_status.is_(None),
+    ).values(manual_override_status=None))
+    if gate.rowcount != 1:
+        resolve_asset(stored_name).unlink(missing_ok=True)
+        raise HTTPException(409,"A publicação foi decidida durante o upload. Faça um novo envio.")
 
     asset = PublicationAsset(
         publication_id=publication_id, stored_name=stored_name,

@@ -114,6 +114,13 @@ def decide(
     record, publication, comic, uploader, asset = row
     if record.manual_override_status is not None:
         raise HTTPException(status_code=409, detail="Este pedido já foi decidido.")
+    if payload.decision == "approved":
+        if asset is None:
+            raise HTTPException(409,"Envie o arquivo antes da aprovação.")
+        try:
+            resolve_asset(asset.stored_name)
+        except (FileNotFoundError, UnsafeAssetError) as exc:
+            raise HTTPException(409,"O arquivo precisa estar disponível para aprovação.") from exc
 
     record.manual_override_status = payload.decision
     record.manual_override_reason = payload.reason

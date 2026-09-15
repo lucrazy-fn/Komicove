@@ -85,6 +85,10 @@ class PasswordChange(BaseModel):
     current_password: str = Field(min_length=8, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
 
+class TotpSetup(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    current_code: str | None = Field(default=None, max_length=6)
+
 class TotpConfirm(BaseModel):
     code: str = Field(min_length=6,max_length=6)
 

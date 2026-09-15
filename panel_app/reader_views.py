@@ -187,6 +187,8 @@ class ReaderWindow(tk.Toplevel):
         prefs = load_prefs()
         self._manga = prefs.get("manga", False)
         reader_state = load_reader_state(self._content_key)
+        self._has_saved_zoom = "zoom" in reader_state
+        self._updating_zoom = False
         self._zoom = float(reader_state.get("zoom", self.Z0))
         self._offset = list(reader_state.get("offset", [0, 0]))
         self._double = bool(reader_state.get("double", False))
@@ -206,7 +208,7 @@ class ReaderWindow(tk.Toplevel):
         self._thumb_visible = False
 
         self._build()
-        self.after(80, self._show)
+        self.after(80, self._initial_render)
         self._prefetch_neighbors()
 
     @property
@@ -400,7 +402,10 @@ class ReaderWindow(tk.Toplevel):
         if reset:
             self._zoom = self.Z0
             self._offset = [0, 0]
-            if self._slider: self._zvar.set(self._zoom)
+            if self._slider:
+                self._updating_zoom = True
+                try: self._zvar.set(self._zoom)
+                finally: self._updating_zoom = False
 
         nw = max(1, int(iw * self._zoom))
         nh = max(1, int(ih * self._zoom))
@@ -476,7 +481,10 @@ class ReaderWindow(tk.Toplevel):
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
         self._zoom_lbl.config(text=f"{self._zoom*100:.0f}%")
-        if self._slider: self._zvar.set(self._zoom)
+        if self._slider:
+            self._updating_zoom = True
+            try: self._zvar.set(self._zoom)
+            finally: self._updating_zoom = False
         if hasattr(self, "_bm_btn") and self._bm_btn.winfo_exists():
             self._bm_btn.pill_set_text(self._bm_label())
             self._bm_btn.pill_set_active(self._idx in get_bookmarks(self._path))
@@ -554,7 +562,15 @@ class ReaderWindow(tk.Toplevel):
         self._show(reset=False)
     def _zoom_in(self):  self._set_zoom(self._zoom + self.ZSTEP)
     def _zoom_out(self): self._set_zoom(self._zoom - self.ZSTEP)
-    def _slider_zoom(self, v): self._set_zoom(float(v))
+    def _slider_zoom(self, v):
+        if not self._updating_zoom:
+            self._set_zoom(float(v))
+
+    def _initial_render(self):
+        if not self._has_saved_zoom:
+            self._fit()
+        else:
+            self._show(reset=False)
 
     def _fit(self):
         cw = self._cv.winfo_width() or 800

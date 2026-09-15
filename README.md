@@ -4,7 +4,7 @@
 
 Sua biblioteca de quadrinhos, do seu jeito. Leitor para Windows com capas, coleções, progresso salvo e recursos de comunidade opcionais.
 
-**1.4.1 · Windows 10/11 · Android 8+ · Python 3.10+ · MIT**
+**1.4.2 · Windows 10/11 · Android 8+ · Python 3.10+ · MIT**
 
 [Releases](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Reportar problema](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
@@ -30,13 +30,13 @@ O instalador cria um atalho no menu Iniciar e oferece um atalho opcional na áre
 - **Com uma API disponível:** conta, perfil, notificações, sincronização, Descobrir, downloads, publicação e remoção dos próprios envios.
 - **Equipe:** revisão de publicações, denúncias e painel administrativo em `/moderators`, conforme o cargo da conta.
 - **Cargos por token:** o dono pode ativar sua conta com o token mestre no perfil; moderadores podem usar tokens limitados para se tornarem administradores.
-- **Android 1.3.1:** leitor nativo para Android 8+, com biblioteca, coleções, progresso, favoritos, backup, formatos compactados e integração com a comunidade.
+- **Android 1.3.2:** leitor nativo para Android 8+, com biblioteca, coleções, progresso, favoritos, backup, formatos compactados e integração com a comunidade.
 
 Publique somente conteúdo próprio ou que você tenha autorização para distribuir.
 
 ## Versão Android
 
-O PANEL também possui uma edição mobile nativa em Java, com a mesma conta e API do desktop. A versão Android 1.3 inclui importação pelo seletor de arquivos, leitor com gestos e zoom, página dupla, modo mangá, leitura vertical, marcadores, backup e suporte a CBZ, ZIP, PDF, 7Z, CB7, TAR, CBT e CBR/RAR conforme a compatibilidade da biblioteca.
+O PANEL também possui uma edição mobile nativa em Java, com a mesma conta e API do desktop. A versão Android 1.3.2 inclui importação pelo seletor de arquivos, leitor com gestos e zoom, página dupla, modo mangá, leitura vertical, marcadores, backup e suporte a CBZ, ZIP, PDF, 7Z, CB7, TAR, CBT e CBR/RAR conforme a compatibilidade da biblioteca.
 
 Para compilar, abra a pasta `android` no Android Studio usando JDK 17. O APK de teste é gerado em `android/app/build/outputs/apk/debug/app-debug.apk`. Consulte [`android/README.md`](android/README.md) para os requisitos e instruções completas.
 
@@ -101,7 +101,7 @@ O script procura o compilador `ISCC.exe` no PATH e na pasta padrão do Inno Setu
 Saídas:
 
 - `dist\PANEL\PANEL.exe`: leitor empacotado. Para distribuir sem instalador, envie **toda a pasta PANEL**, não apenas o EXE.
-- `dist\installer\PANEL-Setup-1.4.1.exe`: instalador, quando o Inno Setup estiver disponível.
+- `dist\installer\PANEL-Setup-1.4.2.exe`: instalador, quando o Inno Setup estiver disponível.
 
 Para gerar somente o executável:
 

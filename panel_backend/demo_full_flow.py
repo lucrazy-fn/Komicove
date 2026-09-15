@@ -1,65 +1,45 @@
-
 from __future__ import annotations
+
+import secrets
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from panel_backend.accounts import service as accounts
 from panel_backend.catalog import service as catalog
-from panel_backend.catalog.models import Comic, Publication  # noqa: F401 (garante registro no metadata)
-from panel_backend.db import get_session, init_db
+from panel_backend.db import Base
 from panel_backend.moderation.service import ModerationService
 from panel_backend.moderation.storage import JsonModerationStore
 
 
 def main():
-    init_db()
-    moderation_service = ModerationService(store=JsonModerationStore("./_demo_moderation_records.json"))
-
-    with get_session() as db:
-
-        try:
-            auth = accounts.register_user(db, username="maria_autora", password="senha-forte-123")
-            print(f"Conta criada: {auth.user.username} (id={auth.user.id})")
-        except accounts.UsernameTakenError:
-            auth = accounts.authenticate(db, username="maria_autora", password="senha-forte-123")
-            print(f"Login realizado: {auth.user.username}")
-
-
-        outcome = catalog.submit_publication(
-            db,
-            moderation_service=moderation_service,
-            user_id=auth.user.id,
-            data=catalog.SubmissionInput(
-                title="As Aventuras de Zeca Lagarta",
-                author="Maria Autora",
-                description="HQ autoral sobre um lagarta filósofo.",
-                tags=["autoral", "comédia"],
-                file_reference="/uploads/zeca-lagarta-cap1.cbz",
-                authorship_declared=True,
-                license="CC-BY-4.0",
-            ),
-        )
-        print(f"\nComic criado: {outcome.comic.title} (id={outcome.comic.id})")
-        print(f"Publication status: {outcome.publication.status}")
-        print(f"Visível na comunidade? {outcome.publication.is_visible_to_community()}")
-        print(f"Mensagem pública: {outcome.public_message}")
-
-
-        outcome2 = catalog.submit_publication(
-            db,
-            moderation_service=moderation_service,
-            user_id=auth.user.id,
-            data=catalog.SubmissionInput(
-                title="Naruto",
-                author="?",
-                description="upload rápido",
-                tags=[],
-                file_reference="/uploads/naruto-cap1.cbz",
-                authorship_declared=False,
-            ),
-        )
-        print(f"\nComic criado: {outcome2.comic.title} (id={outcome2.comic.id})")
-        print(f"Publication status: {outcome2.publication.status}")
-        print(f"Visível na comunidade? {outcome2.publication.is_visible_to_community()}")
-        print(f"Mensagem pública: {outcome2.public_message}")
+    # A demo must never initialize or write the API's configured database.
+    with TemporaryDirectory(prefix="panel-demo-") as directory:
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        moderation_service = ModerationService(
+            store=JsonModerationStore(str(Path(directory) / "records.json")))
+        with Session(engine) as db, db.begin():
+            auth = accounts.register_user(
+                db, username="maria_autora", password=secrets.token_urlsafe(32))
+            print("Demonstração isolada: banco temporário e senha aleatória.")
+            for title, author, declared in (
+                ("As Aventuras de Zeca Lagarta", "Maria Autora", True),
+                ("Naruto", "?", False),
+            ):
+                outcome = catalog.submit_publication(
+                    db, moderation_service=moderation_service, user_id=auth.user.id,
+                    data=catalog.SubmissionInput(
+                        title=title, author=author, description="Demonstração local",
+                        tags=[], file_reference="demo.cbz", authorship_declared=declared,
+                    ),
+                )
+                print(f"Comic: {outcome.comic.title}")
+                print(f"Publication status: {outcome.publication.status}")
+                print(f"Mensagem pública: {outcome.public_message}")
+        engine.dispose()
 
 
 if __name__ == "__main__":

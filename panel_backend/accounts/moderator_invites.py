@@ -4,7 +4,7 @@ import hashlib
 import secrets
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from panel_backend.accounts.models import ModeratorInvite, User, _now
@@ -28,13 +28,15 @@ def generate(db: Session, creator: User, *, max_uses: int, valid_hours: int) -> 
 
 
 def consume(db: Session, raw_secret: str) -> ModeratorInvite | None:
-    invite = db.scalar(
-        select(ModeratorInvite).where(
-            ModeratorInvite.token_hash == token_hash(raw_secret)
-        )
-    )
-    if invite is None or not invite.is_usable():
+    digest = token_hash(raw_secret)
+    result = db.execute(update(ModeratorInvite).where(
+        ModeratorInvite.token_hash == digest,
+        ModeratorInvite.revoked.is_(False),
+        ModeratorInvite.expires_at > _now(),
+        ModeratorInvite.use_count < ModeratorInvite.max_uses,
+    ).values(use_count=ModeratorInvite.use_count + 1)
+      .execution_options(synchronize_session=False))
+    if result.rowcount != 1:
         return None
-    invite.use_count += 1
-    db.flush()
-    return invite
+    return db.scalar(select(ModeratorInvite).where(ModeratorInvite.token_hash == digest)
+                     .execution_options(populate_existing=True))

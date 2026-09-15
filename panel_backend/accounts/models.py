@@ -41,6 +41,9 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_session: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
 
     sessions: Mapped[list["SessionToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

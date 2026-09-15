@@ -14,5 +14,5 @@ try {
     if (-not (Test-Path -LiteralPath $CompilerPath)) { throw "Executavel pronto. Instale Inno Setup 6 para gerar o instalador." }
     & $CompilerPath installer\Panel.iss
     if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar instalador." }
-    Write-Host "Instalador: dist\installer\PANEL-Setup-1.3.0.exe"
+    Write-Host "Instalador: dist\installer\PANEL-Setup-1.4.2.exe"
 } finally { Pop-Location }

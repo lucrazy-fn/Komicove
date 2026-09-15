@@ -52,7 +52,9 @@ def register(username: str, password: str, email: str | None = None) -> AuthResp
 def login(username: str, password: str, totp_code: str | None=None) -> AuthResponse:
     return _post_auth("/auth/login", {"username": username, "password": password,"totp_code":totp_code})
 
-def setup_2fa(token: str) -> dict: return _request_json("POST","/account/2fa/setup",token=token)
+def setup_2fa(token: str, current_password: str, current_code: str | None=None) -> dict:
+    return _request_json("POST","/account/2fa/setup",token=token,
+        payload={"current_password":current_password,"current_code":current_code})
 def confirm_2fa(token: str, code: str): return _request_json("POST","/account/2fa/confirm",token=token,payload={"code":code})
 
 

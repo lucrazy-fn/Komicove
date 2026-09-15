@@ -6,13 +6,21 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 35
-        versionCode 10301
-        versionName '1.3.1'
+        versionCode 10302
+        versionName '1.3.2'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { release { minifyEnabled false } }
     testOptions { unitTests.includeAndroidResources = true }
 }
+
+tasks.register('copyNamedDebugApk', Copy) {
+    dependsOn('assembleDebug')
+    from(layout.buildDirectory.file('outputs/apk/debug/app-debug.apk'))
+    into(layout.projectDirectory.dir('build/outputs/apk/debug'))
+    rename { 'PANEL-Android-1.3.2.apk' }
+}
+
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.apache.commons:commons-compress:1.27.1'

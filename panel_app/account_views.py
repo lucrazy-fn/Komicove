@@ -214,8 +214,13 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
 
     if getattr(user, "role", "user") in {"admin", "owner"}:
         def enable_2fa():
+            password = simpledialog.askstring("Configurar 2FA", "Confirme sua senha atual:", show="*", parent=root)
+            if not password: return
+            previous_code = simpledialog.askstring("Configurar 2FA",
+                "Código do autenticador atual (deixe vazio na primeira ativação):", parent=root)
+            if previous_code is None: return
             def work():
-                try: setup, error = api.setup_2fa(user.token), None
+                try: setup, error = api.setup_2fa(user.token, password, previous_code or None), None
                 except Exception as exc: setup, error = None, str(exc)
                 def show(setup, error):
                     if error: messagebox.showerror("2FA", error, parent=root); return
