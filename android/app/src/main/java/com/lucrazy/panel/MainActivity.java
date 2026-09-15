@@ -29,7 +29,8 @@ public final class MainActivity extends Activity {
         banner=Ui.text(this,"",14,Ui.MUTED);banner.setPadding(Ui.dp(this,18),0,Ui.dp(this,18),0);banner.setVisibility(View.GONE);root.addView(banner);
         body=Ui.column(this);root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout nav=Ui.row(this);for(String label:new String[]{"Biblioteca","Coleções","Comunidade","Ajustes"}){Button b=Ui.button(this,label,()->{tab=label;collection="";if(label.equals("Biblioteca")||label.equals("Coleções"))showLibrary();else if(label.equals("Comunidade"))showCommunity();else settings();});b.setTextSize(11);b.setPadding(0,0,0,0);nav.addView(b,new LinearLayout.LayoutParams(0,Ui.dp(this,58),1));}root.addView(nav);showLibrary();}
-    private LinearLayout page(String title){screen++;body.removeAllViews();ScrollView scroll=new ScrollView(this);LinearLayout content=Ui.column(this);Ui.pad(content,18);content.addView(Ui.title(this,title,28));if(title.equals("Ajustes")){content.addView(Ui.button(this,"Verificar atualizações",this::checkAndroidUpdates));content.addView(Ui.button(this,"Diagnóstico seguro",this::diagnostics));}scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));Ui.enter(content);return content;}
+    private void normalizeVersionText(View view){if(view instanceof TextView){TextView t=(TextView)view;t.setText(t.getText().toString().replace("1.3.1","1.4.0").replace("1.3.2","1.4.0"));}if(view instanceof ViewGroup){for(int i=0;i<((ViewGroup)view).getChildCount();i++)normalizeVersionText(((ViewGroup)view).getChildAt(i));}}
+    private LinearLayout page(String title){screen++;body.removeAllViews();ScrollView scroll=new ScrollView(this);LinearLayout content=Ui.column(this);Ui.pad(content,18);content.addView(Ui.title(this,title,28));if(title.equals("Ajustes")){content.addView(Ui.button(this,"Verificar atualizações",this::checkAndroidUpdates));content.addView(Ui.button(this,"Diagnóstico seguro",this::diagnostics));handler.postDelayed(()->normalizeVersionText(content),100);}scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));Ui.enter(content);return content;}
     private void note(String text){banner.setText(text);banner.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE);}
     private void fail(Exception e){if(dead)return;String msg=e.getMessage();new AlertDialog.Builder(this).setTitle("PANEL").setMessage(msg==null?"Não foi possível concluir. Verifique o arquivo ou a conexão.":msg).setPositiveButton("Entendi",null).show();note("");}
     interface Job {void run()throws Exception;}
@@ -77,11 +78,14 @@ public final class MainActivity extends Activity {
     private void checkAndroidUpdates(boolean silent){
         async("Verificando atualizacoes...",()->{
             JSONObject release=api.checkAndroidUpdate();
-            String tag=release.optString("tag_name").replace("v","");
+            String notes=release.optString("body","");
+            java.util.regex.Matcher match=java.util.regex.Pattern.compile("(?im)^[ \\t]*(?:[-*#]+[ \\t]*)?android[ \\t]*(?:version[ \\t]*)?([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)").matcher(notes);
+            String tag=match.find()?match.group(1):"";
             if(tag.isEmpty()||!isNewer(tag,"1.4.0")){if(!silent)runOnUiThread(()->Toast.makeText(this,"Voce ja esta usando a versao mais recente.",Toast.LENGTH_SHORT).show());return;}
             runOnUiThread(()->{
                 String url=release.optString("html_url","https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases");
-                new AlertDialog.Builder(this).setTitle("PANEL Android "+tag+" disponivel").setMessage(release.optString("body","Novidades e correcoes para o leitor.")).setPositiveButton("Baixar",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)))).setNegativeButton("Depois",null).show();
+                String clean=notes.replaceAll("(?m)^#{1,6}\\s*","").replaceAll("`([^`]*)`","$1").replaceAll("\\*\\*([^*]+)\\*\\*","$1").trim();
+                new AlertDialog.Builder(this).setTitle("PANEL Android "+tag+" disponivel").setMessage(clean.isEmpty()?"Novidades e correcoes para o leitor.":clean).setPositiveButton("Baixar",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)))).setNegativeButton("Depois",null).show();
             });
         },null);
     }

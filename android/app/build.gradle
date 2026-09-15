@@ -17,7 +17,7 @@ android {
 tasks.register('copyNamedDebugApk', Copy) {
     dependsOn('assembleDebug')
     from(layout.buildDirectory.file('outputs/apk/debug/app-debug.apk'))
-    into(layout.projectDirectory.dir('build/outputs/named'))
+    into(rootProject.layout.projectDirectory.dir('build/outputs/named'))
     rename { 'PANEL-Android-1.4.0.apk' }
 }
 
