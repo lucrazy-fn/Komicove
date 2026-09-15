@@ -402,10 +402,6 @@ class ReaderWindow(tk.Toplevel):
         if reset:
             self._zoom = self.Z0
             self._offset = [0, 0]
-            if self._slider:
-                self._updating_zoom = True
-                try: self._zvar.set(self._zoom)
-                finally: self._updating_zoom = False
 
         nw = max(1, int(iw * self._zoom))
         nh = max(1, int(ih * self._zoom))
@@ -481,10 +477,6 @@ class ReaderWindow(tk.Toplevel):
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
         self._zoom_lbl.config(text=f"{self._zoom*100:.0f}%")
-        if self._slider:
-            self._updating_zoom = True
-            try: self._zvar.set(self._zoom)
-            finally: self._updating_zoom = False
         if hasattr(self, "_bm_btn") and self._bm_btn.winfo_exists():
             self._bm_btn.pill_set_text(self._bm_label())
             self._bm_btn.pill_set_active(self._idx in get_bookmarks(self._path))
@@ -504,7 +496,7 @@ class ReaderWindow(tk.Toplevel):
         is_done = get_manual_status(self._path) == "done"
         if on_last:
             if not hasattr(self, "_done_overlay") or not self._done_overlay.winfo_exists():
-                self._done_overlay = tk.Frame(self._cv, bg="", highlightthickness=0)
+                self._done_overlay = tk.Frame(self._cv, bg=c["canvas_bg"], highlightthickness=0)
                 lbl_txt = "✓  Concluído!" if is_done else "✓  Marcar como Concluído"
                 fill = c["read_badge"] if is_done else c["accent"]
                 fg   = c["read_badge_text"] if is_done else "#ffffff"
@@ -516,7 +508,7 @@ class ReaderWindow(tk.Toplevel):
             else:
                 is_done = get_manual_status(self._path) == "done"
                 lbl_txt = "✓  Concluído!" if is_done else "✓  Marcar como Concluído"
-                if hasattr(self._done_pill, "pill_set_text"):
+                if hasattr(getattr(self, "_done_pill", None), "pill_set_text"):
                     self._done_pill.pill_set_text(lbl_txt)
         else:
             if hasattr(self, "_done_overlay"):
