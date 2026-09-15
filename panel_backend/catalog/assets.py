@@ -8,6 +8,7 @@ import tempfile
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
+import requests
 
 from fastapi import UploadFile
 from PIL import Image
@@ -25,6 +26,47 @@ def storage_dir() -> Path:
     path = Path(os.environ.get("PANEL_STORAGE_DIR", "./panel_storage")).resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _remote_config() -> tuple[str, str, str] | None:
+    base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    key = os.environ.get("SUPABASE_SECRET_KEY", os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""))
+    bucket = os.environ.get("SUPABASE_BUCKET", "panel-assets")
+    return (base, key, bucket) if base and key else None
+
+
+def _remote_upload(path: Path, name: str) -> None:
+    config = _remote_config()
+    if not config:
+        return
+    base, key, bucket = config
+    with path.open("rb") as source:
+        response = requests.post(f"{base}/storage/v1/object/{bucket}/{name}", headers={"Authorization": f"Bearer {key}", "apikey": key, "Content-Type": "application/octet-stream", "x-upsert": "true"}, data=source, timeout=120)
+    response.raise_for_status()
+
+
+def _remote_download(name: str, target: Path) -> None:
+    config = _remote_config()
+    if not config:
+        raise FileNotFoundError(name)
+    base, key, bucket = config
+    response = requests.get(f"{base}/storage/v1/object/{bucket}/{name}", headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=120)
+    if response.status_code == 404:
+        raise FileNotFoundError(name)
+    response.raise_for_status()
+    temporary = target.with_suffix(target.suffix + ".download")
+    temporary.write_bytes(response.content)
+    temporary.replace(target)
+
+
+def delete_remote(name: str) -> None:
+    config = _remote_config()
+    if not config:
+        return
+    base, key, bucket = config
+    response = requests.delete(f"{base}/storage/v1/object/{bucket}/{Path(name).name}", headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=30)
+    if response.status_code not in (200, 204, 404):
+        response.raise_for_status()
 
 
 async def save_upload(upload: UploadFile) -> tuple[str, str, int, str]:
@@ -48,6 +90,7 @@ async def save_upload(upload: UploadFile) -> tuple[str, str, int, str]:
         stored_name = f"{uuid.uuid4().hex}{extension}"
         final_path = storage_dir() / stored_name
         os.replace(temporary, final_path)
+        _remote_upload(final_path, stored_name)
         return stored_name, original, size, digest.hexdigest()
     finally:
         await upload.close()
@@ -58,8 +101,10 @@ async def save_upload(upload: UploadFile) -> tuple[str, str, int, str]:
 def resolve_asset(stored_name: str) -> Path:
     base = storage_dir()
     candidate = (base / Path(stored_name).name).resolve()
-    if candidate.parent != base or not candidate.is_file():
+    if candidate.parent != base:
         raise FileNotFoundError(stored_name)
+    if not candidate.is_file():
+        _remote_download(Path(stored_name).name, candidate)
     return candidate
 
 

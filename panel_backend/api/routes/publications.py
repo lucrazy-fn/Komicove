@@ -16,7 +16,7 @@ from panel_backend.api.schemas import (
     PublicationSubmitRequest,
 )
 from panel_backend.catalog import service as catalog
-from panel_backend.catalog.assets import UnsafeAssetError, cover_jpeg, resolve_asset, save_upload
+from panel_backend.catalog.assets import UnsafeAssetError, cover_jpeg, delete_remote, resolve_asset, save_upload
 from panel_backend.catalog.models import Comic, Publication, PublicationAsset
 from panel_backend.moderation.service import ModerationService
 from panel_backend.moderation.db_models import ModerationRecordRow
@@ -32,6 +32,7 @@ def remove_publication(publication_id: str, user: User = Depends(get_current_use
         raise HTTPException(404, "Publicação não encontrada.")
     asset = db.scalar(select(PublicationAsset).where(PublicationAsset.publication_id == publication_id))
     if asset is not None:
+        delete_remote(asset.stored_name)
         db.delete(asset)
         db.flush()
 
