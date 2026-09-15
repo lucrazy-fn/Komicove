@@ -185,6 +185,8 @@ class ReaderWindow(tk.Toplevel):
         except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
 
         prefs = load_prefs()
+        self._persist_zoom = bool(prefs.get("reader_persist_zoom", True))
+        self._auto_fit = bool(prefs.get("reader_auto_fit", True))
         self._manga = prefs.get("manga", False)
         reader_state = load_reader_state(self._content_key)
         self._has_saved_zoom = "zoom" in reader_state
@@ -243,6 +245,7 @@ class ReaderWindow(tk.Toplevel):
         self._mkbtn(right, TEXTS[LANG]["fullscreen"], self._fullscreen).pack(side="right", padx=3)
         self._mkbtn(right, "📜  Webtoon", self._open_webtoon).pack(side="right", padx=3)
         self._mkbtn(right, TEXTS[LANG]["fit"], self._fit).pack(side="right", padx=3)
+        self._mkbtn(right, "⚙  Preferências", self._reader_preferences).pack(side="right", padx=3)
         self._mkbtn(right, current_theme_label(), self._toggle_theme, icon=ICONS.get("theme")).pack(side="right", padx=3)
 
         self._bm_btn = self._pill(right, self._bm_label(), self._toggle_bookmark, variant="soft")
@@ -327,6 +330,8 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<equal>",  lambda e: self._zoom_in())
         self.bind("<minus>",  lambda e: self._zoom_out())
         self.bind("<f>",      lambda e: self._fullscreen())
+        self.bind("<e>",      lambda e: self._fit())
+        self.bind("<E>",      lambda e: self._fit())
         self.bind("<F11>",    lambda e: self._fullscreen())
         self.bind("<i>",      lambda e: self._immersive_toggle())
         self.bind("<Escape>", lambda e: self._escape())
@@ -559,10 +564,46 @@ class ReaderWindow(tk.Toplevel):
             self._set_zoom(float(v))
 
     def _initial_render(self):
-        if not self._has_saved_zoom:
+        if self._auto_fit and not self._has_saved_zoom:
             self._fit()
         else:
             self._show(reset=False)
+
+    def _reader_preferences(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Preferências do leitor")
+        dialog.configure(bg=THEME["bg"])
+        dialog.resizable(False, False)
+        dialog.geometry("520x360")
+        dialog.transient(self); dialog.grab_set()
+        header=tk.Frame(dialog,bg=THEME["surface"],height=72);header.pack(fill="x");header.pack_propagate(False)
+        tk.Label(header,text="⚙  Preferências do leitor",font=FTITLE,
+                 bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
+        tk.Label(header,text="Personalize como cada página será aberta",font=FSMALL,
+                 bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=20,pady=16)
+        persist = tk.BooleanVar(value=self._persist_zoom)
+        autofit = tk.BooleanVar(value=self._auto_fit)
+        for var, title, detail in ((persist, "Persistir zoom e deslocamento", "Mantém escala e posição ao trocar de página."),
+                                   (autofit, "Ajustar à tela automaticamente", "Abre cada HQ no melhor encaixe disponível.")):
+            card=tk.Frame(body,bg=THEME["surface_alt"],highlightthickness=1,highlightbackground=THEME["border"])
+            card.pack(fill="x",pady=5)
+            check=tk.Checkbutton(card,text=title,variable=var,anchor="w",font=FBTN,
+                bg=THEME["surface_alt"],fg=THEME["text"],selectcolor=THEME["accent"],
+                activebackground=THEME["surface_alt"],activeforeground=THEME["text"],
+                highlightthickness=0,bd=0)
+            check.pack(fill="x",padx=12,pady=(9,0))
+            tk.Label(card,text=detail,font=FSMALL,bg=THEME["surface_alt"],fg=THEME["text_dim"]).pack(anchor="w",padx=40,pady=(0,9))
+        tk.Label(body,text="Atalho rápido: pressione E para encaixar a página na tela.",font=FSMALL,
+                 bg=THEME["bg"],fg=THEME["text_dim"]).pack(anchor="w",pady=(8,0))
+        def apply():
+            self._persist_zoom = bool(persist.get()); self._auto_fit = bool(autofit.get())
+            save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
+            if not self._persist_zoom:
+                self._zoom = self.Z0; self._offset = [0, 0]; self._show(reset=False)
+            dialog.destroy()
+        self._pill(dialog, "Salvar preferências", apply, variant="accent", font=FBTN,
+                   pad_x=24, pad_y=10).pack(pady=(4, 18))
 
     def _fit(self):
         cw = self._cv.winfo_width() or 800
@@ -755,7 +796,8 @@ class ReaderWindow(tk.Toplevel):
 
     def _close(self):
         save_progress(self._path, self._idx)
-        save_reader_state(self._content_key, page=self._idx, zoom=self._zoom,
+        save_reader_state(self._content_key, page=self._idx,
+                          zoom=self._zoom if self._persist_zoom else self.Z0,
                           offset=self._offset, double=self._double, manga=self._manga)
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)

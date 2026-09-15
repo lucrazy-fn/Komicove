@@ -29,5 +29,6 @@ final class PanelApi {
         public int read(byte[] b,int o,int len)throws IOException {while(transfer.paused&&!transfer.cancelled){try{Thread.sleep(100);}catch(InterruptedException e){throw new InterruptedIOException();}}if(transfer.cancelled)throw new IOException("Download cancelado.");int n=super.read(b,o,len);if(n>0)transfer.received+=n;return n;}
     }){return store.importStream(in,filename);}}}
     void upload(String id,File file)throws Exception {RequestBody data=new MultipartBody.Builder().setType(MultipartBody.FORM).addFormDataPart("file",file.getName(),RequestBody.create(file,MediaType.get("application/octet-stream"))).build();try(Response r=client.newCall(request("/publications/"+id+"/file").put(data).build()).execute()){check(r);}}
+    JSONObject checkAndroidUpdate()throws Exception {Request r=new Request.Builder().url("https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/latest").header("Accept","application/vnd.github+json").build();try(Response response=client.newCall(r).execute()){if(!response.isSuccessful()||response.body()==null)throw new IOException("Não foi possível verificar atualizações.");return new JSONObject(response.body().string());}}
     static final class Transfer {volatile long received,total;volatile boolean paused,cancelled,finished;volatile String error="";String title;}
 }

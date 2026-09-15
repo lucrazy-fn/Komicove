@@ -1,5 +1,5 @@
 from panel_app.runtime import *
-from panel_app.archive import SUPPORTED_EXTENSIONS
+from panel_app.archive import SUPPORTED_EXTENSIONS, find_7zip
 import panel_app.runtime as _runtime
 import panel_app.auth_views as _auth_views
 import panel_app.reader_views as _reader_views
@@ -13,6 +13,10 @@ from panel_app.publishing_views import PublishDialog
 from panel_app.community_views import CommunityTab, CommunityWindow
 from panel_app.moderation_views import ModerationWindow
 from panel_app.library_widgets import *
+from panel_app import updater
+import webbrowser
+import platform, sys
+from urllib.parse import urlparse
 
 class LibraryWindow(tk.Tk):
     def __init__(self):
@@ -455,6 +459,36 @@ class LibraryWindow(tk.Tk):
         self._build_shell()
         self.after(200, self._refresh_library)
         self.after(250, self._refresh_notification_count)
+        self.after(1200, self._check_updates_background)
+
+    def _check_updates_background(self):
+        if getattr(self, "_update_check_started", False): return
+        self._update_check_started = True
+        def worker():
+            try: result = updater.check()
+            except Exception: result = None
+            if result: self.after(0, lambda: self._show_update_notice(result))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_update_notice(self, data):
+        if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): return
+        dialog=tk.Toplevel(self); self._update_notice=dialog
+        dialog.title("Atualização disponível"); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
+        dialog.transient(self); dialog.attributes("-topmost", True)
+        card=tk.Frame(dialog,bg=THEME["surface"],highlightthickness=1,highlightbackground=THEME["accent"]); card.pack(padx=2,pady=2)
+        tk.Label(card,text=f"PANEL {data['version']} disponível 🎉",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=22,pady=(18,4))
+        notes=(data.get("notes") or "Novidades e correções de estabilidade.").strip()
+        summary=notes.split("\n\n",1)[0][:220]
+        tk.Label(card,text=summary,font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=390,justify="left").pack(anchor="w",padx=22,pady=(0,14))
+        actions=tk.Frame(card,bg=THEME["surface"]);actions.pack(fill="x",padx=18,pady=(0,16))
+        make_pill(actions,"Depois",dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
+        make_pill(actions,"Baixar",lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
+        make_pill(actions,"Ver novidades",lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
+        dialog.protocol("WM_DELETE_WINDOW",dialog.destroy)
+
+    def _open_update_details(self, data):
+        if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): self._update_notice.destroy()
+        self._check_updates()
 
     def _build_shell(self):
         for w in self.winfo_children():
@@ -513,6 +547,8 @@ class LibraryWindow(tk.Tk):
             (TEXTS[LANG]['folder'], self._choose_folder, ICONS.get("folder")),
             ("Backup", self._do_backup, ICONS.get("backup")),
             ("Restaurar", self._do_restore, ICONS.get("restore")),
+            ("Atualizações", self._check_updates, ICONS.get("downloads")),
+            ("Diagnóstico seguro", self._copy_diagnostics, ICONS.get("notifications")),
         ]:
             self._sidebar_item(txt, icon, cmd, font=FSMALL, pady=6)
 
@@ -526,6 +562,51 @@ class LibraryWindow(tk.Tk):
 
         self._main = tk.Frame(self, bg=c["bg"])
         self._main.pack(side="right", fill="both", expand=True)
+
+    def _check_updates(self):
+        dialog=tk.Toplevel(self); dialog.title("Atualizações do PANEL"); dialog.configure(bg=THEME["bg"])
+        dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); dialog.grab_set()
+        head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
+        tk.Label(head,text="✦  Atualizações",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
+        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.4.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        status=tk.Label(dialog,text="Verificando versões…",font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
+        notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
+        notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
+        actions=tk.Frame(dialog,bg=THEME["bg"]); actions.pack(fill="x",padx=24,pady=16)
+        make_pill(actions,"Fechar",dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
+        def worker():
+            try: data=updater.check(); error=None
+            except Exception as exc: data=None; error=exc
+            def done():
+                if not dialog.winfo_exists(): return
+                if error:
+                    status.config(text="Não foi possível verificar agora. A leitura local continua disponível.",fg=THEME["accent2"]); return
+                if not data:
+                    status.config(text="Você já está usando a versão mais recente.",fg=THEME["read_badge_text"]); return
+                status.config(text=f"Nova versão disponível: {data['version']}",fg=THEME["read_badge_text"])
+                notes.configure(state="normal"); notes.insert("1.0",data.get("notes","Sem notas publicadas.")); notes.configure(state="disabled")
+                make_pill(actions,"Abrir downloads",lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=8)
+            self.after(0,done)
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _copy_diagnostics(self):
+        api_url = getattr(api_client, "BASE_URL", "")
+        parsed = urlparse(api_url)
+        api_host = parsed.netloc or "não configurada"
+        report = (
+            "PANEL — Diagnóstico seguro\n"
+            f"Windows: 1.5.0\n"
+            "Android: 1.4.0\n"
+            f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n"
+            f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
+            f"API: {api_host}\n"
+            f"7-Zip: {'disponível' if find_7zip() else 'não encontrado'}\n"
+            f"PDF: {'disponível' if HAS_PDF else 'indisponível'}\n"
+            f"RAR: {'disponível' if HAS_RAR else 'indisponível'}\n"
+            "\nNenhum token, senha, caminho local ou conteúdo de quadrinhos foi incluído."
+        )
+        self.clipboard_clear(); self.clipboard_append(report); self.update()
+        messagebox.showinfo("Diagnóstico seguro", "Relatório copiado para a área de transferência.\n\nCole-o na issue sem adicionar tokens ou senhas.", parent=self)
 
     def _sidebar_section(self, text):
         tk.Label(self._sb, text=text, font=(_SANS, 8, "bold"), bg=THEME["surface"],

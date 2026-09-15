@@ -87,6 +87,22 @@ Esse endereço é apenas um exemplo, não um servidor público do PANEL. Sem API
 
 Consulte `.env.example` e `startserver.bat` para a configuração de desenvolvimento. Nunca distribua `.env`, tokens, `panel.db` ou a pasta `panel_storage`. Não exponha o servidor de desenvolvimento diretamente à internet.
 
+### Backup e restauração do servidor
+
+Faça backups no próprio servidor, em local protegido e fora do Git:
+
+```powershell
+.\backup_server.bat .\backups\panel-2026-09-15.zip
+```
+
+O backup inclui um snapshot consistente do SQLite, os arquivos publicados de `panel_storage` e um manifesto com hashes. Para restaurar, pare a API e execute:
+
+```powershell
+.\restore_server.bat .\backups\panel-2026-09-15.zip
+```
+
+A restauração cria automaticamente uma cópia `.before-restore-<data>` do banco e do armazenamento. A rotina é local, suporta SQLite e não fica exposta como endpoint público. Proteja os arquivos de backup como dados sensíveis: eles podem conter contas e obras enviadas.
+
 ## Gerar executável e instalador
 
 Ferramentas: Python com Tkinter, PyInstaller e **Inno Setup 6**. Compile no Windows usando a arquitetura que deseja distribuir.
