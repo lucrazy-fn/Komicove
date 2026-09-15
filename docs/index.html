@@ -26,12 +26,12 @@
 </main><footer class="wrap footer"><a href="#" aria-label="PANEL — início"><img src="assets/logo.png" alt="PANEL" width="90" height="90" loading="lazy"></a><p>Feito para quem sempre lê<br>“só mais uma página”.</p><div><a href="https://github.com/lucrazy-fn/PANEL-ComicBookReader">GitHub</a><a href="https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues">Issues</a><a href="https://github.com/lucrazy-fn/PANEL-ComicBookReader/blob/main/LICENSE">Licença MIT</a><span>Projeto independente.</span></div></footer>
 <dialog id="lightbox" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">Demonstração do PANEL</h2><button id="close-modal" aria-label="Fechar ampliação">Fechar ×</button></div><div id="modal-content"></div></dialog>
 <script>
-  document.title = 'PANEL 1.4.2 — Seus quadrinhos. Seu universo.';
-  document.title = document.title.replace(/PANEL 1\.4(?:\.1)+/g, 'PANEL 1.4.2');
-  document.documentElement.innerHTML = document.documentElement.innerHTML.replaceAll('PANEL 1.4', 'PANEL 1.4.2');
+  document.title = 'PANEL 1.5.0 — Seus quadrinhos. Seu universo.';
+  document.title = document.title.replace(/PANEL 1\.4(?:\.1|\.2)*/g, 'PANEL 1.5.0');
+  document.documentElement.innerHTML = document.documentElement.innerHTML.replaceAll('PANEL 1.4', 'PANEL 1.5.0');
   document.documentElement.innerHTML = document.documentElement.innerHTML.replaceAll('Android 1.3', 'Android 1.3.2').replaceAll('ANDROID 1.3', 'ANDROID 1.3.2').replaceAll('1.3.0.apk', '1.3.2.apk');
   document.querySelectorAll('*').forEach((node) => {
-    if (node.children.length === 0 && node.textContent.includes('PANEL 1.3')) node.textContent = node.textContent.replaceAll('PANEL 1.3', 'PANEL 1.4.2');
+    if (node.children.length === 0 && node.textContent.includes('PANEL 1.3')) node.textContent = node.textContent.replaceAll('PANEL 1.3', 'PANEL 1.5.0');
   for (const attr of ['content', 'aria-label']) if (node.hasAttribute(attr)) node.setAttribute(attr, node.getAttribute(attr).replaceAll('PANEL 1.3', 'PANEL 1.4.2'));
   });
   document.querySelectorAll('.notice').forEach((node) => {
