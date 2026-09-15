@@ -1,0 +1,9 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+sqlalchemy>=2,<3
+psycopg[binary]>=3.2,<4
+python-multipart>=0.0.20,<1
+Pillow>=10,<13
+rarfile>=4,<5
+PyMuPDF>=1.24,<2
+requests>=2.32,<3
