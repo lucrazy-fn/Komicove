@@ -74,7 +74,17 @@ public final class MainActivity extends Activity {
     private void decision(JSONObject item){EditText reason=Ui.input(this,"Justificativa da decisão",false);new AlertDialog.Builder(this).setTitle(item.optString("title")).setView(reason).setPositiveButton("Aprovar",(d,w)->moderate(item,"approved",reason.getText().toString())).setNegativeButton("Rejeitar",(d,w)->moderate(item,"rejected",reason.getText().toString())).setNeutralButton("Cancelar",null).show();}
     private void moderate(JSONObject item,String decision,String reason){async("Salvando decisão…",()->api.json("POST","/moderation/"+item.optString("record_id")+"/decision",new JSONObject().put("decision",decision).put("reason",reason)),()->catalog(false,true));}
     private void checkAndroidUpdates(){checkAndroidUpdates(false);}
-    private void checkAndroidUpdates(boolean silent){async("Verificando atualizações…",()->{JSONObject release=api.checkAndroidUpdate();String tag=release.optString("tag_name").replace("v","");if(tag.isEmpty()||!isNewer(tag,"1.3.2")){if(!silent)runOnUiThread(()->Toast.makeText(this,"Você já está usando a versão mais recente.",Toast.LENGTH_SHORT).show());return;}runOnUiThread(()->new AlertDialog.Builder(this).setTitle("PANEL Android "+tag+" disponível 🎉").setMessage(release.optString("body","Novidades e correções para o leitor.")).setPositiveButton("Baixar",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(release.optString("html_url","https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases")))).setNegativeButton("Depois",null).show());},null);}
+    private void checkAndroidUpdates(boolean silent){
+        async("Verificando atualizacoes...",()->{
+            JSONObject release=api.checkAndroidUpdate();
+            String tag=release.optString("tag_name").replace("v","");
+            if(tag.isEmpty()||!isNewer(tag,"1.4.0")){if(!silent)runOnUiThread(()->Toast.makeText(this,"Voce ja esta usando a versao mais recente.",Toast.LENGTH_SHORT).show());return;}
+            runOnUiThread(()->{
+                String url=release.optString("html_url","https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases");
+                new AlertDialog.Builder(this).setTitle("PANEL Android "+tag+" disponivel").setMessage(release.optString("body","Novidades e correcoes para o leitor.")).setPositiveButton("Baixar",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)))).setNegativeButton("Depois",null).show();
+            });
+        },null);
+    }
     private boolean isNewer(String remote,String current){try{String[] a=remote.split("\\."),b=current.split("\\.");for(int i=0;i<3;i++){int x=i<a.length?Integer.parseInt(a[i].replaceAll("[^0-9].*","")):0,y=i<b.length?Integer.parseInt(b[i].replaceAll("[^0-9].*","")):0;if(x!=y)return x>y;}return false;}catch(Exception e){return false;}}
     private void diagnostics(){String report="PANEL Android 1.3.2\nAPI configurada: sim\nConta conectada: "+(api.signedIn()?"sim":"não")+"\nDispositivo: "+Build.MANUFACTURER+" "+Build.MODEL+"\nAndroid: "+Build.VERSION.RELEASE+"\nLivros locais: "+store.all().size();new AlertDialog.Builder(this).setTitle("Diagnóstico seguro").setMessage(report).setPositiveButton("Copiar",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("Diagnóstico PANEL",report));Toast.makeText(this,"Diagnóstico copiado sem dados sensíveis.",Toast.LENGTH_SHORT).show();}).setNegativeButton("Fechar",null).show();}
     @Override protected void onDestroy(){dead=true;handler.removeCallbacksAndMessages(null);work.shutdown();images.shutdown();super.onDestroy();}

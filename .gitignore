@@ -15,5 +15,6 @@ build/
 htmlcov/
 panel_storage/
 .idea/
+docs/security-audit/
 commit-site.bat
 commit-app.bat
