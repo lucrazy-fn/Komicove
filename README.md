@@ -27,9 +27,6 @@ O instalador cria um atalho no menu Iniciar e oferece um atalho opcional na áre
 - **Leitor:** zoom, miniaturas, marcadores, tela cheia, página dupla, modo mangá e leitura vertical.
 - **Personalização:** temas, traduções e animações de interação.
 - **Backup:** exportação e restauração dos dados de leitura.
-- **Com uma API disponível:** conta, perfil, notificações, sincronização, Descobrir, downloads, publicação e remoção dos próprios envios.
-- **Equipe:** revisão de publicações, denúncias e painel administrativo em `/moderators`, conforme o cargo da conta.
-- **Cargos por token:** o dono pode ativar sua conta com o token mestre no perfil; moderadores podem usar tokens limitados para se tornarem administradores.
 - **Android 1.4.0:** leitor nativo para Android 8+, com biblioteca, coleções, progresso, favoritos, backup, atualizações e diagnóstico seguro.
 
 Publique somente conteúdo próprio ou que você tenha autorização para distribuir.
@@ -55,107 +52,16 @@ O app procura `7z`/`7zz` no PATH e o 7-Zip nas pastas padrão do Windows. Para u
 
 Os uploads da comunidade continuam limitados a CBZ, ZIP, CBR, RAR e PDF; suporte local não significa suporte para publicação.
 
-## Rodar pelo código
-
-No PowerShell, dentro da pasta do projeto:
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[server,test]"
-.\.venv\Scripts\python.exe -m panel_app
-```
-
-Também é possível usar `startapp.bat`. Use uma instalação do Python com Tkinter funcionando.
 
 ## Contas e servidor
 
- O leitor local funciona sem servidor. Login, sincronização e comunidade exigem a API; o instalador desktop **não inclui nem inicia o backend**.
-
-Para desenvolvimento, execute em outro terminal:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn panel_backend.api.app:app --host 127.0.0.1 --port 8000
-```
-
-A entrada pelo código também tenta iniciar uma API local automaticamente quando necessário. Para conectar a outra API, configure antes de iniciar o app:
-
-```powershell
-$env:PANEL_API_BASE_URL = "https://seu-servidor.example"
-```
-
-Esse endereço é apenas um exemplo, não um servidor público do PANEL. Sem API configurada, use o modo convidado. Um servidor local em cada computador não cria uma comunidade compartilhada.
-
-Consulte `.env.example` e `startserver.bat` para a configuração de desenvolvimento. Nunca distribua `.env`, tokens, `panel.db` ou a pasta `panel_storage`. Não exponha o servidor de desenvolvimento diretamente à internet.
-
-### Backup e restauração do servidor
-
-Faça backups no próprio servidor, em local protegido e fora do Git:
-
-```powershell
-.\backup_server.bat .\backups\panel-2026-09-15.zip
-```
-
-O backup inclui um snapshot consistente do SQLite, os arquivos publicados de `panel_storage` e um manifesto com hashes. Para restaurar, pare a API e execute:
-
-```powershell
-.\restore_server.bat .\backups\panel-2026-09-15.zip
-```
-
-A restauração cria automaticamente uma cópia `.before-restore-<data>` do banco e do armazenamento. A rotina é local, suporta SQLite e não fica exposta como endpoint público. Proteja os arquivos de backup como dados sensíveis: eles podem conter contas e obras enviadas.
-
-## Gerar executável e instalador
-
-Ferramentas: Python com Tkinter, PyInstaller e **Inno Setup 6**. Compile no Windows usando a arquitetura que deseja distribuir.
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[build]"
-powershell -ExecutionPolicy Bypass -File .\build_installer.ps1
-```
-
-O script procura o compilador `ISCC.exe` no PATH e na pasta padrão do Inno Setup 6. Se não o encontrar, o executável permanece disponível, mas o instalador não será gerado.
-
-Saídas:
-
-- `dist\PANEL\PANEL.exe`: leitor empacotado. Para distribuir sem instalador, envie **toda a pasta PANEL**, não apenas o EXE.
-- `dist\installer\PANEL-Setup-1.5.0.exe`: instalador, quando o Inno Setup estiver disponível.
-
-Para gerar somente o executável:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build_installer.ps1 -ExecutableOnly
-```
-
-O pacote inclui apenas recursos explicitamente selecionados e dependências do leitor, sem os dados locais do servidor. O executável não tem assinatura digital configurada; o Windows pode mostrar um aviso de reputação.
-
-### Antes de publicar uma release
-
-1. Execute os testes: `.\.venv\Scripts\python.exe -m pytest`.
-2. Gere o instalador e teste instalação, abertura, capas, PDF, 7-Zip e desinstalação em um Windows sem Python.
-3. Verifique o modo convidado e, separadamente, a conexão com a API.
-4. Atualize as versões em `pyproject.toml`, `installer/Panel.iss` e no nome de saída do script.
-5. Crie uma release no GitHub e anexe o instalador. Não envie banco, uploads ou segredos.
-
-O script não publica nada automaticamente e não implementa atualização automática.
-
-## Estrutura
-
-```text
-panel_app/       Interface, leitor, biblioteca e dados locais
-panel_client/    Cliente HTTP para a API
-panel_backend/   Contas, catálogo, moderação e API
-installer/       Entrada de empacotamento, PyInstaller e Inno Setup
-tests/           Testes automatizados
-Icons/           Recursos visuais
-```
-
-`python -m panel_app` é a entrada principal. `ComicReader.py` mantém compatibilidade com a organização antiga.
+ O leitor local funciona sem servidor. Login somente se quiser utilizar a comunidade!
 
 ## Problemas comuns
 
-- **Login sem conexão:** confira a API e `PANEL_API_BASE_URL`; leitura local continua disponível como convidado.
+- **Login sem conexão:** será corrigido na versão 1.6.
 - **CBR/7Z não abre:** confira a instalação do 7-Zip, a integridade do arquivo e se ele possui senha.
 - **Capas ou ícones ausentes no pacote:** mantenha a pasta gerada inteira; não mova somente o EXE.
-- **Erro de Tkinter ao compilar:** verifique o Python usado para criar a `.venv` antes de gerar o pacote.
 
 Ao abrir uma issue, informe versão, mensagem de erro e passos para reproduzir. Não anexe senhas, tokens ou obras sem autorização.
 
