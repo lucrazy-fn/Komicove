@@ -1,6 +1,6 @@
 # PANEL Android — leitor nativo
 
-Aplicativo Android em Java, separado da interface Tkinter do Windows. Android 8.0 ou superior (API 26). Versão 1.4.0, com leitor completo, atualizações e diagnóstico seguro.
+Aplicativo Android em Java, separado da interface Tkinter do Windows. Android 8.0 ou superior (API 26). Versão 1.5.0, com leitor completo, atualizações, diagnóstico seguro, preferências e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
 
 ## Biblioteca e leitura
 

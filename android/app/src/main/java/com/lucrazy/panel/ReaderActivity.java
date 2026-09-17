@@ -17,12 +17,35 @@ public final class ReaderActivity extends Activity {
     private int index,generation,step=1;private boolean controls=true,initial=true;private boolean persistZoom=true,autoFit=true;private String mode;private float savedZoom,savedX,savedY;
     @Override public void onCreate(Bundle saved){super.onCreate(saved);store=new LibraryStore(this);android.content.SharedPreferences prefs=getSharedPreferences("reader",0);persistZoom=prefs.getBoolean("persist_zoom",true);autoFit=prefs.getBoolean("auto_fit",true);book=store.get(getIntent().getStringExtra("book"));if(book==null){finish();return;}index=book.page;mode=book.mode;savedZoom=book.zoom;savedX=book.offsetX;savedY=book.offsetY;
         root=Ui.column(this);root.setBackgroundColor(0xff09090b);setContentView(root);Ui.insets(this,root);
-        top=Ui.column(this);Ui.pad(top,10);LinearLayout title=Ui.row(this);title.addView(Ui.button(this,"‹ Biblioteca",this::finish));TextView name=Ui.title(this,book.title,16);name.setMaxLines(1);name.setEllipsize(android.text.TextUtils.TruncateAt.END);title.addView(name,new LinearLayout.LayoutParams(0,-2,1));top.addView(title);
-        LinearLayout actions=Ui.row(this);actions.addView(Ui.button(this,"Modo",this::chooseMode),new LinearLayout.LayoutParams(0,-2,1));actions.addView(Ui.button(this,"Páginas",this::thumbnails),new LinearLayout.LayoutParams(0,-2,1));actions.addView(Ui.button(this,"Marcadores",this::bookmarks),new LinearLayout.LayoutParams(0,-2,1));top.addView(actions);root.addView(top);
+        top=Ui.row(this);Ui.pad(top,2);top.addView(navigationButton("‹",this::finish,"Voltar à biblioteca"));TextView name=Ui.title(this,book.title,14);name.setMaxLines(1);name.setEllipsize(android.text.TextUtils.TruncateAt.END);top.addView(name,new LinearLayout.LayoutParams(0,-2,1));top.addView(compactButton("Encaixar",()->{if(pageView!=null)pageView.fitToScreen();},"Mostrar página inteira"));top.addView(compactButton("⋮",this::readerMenu,"Opções do leitor"));root.addView(top);
+
         canvas=new FrameLayout(this);root.addView(canvas,new LinearLayout.LayoutParams(-1,0,1));
-        bottom=Ui.column(this);Ui.pad(bottom,10);LinearLayout nav=Ui.row(this);nav.addView(Ui.button(this,"‹",()->move(-1)));status=Ui.text(this,"Abrindo…",14,Ui.MUTED);status.setGravity(Gravity.CENTER);nav.addView(status,new LinearLayout.LayoutParams(0,-2,1));nav.addView(Ui.button(this,"›",()->move(1)));bottom.addView(nav);progress=new SeekBar(this);progress.setContentDescription("Ir para página");bottom.addView(progress);root.addView(bottom);
+        bottom=Ui.column(this);Ui.pad(bottom,2);LinearLayout nav=Ui.row(this);nav.addView(navigationButton("‹",()->move(-1),"Anterior"));status=Ui.text(this,"Abrindo…",14,Ui.MUTED);status.setGravity(Gravity.CENTER);nav.addView(status,new LinearLayout.LayoutParams(0,-2,1));nav.addView(navigationButton("›",()->move(1),"Próximo"));bottom.addView(nav);progress=new SeekBar(this);progress.setContentDescription("Ir para página");bottom.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(this,32)));root.addView(bottom);
         progress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){jump(s.getProgress());}public void onProgressChanged(SeekBar s,int n,boolean user){if(user)status.setText("Página "+(n+1)+" / "+book.count);}});
         worker.execute(()->{try{BookSource opened=new BookSource(store.file(book),getCacheDir());if(destroyed){opened.close();return;}source=opened;runOnUiThread(()->{if(destroyed)return;book.count=source.pages.size();index=Math.min(index,book.count-1);progress.setMax(book.count-1);setupMode();});}catch(Exception e){runOnUiThread(()->{if(!destroyed)new AlertDialog.Builder(this).setTitle("Não foi possível abrir").setMessage(error(e)).setPositiveButton("Voltar",(d,w)->finish()).setOnCancelListener(d->finish()).show();});}});
+    }
+    private boolean guidedFallback;private boolean guided; private int panelIndex; private java.util.List<RectF> panels=java.util.Collections.emptyList();
+    private Button compactButton(String label,Runnable action,String description){
+        Button b=Ui.button(this,label,action);b.setTextSize(12);b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(Ui.dp(this,8),0,Ui.dp(this,8),0);b.setLayoutParams(new LinearLayout.LayoutParams(-2,Ui.dp(this,48)));b.setContentDescription(description);return b;
+    }
+    private Button navigationButton(String label,Runnable action,String description){
+        Button b=compactButton(label,action,description);b.setTextSize(28);b.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(this,64),Ui.dp(this,56)));return b;
+    }
+    private void readerMenu(){
+        new AlertDialog.Builder(this).setTitle("Leitor").setItems(new String[]{"Modo de leitura","Páginas","Marcadores","Preferências"},(d,i)->{
+            if(i==0)chooseMode();else if(i==1)thumbnails();else if(i==2)bookmarks();else preferences();
+        }).show();
+    }
+    private void preferences(){
+        ReaderPreferences.show(this,()->{
+            android.content.SharedPreferences p=getSharedPreferences("reader",0);
+            persistZoom=p.getBoolean("persist_zoom",true);autoFit=p.getBoolean("auto_fit",true);
+            if(source!=null){initial=true;setupMode();}
+        });
+    }
+    private void focusPanel(){
+        if(pageView!=null&&!panels.isEmpty())pageView.focus(panels.get(panelIndex));
+        updateCounter();
     }
     private String error(Exception e){String msg=e.getMessage();return msg==null?"Arquivo incompatível ou danificado.":msg;}
     private void setupMode(){generation++;canvas.removeAllViews();pageView=null;vertical=null;
@@ -30,15 +53,15 @@ public final class ReaderActivity extends Activity {
         else {pageView=new ZoomPage(this,new ZoomPage.Actions(){public void next(){move(mode.equals("manga")?-1:1);}public void previous(){move(mode.equals("manga")?1:-1);}public void toggle(){toggleControls();}});canvas.addView(pageView);loadPage();}
     }
     private Bitmap bitmap(int n)throws Exception {Bitmap b=cache.get(n);if(b==null){b=source.page(n,1600);cache.put(n,b);}return b;}
-    private void loadPage(){int ticket=++generation,n=index;status.setText("Carregando página "+(n+1)+"…");String readMode=mode;
+    private void loadPage(){int ticket=++generation,n=index;status.setText("Carregando página "+(n+1)+"…");String readMode=mode;guided=getSharedPreferences("reader",0).getBoolean("guided",false)&&!mode.equals("vertical")&&!mode.equals("dupla");boolean guide=guided;
         worker.execute(()->{try{Bitmap image=bitmap(n);int displayedStep=1;
             if(readMode.equals("dupla")&&image.getWidth()<image.getHeight()&&n>0&&n+1<book.count){Bitmap right=bitmap(n+1);if(right.getWidth()<right.getHeight()){int height=Math.min(image.getHeight(),right.getHeight());int leftWidth=image.getWidth()*height/image.getHeight(),rightWidth=right.getWidth()*height/right.getHeight();Bitmap pair=Bitmap.createBitmap(leftWidth+rightWidth,height,Bitmap.Config.RGB_565);Canvas c=new Canvas(pair);c.drawColor(Color.BLACK);Paint p=new Paint(Paint.FILTER_BITMAP_FLAG);c.drawBitmap(image,null,new Rect(0,0,leftWidth,height),p);c.drawBitmap(right,null,new Rect(leftWidth,0,leftWidth+rightWidth,height),p);image=pair;displayedStep=2;}}
-            Bitmap output=image;int span=displayedStep;runOnUiThread(()->{if(destroyed||ticket!=generation||pageView==null)return;step=span;float keepZoom=pageView.zoom,keepX=pageView.normalizedX(),keepY=pageView.normalizedY();pageView.setImage(output);if(initial){if(autoFit)pageView.fitToScreen();else if(persistZoom)pageView.restore(savedZoom,savedX,savedY);initial=false;}else if(persistZoom)pageView.restore(keepZoom,keepX,keepY);Ui.enter(pageView);updateCounter();save();});
+            java.util.List<RectF> detected=guide?PanelDetector.detect(image,readMode.equals("manga")):java.util.Collections.emptyList();boolean fallback=guide&&detected.size()==1;if(fallback)detected=PanelDetector.readingRegions(image.getWidth(),image.getHeight(),readMode.equals("manga"));java.util.List<RectF> regions=detected;Bitmap output=image;int span=displayedStep;runOnUiThread(()->{if(destroyed||ticket!=generation||pageView==null)return;step=span;float keepZoom=pageView.zoom,keepX=pageView.normalizedX(),keepY=pageView.normalizedY();pageView.setImage(output);if(initial){if(autoFit)pageView.fitToScreen();else if(persistZoom)pageView.restore(savedZoom,savedX,savedY);initial=false;}else if(persistZoom)pageView.restore(keepZoom,keepX,keepY);else pageView.fitToScreen();panels=regions;guidedFallback=fallback;panelIndex=0;if(guide)pageView.post(()->{if(!destroyed&&ticket==generation)focusPanel();});Ui.enter(pageView);updateCounter();save();});
             if(n+1<book.count&&!destroyed&&ticket==generation)bitmap(n+1);
         }catch(Exception e){runOnUiThread(()->{if(!destroyed&&ticket==generation){status.setText("Página indisponível");Toast.makeText(this,error(e),Toast.LENGTH_LONG).show();}});}});
     }
-    private void updateCounter(){status.setText((index+1)+" / "+book.count+" · "+Math.round((index+1)*100f/book.count)+"%");progress.setProgress(index);}
-    private void move(int direction){jump(index+direction*(mode.equals("dupla")?step:1));}
+    private void updateCounter(){status.setText((index+1)+" / "+book.count+" · "+Math.round((index+1)*100f/book.count)+"%");if(guided&&!panels.isEmpty())status.append((guidedFallback?" · Trecho ":" · Quadro ")+(panelIndex+1)+"/"+panels.size());progress.setProgress(index);}
+    private void move(int direction){if(guided&&panelIndex+direction>=0&&panelIndex+direction<panels.size()){panelIndex+=direction;focusPanel();return;}jump(index+direction*(mode.equals("dupla")?step:1));}
     private void jump(int n){if(source==null)return;if(n<0||n>=book.count){Toast.makeText(this,n<0?"Início do quadrinho":"Você chegou ao final!",Toast.LENGTH_SHORT).show();return;}index=n;initial=false;if(vertical!=null){vertical.setSelection(n);updateCounter();save();}else loadPage();}
     private void chooseMode(){if(source==null)return;String[] names={"Página única","Modo mangá (direita → esquerda)","Página dupla inteligente","Leitura vertical"};String[] values={"normal","manga","dupla","vertical"};new AlertDialog.Builder(this).setTitle("Como você quer ler?").setItems(names,(d,n)->{save();mode=values[n];book.mode=mode;initial=false;setupMode();save();}).show();}
     private void toggleControls(){controls=!controls;top.setVisibility(controls?View.VISIBLE:View.GONE);bottom.setVisibility(controls?View.VISIBLE:View.GONE);getWindow().getDecorView().setSystemUiVisibility(controls?0:View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);}

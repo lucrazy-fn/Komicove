@@ -1,5 +1,6 @@
 from panel_app.runtime import *
 import panel_app.runtime as _runtime
+from panel_app.guided import detect_regions
 
 class LangWindow(tk.Toplevel):
     def __init__(self, master, cb):
@@ -185,6 +186,11 @@ class ReaderWindow(tk.Toplevel):
         except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
 
         prefs = load_prefs()
+        self._guided = bool(prefs.get("reader_guided", False))
+        self._guide_key = None
+        self._regions = []
+        self._region_index = 0
+        self._guide_last = False
         self._persist_zoom = bool(prefs.get("reader_persist_zoom", True))
         self._auto_fit = bool(prefs.get("reader_auto_fit", True))
         self._manga = prefs.get("manga", False)
@@ -194,6 +200,8 @@ class ReaderWindow(tk.Toplevel):
         self._zoom = float(reader_state.get("zoom", self.Z0))
         self._offset = list(reader_state.get("offset", [0, 0]))
         self._double = bool(reader_state.get("double", False))
+        if self._guided:
+            self._double = False
         self._manga = bool(reader_state.get("manga", self._manga))
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
@@ -230,7 +238,7 @@ class ReaderWindow(tk.Toplevel):
 
         left = tk.Frame(inner, bg=c["surface"])
         left.pack(side="left", fill="y")
-        self._mkbtn(left, f"◀  {TEXTS[LANG]['back']}", self._close, accent=True).pack(side="left", padx=(0, 14))
+        self._pill(left, f"◀  {TEXTS[LANG]['back']}", self._close, variant="accent", font=FBTN, pad_x=20, pad_y=10, min_w=120).pack(side="left", padx=(0, 14))
 
         title_box = tk.Frame(left, bg=c["surface"])
         title_box.pack(side="left", fill="y")
@@ -261,7 +269,7 @@ class ReaderWindow(tk.Toplevel):
         self._cv = tk.Canvas(self, bg=c["canvas_bg"], highlightthickness=0, cursor="crosshair")
         self._cv.pack(fill="both", expand=True)
 
-        self._bot = tk.Frame(self, bg=c["surface"], height=66)
+        self._bot = tk.Frame(self, bg=c["surface"], height=78)
         self._bot.pack(fill="x")
         self._bot.pack_propagate(False)
         self._prog_cv = tk.Canvas(self._bot, height=6, bg=c["progress_bg"], highlightthickness=0)
@@ -272,12 +280,12 @@ class ReaderWindow(tk.Toplevel):
 
         nf = tk.Frame(ib, bg=c["surface"]); nf.pack(side="left")
         self._nav_btn(nf, "‹" if not ICONS.get("prev") else "", self._prev,
-                      icon=ICONS.get("prev")).pack(side="left", padx=(0, 8))
+                      icon=ICONS.get("prev"), size=52).pack(side="left", padx=(0, 8))
         self._page_lbl = tk.Label(nf, text="", font=("Consolas", 12, "bold"),
                                   bg=c["surface_alt"], fg=c["text"], width=11, padx=10, pady=6)
         self._page_lbl.pack(side="left", padx=2)
         self._nav_btn(nf, "›" if not ICONS.get("next") else "", self._next,
-                      icon=ICONS.get("next")).pack(side="left", padx=(8, 0))
+                      icon=ICONS.get("next"), size=52).pack(side="left", padx=(8, 0))
 
         zf = tk.Frame(ib, bg=c["surface"]); zf.pack(side="left", padx=18)
         self._nav_btn(zf, "−" if not ICONS.get("zoom_out") else "", self._zoom_out,
@@ -337,6 +345,8 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<Escape>", lambda e: self._escape())
         self.bind("<t>",      lambda e: self._toggle_theme())
         self.bind("<g>",      lambda e: self._toggle_thumbnails())
+        self.bind("<l>",      self._toggle_guided)
+        self.bind("<L>",      self._toggle_guided)
         self.bind("<b>",      lambda e: self._toggle_bookmark())
         self.bind("<r>",      lambda e: self._rotate())
         self.bind("<question>", lambda e: self._show_shortcuts())
@@ -352,12 +362,12 @@ class ReaderWindow(tk.Toplevel):
         return self._pill(parent, text, cmd, icon=icon,
                           variant="accent" if accent else "ghost")
 
-    def _nav_btn(self, parent, text, cmd, icon=None):
+    def _nav_btn(self, parent, text, cmd, icon=None, size=40):
         c = THEME
         host_bg = parent.cget("bg")
-        size, r = 40, 12
+        r = 12
         cv = tk.Canvas(parent, width=size, height=size, bg=host_bg,
-                       highlightthickness=0, cursor="hand2", takefocus=0)
+                       highlightthickness=0, cursor="hand2", takefocus=1)
         def render(fill, fg, outline):
             cv.delete("all")
             _rrect(cv, 1, 1, size - 1, size - 1, r, fill=fill)
@@ -369,6 +379,10 @@ class ReaderWindow(tk.Toplevel):
         cv.bind("<Enter>", lambda e: render(c["accent"], "#fff", c["accent"]))
         cv.bind("<Leave>", lambda e: render(c["surface_alt"], c["text"], c["border"]))
         cv.bind("<Button-1>", lambda e: cmd())
+        cv.bind("<Return>", lambda e: cmd())
+        cv.bind("<space>", lambda e: cmd())
+        cv.bind("<FocusIn>", lambda e: render(c["surface_alt"], c["text"], c["accent"]))
+        cv.bind("<FocusOut>", lambda e: render(c["surface_alt"], c["text"], c["border"]))
         return cv
 
     def _processed_pil(self, idx):
@@ -403,6 +417,28 @@ class ReaderWindow(tk.Toplevel):
         ch = self._cv.winfo_height() or 600
         img = self._compose_pages()
         iw, ih = img.size
+
+        if self._guided:
+            key = (self._idx, self._rotation, self._double, self._manga)
+            if key != self._guide_key:
+                self._regions, self._guide_fallback = detect_regions(img, self._manga)
+                self._region_index = len(self._regions) - 1 if self._guide_last else 0
+                self._guide_last = False
+                self._guide_key = key
+            left, top, right, bottom = self._regions[self._region_index]
+            x, y = int(left * iw), int(top * ih)
+            crop = img.crop((x, y, max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))))
+            scale = min(max(1, cw - 24) / crop.width, max(1, ch - 24) / crop.height)
+            crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))), Image.Resampling.LANCZOS)
+            full = Image.new("RGB", (cw, ch), THEME["canvas_bg"])
+            full.paste(crop.convert("RGB"), ((cw - crop.width) // 2, (ch - crop.height) // 2))
+            if alpha < 1:
+                full = Image.blend(Image.new("RGB", full.size, THEME["canvas_bg"]), full, alpha)
+            self._tk_img = ImageTk.PhotoImage(full)
+            self._cv.delete("all")
+            self._cv.create_image(0, 0, anchor="nw", image=self._tk_img)
+            self._hud()
+            return
 
         if reset:
             self._zoom = self.Z0
@@ -481,6 +517,11 @@ class ReaderWindow(tk.Toplevel):
         n = self._count
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
+        if self._guided and self._regions:
+            label = "Trecho" if self._guide_fallback else "Quadro"
+            self._page_lbl.config(text=f"{self._idx+1}/{n}\n{label} {self._region_index+1}/{len(self._regions)}", width=13, font=("Consolas", 10, "bold"))
+        else:
+            self._page_lbl.config(width=11)
         self._zoom_lbl.config(text=f"{self._zoom*100:.0f}%")
         if hasattr(self, "_bm_btn") and self._bm_btn.winfo_exists():
             self._bm_btn.pill_set_text(self._bm_label())
@@ -529,6 +570,9 @@ class ReaderWindow(tk.Toplevel):
         return 2 if self._double else 1
 
     def _next(self):
+        if self._guided:
+            self._guided_move(1)
+            return
         nxt = self._idx - self._step() if self._manga else self._idx + self._step()
         if nxt >= self._count or nxt < 0:
             if (not self._manga and self._idx + self._step() >= self._count) or \
@@ -538,8 +582,38 @@ class ReaderWindow(tk.Toplevel):
         self._fade_to(nxt)
 
     def _prev(self):
+        if self._guided:
+            self._guided_move(-1)
+            return
         prv = self._idx + self._step() if self._manga else self._idx - self._step()
         self._fade_to(prv)
+
+    def _toggle_guided(self, event=None):
+        if self._fading:
+            return "break"
+        self._guided = not self._guided
+        self._guide_key = None
+        self._guide_last = False
+        if self._guided:
+            self._double = False
+            if hasattr(self._double_btn, "pill_set_active"):
+                self._double_btn.pill_set_active(False)
+        save_prefs(reader_guided=self._guided)
+        self._show(reset=False)
+        return "break"
+
+    def _guided_move(self, direction):
+        if self._fading:
+            return
+        target = self._region_index + direction
+        if 0 <= target < len(self._regions):
+            self._region_index = target
+            self._show(reset=False)
+        elif 0 <= self._idx + direction < self._count:
+            self._guide_last = direction < 0
+            self._fade_to(self._idx + direction)
+        elif direction > 0:
+            self._maybe_next_chapter()
 
     def _maybe_next_chapter(self):
         if not self._on_finish:
@@ -574,7 +648,7 @@ class ReaderWindow(tk.Toplevel):
         dialog.title("Preferências do leitor")
         dialog.configure(bg=THEME["bg"])
         dialog.resizable(False, False)
-        dialog.geometry("520x360")
+        dialog.geometry("560x450")
         dialog.transient(self); dialog.grab_set()
         header=tk.Frame(dialog,bg=THEME["surface"],height=72);header.pack(fill="x");header.pack_propagate(False)
         tk.Label(header,text="⚙  Preferências do leitor",font=FTITLE,
@@ -584,8 +658,10 @@ class ReaderWindow(tk.Toplevel):
         body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=20,pady=16)
         persist = tk.BooleanVar(value=self._persist_zoom)
         autofit = tk.BooleanVar(value=self._auto_fit)
+        guided = tk.BooleanVar(value=self._guided)
         for var, title, detail in ((persist, "Persistir zoom e deslocamento", "Mantém escala e posição ao trocar de página."),
-                                   (autofit, "Ajustar à tela automaticamente", "Abre cada HQ no melhor encaixe disponível.")):
+                                   (autofit, "Ajustar à tela automaticamente", "Abre cada HQ no melhor encaixe disponível."),
+                                   (guided, "Leitura guiada (experimental) · L", "Setas percorrem quadros; sem detecção, usa trechos aproximados.")):
             card=tk.Frame(body,bg=THEME["surface_alt"],highlightthickness=1,highlightbackground=THEME["border"])
             card.pack(fill="x",pady=5)
             check=tk.Checkbutton(card,text=title,variable=var,anchor="w",font=FBTN,
@@ -599,9 +675,15 @@ class ReaderWindow(tk.Toplevel):
         def apply():
             self._persist_zoom = bool(persist.get()); self._auto_fit = bool(autofit.get())
             save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
+            self._guided = bool(guided.get())
+            save_prefs(reader_guided=self._guided)
+            self._guide_key = None
+            if self._guided:
+                self._double = False
             if not self._persist_zoom:
                 self._zoom = self.Z0; self._offset = [0, 0]; self._show(reset=False)
             dialog.destroy()
+            self._show(reset=False)
         self._pill(dialog, "Salvar preferências", apply, variant="accent", font=FBTN,
                    pad_x=24, pad_y=10).pack(pady=(4, 18))
 
@@ -666,7 +748,7 @@ class ReaderWindow(tk.Toplevel):
         win.configure(bg=c["surface"])
         win.resizable(False, False)
         win.grab_set()
-        W, H = 360, 380
+        W, H = 400, 430
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
         win.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
         tk.Canvas(win, width=W, height=3, bg=c["accent"], highlightthickness=0).place(x=0, y=0)
@@ -682,6 +764,7 @@ class ReaderWindow(tk.Toplevel):
             ("R", "Girar página"),
             ("B", "Marcar bookmark"),
             ("G", "Mostrar miniaturas"),
+            ("L", "Ativar / desativar leitura guiada"),
             ("T", "Alternar tema"),
             ("[ / ]", "Reduzir / aumentar brilho"),
             ("?", "Esta janela"),
@@ -698,6 +781,9 @@ class ReaderWindow(tk.Toplevel):
                   pad_x=24, pad_y=10).pack(pady=14)
 
     def _toggle_double(self):
+        if self._guided:
+            messagebox.showinfo("Leitura guiada", "Desative a leitura guiada nas Preferências para usar página dupla.")
+            return
         self._double = not self._double
         if hasattr(self._double_btn, "pill_set_active"):
             self._double_btn.pill_set_active(self._double)

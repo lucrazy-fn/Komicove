@@ -10,9 +10,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar executavel." }
     if ($ExecutableOnly) { Write-Host "Executavel: dist\PANEL\PANEL.exe"; return }
     $Compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-    $CompilerPath = if ($Compiler) { $Compiler.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-    if (-not (Test-Path -LiteralPath $CompilerPath)) { throw "Executavel pronto. Instale Inno Setup 6 para gerar o instalador." }
+    $CompilerPath = if ($Compiler) { $Compiler.Source } else {
+        @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+          "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+          "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+            Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
+    if (-not $CompilerPath -or -not (Test-Path -LiteralPath $CompilerPath)) { throw "Executavel pronto. Instale Inno Setup 6 para gerar o instalador." }
     & $CompilerPath installer\Panel.iss
     if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar instalador." }
-    Write-Host "Instalador: dist\installer\PANEL-Setup-1.5.0.exe"
+    Write-Host "Instalador: dist\installer\PANEL-Setup-1.6.0.exe"
 } finally { Pop-Location }

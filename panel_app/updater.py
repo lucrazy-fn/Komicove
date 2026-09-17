@@ -1,7 +1,7 @@
 import os, re
 from urllib.parse import urlparse
 import requests
-CURRENT_VERSION="1.5.0"
+CURRENT_VERSION="1.6.0"
 RELEASES_URL="https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases"
 API_URL="https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/latest"
 

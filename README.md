@@ -2,69 +2,63 @@
 
 # PANEL · Comic Book Reader
 
-Sua biblioteca de quadrinhos, do seu jeito. Leitor para Windows com capas, coleções, progresso salvo e recursos de comunidade opcionais.
+Leitor de quadrinhos gratuito e de código aberto para Windows e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**1.5.0 · Windows 10/11 · Android 8+ · Python 3.10+ · MIT**
+**Windows 1.6.0 · Android 1.5.0 · Licença MIT**
 
-[Releases](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Reportar problema](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
+[Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
-> Em desenvolvimento. Os recursos descritos aqui correspondem ao código desta versão; releases antigas podem não incluí-los.
+> Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
-## Comece por aqui
+## Para começar
 
-Se houver um instalador disponível em Releases, baixe e execute o arquivo de instalação. O pacote gerado por este projeto inclui Python e as bibliotecas do leitor: o usuário não precisa instalar Python.
+- **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
+- **Android 8 ou superior:** baixe o APK na mesma página.
 
-1. Abra o PANEL e use o modo convidado para leitura local.
-2. Clique em **Pasta** e escolha onde estão seus quadrinhos.
-3. Abra uma capa para começar. O progresso fica salvo no computador.
+No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, importe os arquivos pelo seletor do dispositivo. Escolha uma HQ na biblioteca para começar.
 
-O instalador cria um atalho no menu Iniciar e oferece um atalho opcional na área de trabalho. A instalação é por usuário, sem exigir administrador. Os dados em `%APPDATA%\Panel` são preservados na desinstalação.
+## Recursos
 
-## O que tem no app
+- Biblioteca com capas, busca, favoritos e progresso salvo.
+- Coleções para organizar seu acervo.
+- Leitor com zoom, marcadores, página dupla, modo mangá e leitura vertical.
+- Preferências de persistência do zoom e encaixe automático.
+- Leitura guiada experimental no Windows e no Android.
+- Botões de navegação e retorno à biblioteca com área de clique ampliada.
 
-- **Biblioteca:** capas, busca, favoritos, filtros e progresso de leitura.
-- **Coleções:** organização por pastas e agrupamento de séries.
-- **Leitor:** zoom, miniaturas, marcadores, tela cheia, página dupla, modo mangá e leitura vertical.
-- **Personalização:** temas, traduções e animações de interação.
-- **Backup:** exportação e restauração dos dados de leitura.
-- **Android 1.4.0:** leitor nativo para Android 8+, com biblioteca, coleções, progresso, favoritos, backup, atualizações e diagnóstico seguro.
+### Leitura guiada experimental
 
-Publique somente conteúdo próprio ou que você tenha autorização para distribuir.
+Ative em **Preferências do leitor**. As setas percorrem os quadros detectados. No Windows, pressione **L** para ativar ou desativar o recurso.
 
-## Versão Android
+Quando a detecção não reconhece as divisões da página, o leitor usa trechos aproximados com sobreposição, identificados como **Trecho**. Páginas com quadros diagonais, sobrepostos ou bordas coloridas podem não ser reconhecidas corretamente.
 
-O PANEL também possui uma edição mobile nativa em Java, com a mesma conta e API do desktop. A versão Android 1.3.2 inclui importação pelo seletor de arquivos, leitor com gestos e zoom, página dupla, modo mangá, leitura vertical, marcadores, backup e suporte a CBZ, ZIP, PDF, 7Z, CB7, TAR, CBT e CBR/RAR conforme a compatibilidade da biblioteca.
+## Formatos
 
-Para compilar, abra a pasta `android` no Android Studio usando JDK 17. O APK de teste é gerado em `android/app/build/outputs/apk/debug/app-debug.apk`. Consulte [`android/README.md`](android/README.md) para os requisitos e instruções completas.
+| Formato | Windows | Android |
+| --- | --- | --- |
+| CBZ / ZIP | Suporte incluído | Suporte incluído |
+| PDF | Suporte incluído | Suporte incluído |
+| CBR / RAR | 7-Zip ou ferramenta compatível | Conforme a compatibilidade da biblioteca Junrar |
+| 7Z / CB7 / TAR / CBT | Requer 7-Zip instalado separadamente | Suporte incluído |
 
-## Formatos de leitura local
+Arquivos compactados devem conter páginas de imagem. Arquivos com senha não são suportados; RAR5 pode não abrir no Android.
 
-| Arquivos | Dependência |
-| --- | --- |
-| CBZ / ZIP | Suporte nativo |
-| PDF | PyMuPDF, incluído no pacote do leitor |
-| CBR / RAR | 7-Zip ou ferramenta compatível com rarfile, como UnRAR |
-| 7Z / CB7 / TAR / CBT | 7-Zip instalado separadamente |
+## Colaborar com o PANEL
 
-Os arquivos compactados precisam conter páginas de imagem. Arquivos protegidos por senha não são suportados nesta integração.
+Sugestões, relatos de bugs, melhorias de acessibilidade, traduções e contribuições de código são bem-vindos.
 
-O app procura `7z`/`7zz` no PATH e o 7-Zip nas pastas padrão do Windows. Para uma instalação diferente, defina `PANEL_7ZIP_PATH` com o caminho completo de `7z.exe` antes de iniciar o app. O instalador do PANEL não redistribui o 7-Zip.
+1. Confira as Issues existentes antes de abrir uma nova.
+2. Para mudanças maiores, descreva a proposta em uma Issue antes de implementar.
+3. Crie um fork e uma branch para sua alteração.
+4. Faça uma mudança focada e teste o comportamento afetado.
+5. Abra um pull request explicando o problema, a solução e como você testou. Para alterações visuais, inclua capturas de tela.
 
-Os uploads da comunidade continuam limitados a CBZ, ZIP, CBR, RAR e PDF; suporte local não significa suporte para publicação.
+## Encontrou um problema?
 
+Abra uma [Issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues) com a versão do PANEL, seu sistema operacional, os passos para reproduzir e o resultado esperado. Se possível, inclua a mensagem de erro ou uma captura de tela.
 
-## Contas e servidor
-
- O leitor local funciona sem servidor. Login somente se quiser utilizar a comunidade!
-
-## Problemas comuns
-
-- **Login sem conexão:** será corrigido na versão 1.6.
-- **CBR/7Z não abre:** confira a instalação do 7-Zip, a integridade do arquivo e se ele possui senha.
-- **Capas ou ícones ausentes no pacote:** mantenha a pasta gerada inteira; não mova somente o EXE.
-
-Ao abrir uma issue, informe versão, mensagem de erro e passos para reproduzir. Não anexe senhas, tokens ou obras sem autorização.
+Para falhas na leitura guiada, informe a página e se o contador mostrava **Quadro** ou **Trecho**. Não compartilhe senhas, tokens ou arquivos de quadrinhos sem autorização.
 
 ## Licença
 
-O código do PANEL usa a [licença MIT](LICENSE). Dependências e ferramentas externas mantêm suas próprias licenças; revise suas condições antes de redistribuir o pacote.
+O PANEL usa a [licença MIT](LICENSE). As dependências mantêm suas próprias licenças.

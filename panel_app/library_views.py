@@ -568,7 +568,7 @@ class LibraryWindow(tk.Tk):
         dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); dialog.grab_set()
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
         tk.Label(head,text="✦  Atualizações",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.4.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.5.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         status=tk.Label(dialog,text="Verificando versões…",font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
         notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
         notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
@@ -595,8 +595,8 @@ class LibraryWindow(tk.Tk):
         api_host = parsed.netloc or "não configurada"
         report = (
             "PANEL — Diagnóstico seguro\n"
-            f"Windows: 1.5.0\n"
-            "Android: 1.4.0\n"
+            f"Windows: 1.6.0\n"
+            "Android: 1.5.0\n"
             f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n"
             f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
             f"API: {api_host}\n"

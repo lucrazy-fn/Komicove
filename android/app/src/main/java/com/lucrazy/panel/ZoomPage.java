@@ -18,6 +18,13 @@ final class ZoomPage extends View {
             public boolean onDoubleTap(MotionEvent e){zoom=zoom>1?1:2.5f;panX=panY=0;clamp();invalidate();return true;}
             public boolean onSingleTapConfirmed(MotionEvent e){if(moved||pinching)return true;if(e.getX()<getWidth()*.22)actions.previous();else if(e.getX()>getWidth()*.78)actions.next();else actions.toggle();performClick();return true;}});
     }
+    void focus(RectF region){
+        if(image==null||getWidth()==0||getHeight()==0)return;
+        float s=Math.min(getWidth()/(region.width()*image.getWidth()),getHeight()/(region.height()*image.getHeight()))*.96f;
+        zoom=Math.max(1,Math.min(6,s/fit()));s=fit()*zoom;
+        panX=(.5f-region.centerX())*image.getWidth()*s;panY=(.5f-region.centerY())*image.getHeight()*s;
+        clamp();invalidate();
+    }
     void setImage(Bitmap b){image=b;clamp();invalidate();}
     void restore(float z,float x,float y){zoom=Math.max(1,Math.min(6,z));panX=x*getWidth();panY=y*getHeight();clamp();invalidate();}
     void fitToScreen(){zoom=1;panX=panY=0;clamp();invalidate();}

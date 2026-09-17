@@ -6,9 +6,10 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 35
-        versionCode 10400
-        versionName '1.4.0'
+        versionCode 10500
+        versionName '1.5.0'
     }
+    buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { release { minifyEnabled false } }
     testOptions { unitTests.includeAndroidResources = true }
@@ -18,7 +19,7 @@ tasks.register('copyNamedDebugApk', Copy) {
     dependsOn('assembleDebug')
     from(layout.buildDirectory.file('outputs/apk/debug/app-debug.apk'))
     into(rootProject.layout.projectDirectory.dir('build/outputs/named'))
-    rename { 'PANEL-Android-1.4.0.apk' }
+    rename { "PANEL-Android-${android.defaultConfig.versionName}.apk" }
 }
 
 dependencies {
