@@ -191,10 +191,14 @@ class ReaderWindow(tk.Toplevel):
         self._regions = []
         self._region_index = 0
         self._guide_last = False
+        self._guide_overview = False
+        self._guide_saved = None
+        self._guide_written = None
         self._persist_zoom = bool(prefs.get("reader_persist_zoom", True))
         self._auto_fit = bool(prefs.get("reader_auto_fit", True))
         self._manga = prefs.get("manga", False)
         reader_state = load_reader_state(self._content_key)
+        self._guide_saved = (reader_state.get("guided_page", -1), reader_state.get("guided_panel", 0))
         self._has_saved_zoom = "zoom" in reader_state
         self._updating_zoom = False
         self._zoom = float(reader_state.get("zoom", self.Z0))
@@ -252,7 +256,8 @@ class ReaderWindow(tk.Toplevel):
         self._mkbtn(right, "⛶", self._immersive_toggle).pack(side="right", padx=3)
         self._mkbtn(right, TEXTS[LANG]["fullscreen"], self._fullscreen).pack(side="right", padx=3)
         self._mkbtn(right, "📜  Webtoon", self._open_webtoon).pack(side="right", padx=3)
-        self._mkbtn(right, TEXTS[LANG]["fit"], self._fit).pack(side="right", padx=3)
+        self._overview_btn = self._mkbtn(right, "Página inteira · V" if self._guided else TEXTS[LANG]["fit"], self._toggle_overview)
+        self._overview_btn.pack(side="right", padx=3)
         self._mkbtn(right, "⚙  Preferências", self._reader_preferences).pack(side="right", padx=3)
         self._mkbtn(right, current_theme_label(), self._toggle_theme, icon=ICONS.get("theme")).pack(side="right", padx=3)
 
@@ -347,6 +352,8 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<g>",      lambda e: self._toggle_thumbnails())
         self.bind("<l>",      self._toggle_guided)
         self.bind("<L>",      self._toggle_guided)
+        self.bind("<v>",      self._toggle_overview)
+        self.bind("<V>",      self._toggle_overview)
         self.bind("<b>",      lambda e: self._toggle_bookmark())
         self.bind("<r>",      lambda e: self._rotate())
         self.bind("<question>", lambda e: self._show_shortcuts())
@@ -423,21 +430,30 @@ class ReaderWindow(tk.Toplevel):
             if key != self._guide_key:
                 self._regions, self._guide_fallback = detect_regions(img, self._manga)
                 self._region_index = len(self._regions) - 1 if self._guide_last else 0
+                if self._guide_saved and self._guide_saved[0] == self._idx and not self._guide_last:
+                    self._region_index = max(0, min(int(self._guide_saved[1]), len(self._regions) - 1))
+                self._guide_saved = None
                 self._guide_last = False
                 self._guide_key = key
             left, top, right, bottom = self._regions[self._region_index]
             x, y = int(left * iw), int(top * ih)
-            crop = img.crop((x, y, max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))))
+            crop = img.copy() if self._guide_overview else img.crop((x, y, max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))))
             scale = min(max(1, cw - 24) / crop.width, max(1, ch - 24) / crop.height)
             crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))), Image.Resampling.LANCZOS)
             full = Image.new("RGB", (cw, ch), THEME["canvas_bg"])
             full.paste(crop.convert("RGB"), ((cw - crop.width) // 2, (ch - crop.height) // 2))
+            if self._guide_overview:
+                ox, oy = (cw - crop.width) // 2, (ch - crop.height) // 2
+                ImageDraw.Draw(full).rectangle((ox + left * crop.width, oy + top * crop.height,
+                                                ox + right * crop.width, oy + bottom * crop.height),
+                                               outline=THEME["accent"], width=3)
             if alpha < 1:
                 full = Image.blend(Image.new("RGB", full.size, THEME["canvas_bg"]), full, alpha)
             self._tk_img = ImageTk.PhotoImage(full)
             self._cv.delete("all")
             self._cv.create_image(0, 0, anchor="nw", image=self._tk_img)
             self._hud()
+            self._save_guided_position()
             return
 
         if reset:
@@ -514,6 +530,8 @@ class ReaderWindow(tk.Toplevel):
             self._prog_cv.create_rectangle(bx-1, 0, bx+1, h, fill="#ffd24a", outline="")
 
     def _hud(self):
+        if hasattr(self, "_overview_btn"):
+            self._overview_btn.pill_set_text(("Voltar ao quadro · V" if self._guide_overview else "Página inteira · V") if self._guided else TEXTS[LANG]["fit"])
         n = self._count
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
@@ -588,11 +606,30 @@ class ReaderWindow(tk.Toplevel):
         prv = self._idx + self._step() if self._manga else self._idx - self._step()
         self._fade_to(prv)
 
+    def _save_guided_position(self):
+        if not self._guided or not self._regions:
+            return
+        position = (self._idx, self._region_index)
+        if position != self._guide_written:
+            save_progress(self._path, self._idx)
+            save_reader_state(self._content_key, guided_page=self._idx, guided_panel=self._region_index)
+            self._guide_written = position
+
+    def _toggle_overview(self, event=None):
+        if self._fading:
+            return "break"
+        if self._guided:
+            self._guide_overview = not self._guide_overview
+            self._show(reset=False)
+        else:
+            self._fit()
+        return "break"
+
     def _toggle_guided(self, event=None):
         if self._fading:
             return "break"
         self._guided = not self._guided
-        self._guide_key = None
+        self._guide_overview = False
         self._guide_last = False
         if self._guided:
             self._double = False
@@ -670,14 +707,14 @@ class ReaderWindow(tk.Toplevel):
                 highlightthickness=0,bd=0)
             check.pack(fill="x",padx=12,pady=(9,0))
             tk.Label(card,text=detail,font=FSMALL,bg=THEME["surface_alt"],fg=THEME["text_dim"]).pack(anchor="w",padx=40,pady=(0,9))
-        tk.Label(body,text="Atalho rápido: pressione E para encaixar a página na tela.",font=FSMALL,
+        tk.Label(body,text="E: encaixar página · V: página inteira / voltar ao quadro",font=FSMALL,
                  bg=THEME["bg"],fg=THEME["text_dim"]).pack(anchor="w",pady=(8,0))
         def apply():
             self._persist_zoom = bool(persist.get()); self._auto_fit = bool(autofit.get())
             save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
             self._guided = bool(guided.get())
             save_prefs(reader_guided=self._guided)
-            self._guide_key = None
+            self._guide_overview = False
             if self._guided:
                 self._double = False
             if not self._persist_zoom:
@@ -748,7 +785,7 @@ class ReaderWindow(tk.Toplevel):
         win.configure(bg=c["surface"])
         win.resizable(False, False)
         win.grab_set()
-        W, H = 400, 430
+        W, H = 420, 480
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
         win.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
         tk.Canvas(win, width=W, height=3, bg=c["accent"], highlightthickness=0).place(x=0, y=0)
@@ -765,6 +802,7 @@ class ReaderWindow(tk.Toplevel):
             ("B", "Marcar bookmark"),
             ("G", "Mostrar miniaturas"),
             ("L", "Ativar / desativar leitura guiada"),
+            ("V", "Página inteira / voltar ao quadro"),
             ("T", "Alternar tema"),
             ("[ / ]", "Reduzir / aumentar brilho"),
             ("?", "Esta janela"),
@@ -881,6 +919,7 @@ class ReaderWindow(tk.Toplevel):
                 pass
 
     def _close(self):
+        self._save_guided_position()
         save_progress(self._path, self._idx)
         save_reader_state(self._content_key, page=self._idx,
                           zoom=self._zoom if self._persist_zoom else self.Z0,
