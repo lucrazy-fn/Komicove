@@ -43,8 +43,9 @@ public final class ReaderActivity extends Activity {
             if(source!=null){initial=true;setupMode();}
         });
     }
-    private void focusPanel(){
-        if(pageView!=null&&!panels.isEmpty()){if(overview)pageView.overview(panels.get(panelIndex));else {pageView.clearOverview();pageView.focus(panels.get(panelIndex));}}
+    private void focusPanel(){focusPanel(false);}
+    private void focusPanel(boolean animate){
+        if(pageView!=null&&!panels.isEmpty()){if(overview)pageView.overview(panels.get(panelIndex));else {pageView.clearOverview();pageView.focus(panels.get(panelIndex),animate&&getSharedPreferences("reader",0).getBoolean("animate_guided",true));}}
         overviewButton.setText(overview?"Voltar ao quadro":guided?"Página inteira":"Encaixar");
         overviewButton.setContentDescription(overview?"Voltar ao quadro selecionado":"Mostrar página inteira");
         updateCounter();
@@ -68,8 +69,9 @@ public final class ReaderActivity extends Activity {
         }catch(Exception e){runOnUiThread(()->{if(!destroyed&&ticket==generation){status.setText("Página indisponível");Toast.makeText(this,error(e),Toast.LENGTH_LONG).show();}});}});
     }
     private void updateCounter(){status.setText((index+1)+" / "+book.count+" · "+Math.round((index+1)*100f/book.count)+"%");if(guided&&!panels.isEmpty())status.append((guidedFallback?" · Trecho ":" · Quadro ")+(panelIndex+1)+"/"+panels.size());progress.setProgress(index);}
-    private void move(int direction){if(loading)return;if(guided&&panelIndex+direction>=0&&panelIndex+direction<panels.size()){panelIndex+=direction;focusPanel();save();return;}jump(index+direction*(mode.equals("dupla")?step:1));}
-    private void jump(int n){if(source==null)return;if(n<0||n>=book.count){Toast.makeText(this,n<0?"Início do quadrinho":"Você chegou ao final!",Toast.LENGTH_SHORT).show();return;}index=n;initial=false;if(vertical!=null){vertical.setSelection(n);updateCounter();save();}else loadPage();}
+    private void move(int direction){if(loading)return;if(guided&&panelIndex+direction>=0&&panelIndex+direction<panels.size()){panelIndex+=direction;focusPanel(true);save();return;}jump(index+direction*(mode.equals("dupla")?step:1));}
+    private void offerNextIssue(){save();LibraryStore.Book next=store.nextIssue(book);AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("HQ concluída!").setMessage(next==null?"Você chegou ao final.":"Continuar com "+next.title+" — edição "+next.issue+"?").setNegativeButton("Ficar aqui",null).setNeutralButton("Biblioteca",(d,w)->finish());if(next!=null)dialog.setPositiveButton("Próxima edição",(d,w)->{startActivity(new android.content.Intent(this,ReaderActivity.class).putExtra("book",next.id));finish();});dialog.show();}
+    private void jump(int n){if(source==null)return;if(n<0||n>=book.count){if(n>=book.count)offerNextIssue();else Toast.makeText(this,"Início do quadrinho",Toast.LENGTH_SHORT).show();return;}index=n;initial=false;if(vertical!=null){vertical.setSelection(n);updateCounter();save();}else loadPage();}
     private void chooseMode(){if(source==null)return;String[] names={"Página única","Modo mangá (direita → esquerda)","Página dupla inteligente","Leitura vertical"};String[] values={"normal","manga","dupla","vertical"};new AlertDialog.Builder(this).setTitle("Como você quer ler?").setItems(names,(d,n)->{save();mode=values[n];book.mode=mode;initial=false;setupMode();save();}).show();}
     private void toggleControls(){controls=!controls;top.setVisibility(controls?View.VISIBLE:View.GONE);bottom.setVisibility(controls?View.VISIBLE:View.GONE);getWindow().getDecorView().setSystemUiVisibility(controls?0:View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);}
     private void thumbnails(){if(source==null)return;ListView list=new ListView(this);list.setAdapter(new PagesAdapter(true));AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Escolher página").setView(list).setNegativeButton("Fechar",null).create();list.setOnItemClickListener((p,v,n,id)->{dialog.dismiss();jump(n);});dialog.show();list.setSelection(index);}

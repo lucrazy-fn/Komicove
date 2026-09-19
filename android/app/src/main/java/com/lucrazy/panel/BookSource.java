@@ -21,12 +21,13 @@ final class BookSource implements Closeable {
     private File extracted;
     private long extractedBytes;
     static boolean image(String name) {return name.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpe?g|webp|gif|bmp)$")&&!name.contains("__MACOSX")&&!new File(name).getName().startsWith(".");}
-    static boolean supported(String name) {return name.toLowerCase(Locale.ROOT).matches(".*\\.(cbz|zip|pdf|cbr|rar|7z|cb7|tar|cbt)$");}
+    static boolean supported(String name) {return name.toLowerCase(Locale.ROOT).matches(".*\\.(cbz|zip|pdf|cbr|rar|7z|cb7|tar|cbt|epub)$");}
 
     BookSource(File file,File cache) throws Exception {
         try {
             String lower=file.getName().toLowerCase(Locale.ROOT);
-            if(lower.endsWith(".pdf")) {
+            if(lower.endsWith(".epub")) {zip=new ZipFile(file);pages.addAll(EpubPages.read(zip));
+            } else if(lower.endsWith(".pdf")) {
                 descriptor=ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);pdf=new PdfRenderer(descriptor);
                 for(int i=0;i<pdf.getPageCount();i++)pages.add(Integer.toString(i));
             } else {
@@ -50,6 +51,14 @@ final class BookSource implements Closeable {
                         try(TarArchiveInputStream tar=new TarArchiveInputStream(new BufferedInputStream(new FileInputStream(file)))) {
                             TarArchiveEntry e;while((e=tar.getNextTarEntry())!=null)if(e.isFile()&&!e.isSymbolicLink()&&!e.isLink()&&image(e.getName()))extractedPages.add(extract(e.getName(),tar,extractedPages.size()));
                         }
+                    } else if(Rar5Reader.matches(file)) {
+                        Rar5Reader.extract(file,name->{
+                            if(extractedPages.size()>=MAX_PAGES)throw new IOException("Limite de páginas excedido.");
+                            File dest=new File(extracted,Integer.toString(extractedPages.size()));
+                            OutputStream out=limitedOutput(dest);
+                            extractedPages.add(new FilePage(name,dest.getAbsolutePath()));
+                            return out;
+                        });
                     } else {
                         try(Archive rar=new Archive(file)) {
                             if(rar.isEncrypted())throw new IOException("Arquivos com senha não são suportados.");

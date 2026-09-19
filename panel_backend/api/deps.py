@@ -34,6 +34,7 @@ def get_current_user(
     user = accounts.get_user_by_token(db, token)
     if user is None:
         raise HTTPException(status_code=401, detail="Sessão expirada ou inválida.")
+    accounts.record_access(user)
     return user
 
 

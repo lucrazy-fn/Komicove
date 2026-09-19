@@ -344,4 +344,3 @@ class AuthWindow(tk.Toplevel):
         self.cb(None)
 
 
-

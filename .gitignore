@@ -6,6 +6,7 @@ moderation_records.json
 _demo_moderation_records.json
 .env
 .venv/
+.venv-linux/
 venv/
 dist/
 build/

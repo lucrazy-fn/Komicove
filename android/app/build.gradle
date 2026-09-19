@@ -6,8 +6,8 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 35
-        versionCode 10501
-        versionName '1.5.1'
+        versionCode 10600
+        versionName '1.6.0'
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -27,6 +27,7 @@ dependencies {
     implementation 'org.apache.commons:commons-compress:1.27.1'
     implementation 'org.tukaani:xz:1.10'
     implementation 'com.github.junrar:junrar:7.5.5'
+    implementation 'me.zhanghai.android.libarchive:library:1.1.6'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
 }

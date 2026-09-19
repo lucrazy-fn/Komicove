@@ -85,6 +85,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     except (accounts.UsernameTakenError, accounts.EmailTakenError) as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    accounts.record_access(result.user)
     return AuthResponse(
         token=result.token,
         user=UserPublic(
@@ -111,6 +112,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             raise HTTPException(401,"Código de autenticação em duas etapas inválido.")
 
     with _attempt_lock: _attempts.pop(key,None)
+    accounts.record_access(result.user)
     return AuthResponse(
         token=result.token,
         user=UserPublic(

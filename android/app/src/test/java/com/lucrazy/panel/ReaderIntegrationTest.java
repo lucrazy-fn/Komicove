@@ -17,6 +17,23 @@ import java.util.zip.*;
 @Config(sdk=28)
 public class ReaderIntegrationTest {
     private LibraryStore store;
+    @Test public void nestedFolderPagesAreSortedAndReadable()throws Exception {
+        Bitmap image=Bitmap.createBitmap(20,30,Bitmap.Config.ARGB_8888);
+        ByteArrayOutputStream png=new ByteArrayOutputStream();image.compress(Bitmap.CompressFormat.PNG,100,png);
+        File file=File.createTempFile("nested-",".cbz",store.context.getCacheDir());
+        try {
+            try(ZipOutputStream out=new ZipOutputStream(new FileOutputStream(file))){
+                for(String name:new String[]{"HQ/Capitulo/10.png","HQ/Capitulo/2.png","HQ/Capitulo/1.png"}){
+                    out.putNextEntry(new ZipEntry(name));out.write(png.toByteArray());out.closeEntry();
+                }
+            }
+            try(BookSource source=new BookSource(file,store.context.getCacheDir())){
+                assertEquals(3,source.pages.size());assertEquals("HQ/Capitulo/1.png",source.pages.get(0));
+                assertEquals("HQ/Capitulo/10.png",source.pages.get(2));
+                for(int i=0;i<3;i++)assertNotNull(source.page(i,200));
+            }
+        }finally{file.delete();image.recycle();}
+    }
     @Test public void guidedPositionSurvivesLibraryReload()throws Exception {
         LibraryStore.Book b=store.importStream(new ByteArrayInputStream(cbz()),"Guided.cbz");
         b.page=1;b.guidedPage=1;b.guidedPanel=4;store.save(b);

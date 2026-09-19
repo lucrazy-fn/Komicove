@@ -12,9 +12,9 @@ import java.util.*;
 
 final class LibraryStore {
     static class Book {
-        String id,title,file,collection="";int page,count;int guidedPage=-1,guidedPanel=0;boolean favorite;double updated;float zoom=1,offsetX=0,offsetY=0;String mode="normal";JSONArray marks=new JSONArray();
-        JSONObject json()throws JSONException{return new JSONObject().put("id",id).put("title",title).put("file",file).put("collection",collection).put("page",page).put("count",count).put("favorite",favorite).put("updated",updated).put("zoom",zoom).put("offsetX",offsetX).put("offsetY",offsetY).put("mode",mode).put("marks",marks).put("guidedPage",guidedPage).put("guidedPanel",guidedPanel);}
-        static Book parse(JSONObject j){Book b=new Book();b.id=j.optString("id");b.title=j.optString("title");b.file=j.optString("file");b.collection=j.optString("collection");b.page=j.optInt("page");b.guidedPage=j.optInt("guidedPage",-1);b.guidedPanel=Math.max(0,j.optInt("guidedPanel",0));b.count=j.optInt("count");b.favorite=j.optBoolean("favorite");b.updated=j.optDouble("updated",0);b.zoom=(float)j.optDouble("zoom",1);b.offsetX=(float)j.optDouble("offsetX",0);b.offsetY=(float)j.optDouble("offsetY",0);b.mode=j.optString("mode","normal");b.marks=j.optJSONArray("marks");if(b.marks==null)b.marks=new JSONArray();return b;}
+        String series="",author="",issue="";boolean duplicateImport;String id,title,file,collection="";int page,count;int guidedPage=-1,guidedPanel=0;boolean favorite;double updated;float zoom=1,offsetX=0,offsetY=0;String mode="normal";JSONArray marks=new JSONArray();
+        JSONObject json()throws JSONException{return new JSONObject().put("series",series).put("author",author).put("issue",issue).put("id",id).put("title",title).put("file",file).put("collection",collection).put("page",page).put("count",count).put("favorite",favorite).put("updated",updated).put("zoom",zoom).put("offsetX",offsetX).put("offsetY",offsetY).put("mode",mode).put("marks",marks).put("guidedPage",guidedPage).put("guidedPanel",guidedPanel);}
+        static Book parse(JSONObject j){Book b=new Book();b.series=j.optString("series");b.author=j.optString("author");b.issue=j.optString("issue");b.id=j.optString("id");b.title=j.optString("title");b.file=j.optString("file");b.collection=j.optString("collection");b.page=j.optInt("page");b.guidedPage=j.optInt("guidedPage",-1);b.guidedPanel=Math.max(0,j.optInt("guidedPanel",0));b.count=j.optInt("count");b.favorite=j.optBoolean("favorite");b.updated=j.optDouble("updated",0);b.zoom=(float)j.optDouble("zoom",1);b.offsetX=(float)j.optDouble("offsetX",0);b.offsetY=(float)j.optDouble("offsetY",0);b.mode=j.optString("mode","normal");b.marks=j.optJSONArray("marks");if(b.marks==null)b.marks=new JSONArray();return b;}
     }
     final Context context;final File books,covers;private final SharedPreferences prefs;
     LibraryStore(Context c){context=c.getApplicationContext();prefs=context.getSharedPreferences("library",0);books=new File(context.getFilesDir(),"books");covers=new File(context.getFilesDir(),"covers");books.mkdirs();covers.mkdirs();}
@@ -25,16 +25,29 @@ final class LibraryStore {
     synchronized void remove(Book b){List<Book> list=all();list.removeIf(x->x.id.equals(b.id));write(list);file(b).delete();cover(b).delete();}
     File file(Book b){return new File(books,b.file);}
     File cover(Book b){return new File(covers,b.id+".jpg");}
+    void replaceCover(Book book,Uri uri)throws IOException {
+        android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inJustDecodeBounds=true;
+        try(InputStream in=context.getContentResolver().openInputStream(uri)){android.graphics.BitmapFactory.decodeStream(in,null,opts);}
+        if(opts.outWidth<=0||opts.outHeight<=0)throw new IOException("Imagem inválida.");
+        opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>1200)opts.inSampleSize*=2;opts.inJustDecodeBounds=false;
+        Bitmap bitmap;try(InputStream in=context.getContentResolver().openInputStream(uri)){bitmap=android.graphics.BitmapFactory.decodeStream(in,null,opts);}
+        if(bitmap==null)throw new IOException("Não foi possível abrir a capa.");
+        File temp=File.createTempFile("cover-",".jpg",covers);
+        try {try(OutputStream out=new FileOutputStream(temp)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,88,out))throw new IOException("Falha ao salvar capa.");}
+            if(!temp.renameTo(cover(book)))throw new IOException("Falha ao substituir capa.");
+        }finally{bitmap.recycle();temp.delete();}
+    }
+    Book nextIssue(Book current){return ReadingOrder.next(current,all());}
     String name(Uri uri){String name="";try(Cursor c=context.getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())name=c.getString(0);}catch(Exception ignored){}return name.isEmpty()?"Quadrinho.cbz":name;}
     Book importUri(Uri uri)throws Exception {try(InputStream in=context.getContentResolver().openInputStream(uri)){if(in==null)throw new IOException("Arquivo indisponível.");return importStream(in,name(uri));}}
     Book importStream(InputStream in,String name)throws Exception {
-        if(!BookSource.supported(name))throw new IOException("Use CBZ, ZIP, PDF, CBR, RAR, 7Z, CB7, TAR ou CBT.");
+        if(!BookSource.supported(name))throw new IOException("Use CBZ, ZIP, PDF, CBR, RAR, 7Z, CB7, TAR, CBT ou EPUB de HQ.");
         File temp=File.createTempFile("import-",".part",books);File finalFile=null;boolean added=false;
         try{
             MessageDigest hash=MessageDigest.getInstance("SHA-256");long total=0;
             try(OutputStream out=new FileOutputStream(temp)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){total+=n;if(total>768L*1024*1024)throw new IOException("Limite de importação: 768 MB por arquivo.");if(Thread.currentThread().isInterrupted())throw new InterruptedIOException();hash.update(buffer,0,n);out.write(buffer,0,n);}}
             StringBuilder hex=new StringBuilder();for(byte b:hash.digest())hex.append(String.format(Locale.ROOT,"%02x",b&255));String id=hex.toString();
-            Book existing=get(id);if(existing!=null){temp.delete();return existing;}
+            Book existing=get(id);if(existing!=null){temp.delete();existing.duplicateImport=true;return existing;}
             String extension=name.substring(name.lastIndexOf('.')).toLowerCase(Locale.ROOT);finalFile=new File(books,id+extension);
             if(!temp.renameTo(finalFile))throw new IOException("Não foi possível salvar o arquivo.");
             Book b=new Book();b.id=id;b.file=finalFile.getName();b.title=name.substring(0,name.lastIndexOf('.'));b.updated=System.currentTimeMillis()/1000.0;

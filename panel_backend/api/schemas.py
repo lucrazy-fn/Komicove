@@ -120,6 +120,7 @@ class ModeratorInviteSummary(BaseModel):
 
 
 class ManagedUserPublic(BaseModel):
+    last_seen_at: datetime | None = None
     id: str
     username: str
     display_name: str

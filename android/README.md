@@ -1,6 +1,6 @@
 # PANEL Android — leitor nativo
 
-Aplicativo Android em Java, separado da interface Tkinter do Windows. Android 8.0 ou superior (API 26). Versão 1.5.1, com leitor completo, atualizações, diagnóstico seguro, preferências e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
+Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 1.6.0, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
 
 ## Biblioteca e leitura
 
@@ -15,4 +15,4 @@ Aplicativo Android em Java, separado da interface Tkinter do Windows. Android 8.
 
 ## Formatos
 
-CBZ/ZIP e PDF; TAR/CBT e 7Z/CB7 por bibliotecas embarcadas. CBR/RAR por Junrar, com limitações de compatibilidade (RAR5 não é suportado). Não precisa do programa 7-Zip do Windows. Arquivos com senha não são suportados. Até 768 MB por importação, 48 MB por página codificada e 1,5 GB de conteúdo descompactado. Imagens grandes são reduzidas para limitar o uso de memória. GIF é exibido como imagem estática.
+CBZ/ZIP e PDF; TAR/CBT e 7Z/CB7 por bibliotecas embarcadas. CBR/RAR por Junrar e RAR5 por libarchive. As imagens podem estar dentro de pastas no arquivo. Não precisa do programa 7-Zip do Windows. Arquivos com senha não são suportados. Até 768 MB por importação, 48 MB por página codificada e 1,5 GB de conteúdo descompactado. Imagens grandes são reduzidas para limitar o uso de memória. GIF é exibido como imagem estática.

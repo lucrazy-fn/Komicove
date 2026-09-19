@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panel-comic-book-reader"
-version = "1.6.1"
+version = "1.7.0"
 description = "Leitor de quadrinhos local com biblioteca e API opcional."
 readme = "README.md"
 requires-python = ">=3.10"

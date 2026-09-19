@@ -41,6 +41,9 @@ def _migrate_legacy_schema() -> None:
     if "users" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("users")}
+    if "last_seen_at" not in columns:
+        with _engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP"))
     if "is_moderator" not in columns:
         with _engine.begin() as connection:
             connection.execute(text(

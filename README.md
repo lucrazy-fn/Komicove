@@ -2,9 +2,9 @@
 
 # PANEL · Comic Book Reader
 
-Leitor de quadrinhos gratuito e de código aberto para Windows e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
+Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 1.6.1 · Android 1.5.1 · Licença MIT**
+**Windows/Linux 1.7.0 · Android 1.6.0 · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
@@ -13,6 +13,7 @@ Leitor de quadrinhos gratuito e de código aberto para Windows e Android. Organi
 ## Para começar
 
 - **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
+- **Linux x86_64:** baixe o pacote portátil ou o Flatpak experimental. A compatibilidade pode variar conforme a distribuição.
 - **Android 8 ou superior:** baixe o APK na mesma página.
 
 No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, importe os arquivos pelo seletor do dispositivo. Escolha uma HQ na biblioteca para começar.
@@ -34,14 +35,15 @@ Quando a detecção não reconhece as divisões da página, o leitor usa trechos
 
 ## Formatos
 
-| Formato | Windows | Android |
+| Formato | Windows/Linux | Android |
 | --- | --- | --- |
 | CBZ / ZIP | Suporte incluído | Suporte incluído |
+| EPUB de imagens | Suporte experimental | Suporte experimental |
 | PDF | Suporte incluído | Suporte incluído |
-| CBR / RAR | 7-Zip ou ferramenta compatível | Conforme a compatibilidade da biblioteca Junrar |
+| CBR / RAR | 7-Zip ou ferramenta compatível | Suporte incluído |
 | 7Z / CB7 / TAR / CBT | Requer 7-Zip instalado separadamente | Suporte incluído |
 
-Arquivos compactados devem conter páginas de imagem. Arquivos com senha não são suportados; RAR5 pode não abrir no Android.
+Arquivos compactados devem conter páginas de imagem, inclusive dentro de pastas. O Android inclui suporte a RAR5. Arquivos com senha não são suportados.
 
 ## Colaborar com o PANEL
 

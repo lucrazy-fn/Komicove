@@ -1,5 +1,6 @@
 from panel_app.runtime import *
 from panel_app.publishing_views import PublishDialog
+from panel_app import book_metadata
 
 class ComicCard:
     HOVER_STEPS = 10
@@ -138,6 +139,7 @@ class ComicCard:
 
         menu.add_separator()
         menu.add_command(label="▶  Abrir", command=lambda: self._open_cb(path))
+        menu.add_command(label="Editar informações", command=lambda: book_metadata.edit(self._root, path, get_comic_info(path), self._root._refresh_library))
 
         menu.add_separator()
         menu.add_command(label="📤  Publicar na comunidade", command=lambda: self._publish())
@@ -443,10 +445,11 @@ _COMIC_INFO_CACHE = {}
 def get_comic_info(path):
     if path not in _COMIC_INFO_CACHE:
         _COMIC_INFO_CACHE[path] = read_comic_info(path)
-    return _COMIC_INFO_CACHE.get(path, {})
+    return {**_COMIC_INFO_CACHE.get(path, {}), **book_metadata.get(path)}
 
 def comic_display_title(path):
     info = get_comic_info(path)
+    if book_metadata.get(path).get('title'): return info['title']
     if info.get("series") and info.get("number"):
         return f"{info['series']} #{info['number']}"
     if info.get("title"): return info["title"]

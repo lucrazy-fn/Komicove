@@ -22,7 +22,7 @@ def _public(u: User) -> ManagedUserPublic:
     return ManagedUserPublic(id=u.id, username=u.username, display_name=u.display_name or u.username,
         email=u.email, is_active=u.is_active, is_moderator=u.is_moderator, role=u.role,
         suspended_until=u.suspended_until, punishment_reason=u.punishment_reason,
-        deleted_at=u.deleted_at, created_at=u.created_at)
+        deleted_at=u.deleted_at, created_at=u.created_at, last_seen_at=u.last_seen_at)
 
 def _audit_public(item: AdminAuditLog) -> AuditLogPublic:
     return AuditLogPublic(id=item.id, actor_username=item.actor_username,

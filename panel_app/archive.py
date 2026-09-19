@@ -11,7 +11,7 @@ try:
 except ImportError: fitz=None
 
 IMG_EXTS={".jpg",".jpeg",".png",".webp",".gif",".bmp"}
-SUPPORTED_EXTENSIONS=(".cbz", ".cbr", ".zip", ".rar", ".pdf", ".7z", ".cb7", ".tar", ".cbt")
+SUPPORTED_EXTENSIONS=(".cbz", ".cbr", ".zip", ".rar", ".pdf", ".7z", ".cb7", ".tar", ".cbt", ".epub")
 
 def find_7zip():
     candidates = [os.environ.get("PANEL_7ZIP_PATH"), shutil.which("7z"), shutil.which("7zz"),
@@ -34,7 +34,12 @@ class ArchiveBackend:
     def _detect(self):
         self._seven_zip = find_7zip()
         suffix=Path(self.path).suffix.lower()
-        if zipfile.is_zipfile(self.path):
+        if suffix == '.epub':
+            from .epub import image_pages
+            self.kind = 'zip'
+            with zipfile.ZipFile(self.path) as source:
+                self.names = image_pages(source)
+        elif zipfile.is_zipfile(self.path):
             self.kind="zip"
             with zipfile.ZipFile(self.path) as source: self.names=sorted([n for n in source.namelist() if Path(n).suffix.lower() in IMG_EXTS and not Path(n).name.startswith('.')],key=natural_key)
         elif self._seven_zip and suffix in {".rar", ".cbr", ".7z", ".cb7", ".tar", ".cbt"}:

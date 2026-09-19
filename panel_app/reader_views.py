@@ -186,6 +186,9 @@ class ReaderWindow(tk.Toplevel):
         except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
 
         prefs = load_prefs()
+        self._animate_guided = bool(prefs.get("reader_animate_guided", True))
+        self._guide_motion = None
+        self._guide_animation = None
         self._guided = bool(prefs.get("reader_guided", False))
         self._guide_key = None
         self._regions = []
@@ -435,7 +438,10 @@ class ReaderWindow(tk.Toplevel):
                 self._guide_saved = None
                 self._guide_last = False
                 self._guide_key = key
-            left, top, right, bottom = self._regions[self._region_index]
+            rect = self._regions[self._region_index]
+            if self._guide_motion and self._guide_motion[:2] == (self._guide_key, self._region_index) and not self._guide_overview:
+                rect = self._guide_motion[2]
+            left, top, right, bottom = rect
             x, y = int(left * iw), int(top * ih)
             crop = img.copy() if self._guide_overview else img.crop((x, y, max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))))
             scale = min(max(1, cw - 24) / crop.width, max(1, ch - 24) / crop.height)
@@ -644,13 +650,42 @@ class ReaderWindow(tk.Toplevel):
             return
         target = self._region_index + direction
         if 0 <= target < len(self._regions):
+            previous = self._regions[self._region_index]
+            if self._guide_motion and self._guide_motion[0] == self._guide_key:
+                previous = self._guide_motion[2]
             self._region_index = target
-            self._show(reset=False)
+            self._animate_region(previous)
         elif 0 <= self._idx + direction < self._count:
             self._guide_last = direction < 0
             self._fade_to(self._idx + direction)
         elif direction > 0:
             self._maybe_next_chapter()
+
+    def _animate_region(self, previous):
+        if self._guide_animation:
+            self.after_cancel(self._guide_animation)
+            self._guide_animation = None
+        self._guide_motion = None
+        if not self._animate_guided or self._guide_overview:
+            self._show(reset=False)
+            return
+        key, index = self._guide_key, self._region_index
+        target = self._regions[index]
+        started = time.monotonic()
+        def frame():
+            self._guide_animation = None
+            if not self._guided or not self._animate_guided or self._guide_overview or self._guide_key != key or self._region_index != index:
+                self._guide_motion = None
+                return
+            progress = min(1., (time.monotonic() - started) / .24)
+            eased = progress * progress * (3 - 2 * progress)
+            self._guide_motion = (key, index, tuple(a + (b - a) * eased for a, b in zip(previous, target)))
+            if progress >= 1:
+                self._guide_motion = None
+            self._show(reset=False)
+            if progress < 1:
+                self._guide_animation = self.after(20, frame)
+        frame()
 
     def _maybe_next_chapter(self):
         if not self._on_finish:
@@ -685,7 +720,7 @@ class ReaderWindow(tk.Toplevel):
         dialog.title("Preferências do leitor")
         dialog.configure(bg=THEME["bg"])
         dialog.resizable(False, False)
-        dialog.geometry("560x450")
+        dialog.geometry("560x560")
         dialog.transient(self); dialog.grab_set()
         header=tk.Frame(dialog,bg=THEME["surface"],height=72);header.pack(fill="x");header.pack_propagate(False)
         tk.Label(header,text="⚙  Preferências do leitor",font=FTITLE,
@@ -696,9 +731,11 @@ class ReaderWindow(tk.Toplevel):
         persist = tk.BooleanVar(value=self._persist_zoom)
         autofit = tk.BooleanVar(value=self._auto_fit)
         guided = tk.BooleanVar(value=self._guided)
+        animated = tk.BooleanVar(value=self._animate_guided)
         for var, title, detail in ((persist, "Persistir zoom e deslocamento", "Mantém escala e posição ao trocar de página."),
                                    (autofit, "Ajustar à tela automaticamente", "Abre cada HQ no melhor encaixe disponível."),
-                                   (guided, "Leitura guiada (experimental) · L", "Setas percorrem quadros; sem detecção, usa trechos aproximados.")):
+                                   (guided, "Leitura guiada (experimental) · L", "Setas percorrem quadros; sem detecção, usa trechos aproximados."),
+                                   (animated, "Transições suaves entre quadros", "Desative para mover imediatamente, sem animação.")):
             card=tk.Frame(body,bg=THEME["surface_alt"],highlightthickness=1,highlightbackground=THEME["border"])
             card.pack(fill="x",pady=5)
             check=tk.Checkbutton(card,text=title,variable=var,anchor="w",font=FBTN,
@@ -710,6 +747,12 @@ class ReaderWindow(tk.Toplevel):
         tk.Label(body,text="E: encaixar página · V: página inteira / voltar ao quadro",font=FSMALL,
                  bg=THEME["bg"],fg=THEME["text_dim"]).pack(anchor="w",pady=(8,0))
         def apply():
+            if self._guide_animation:
+                self.after_cancel(self._guide_animation)
+                self._guide_animation = None
+            self._guide_motion = None
+            self._animate_guided = bool(animated.get())
+            save_prefs(reader_animate_guided=self._animate_guided)
             self._persist_zoom = bool(persist.get()); self._auto_fit = bool(autofit.get())
             save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
             self._guided = bool(guided.get())

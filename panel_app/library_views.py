@@ -568,7 +568,7 @@ class LibraryWindow(tk.Tk):
         dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); dialog.grab_set()
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
         tk.Label(head,text="✦  Atualizações",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.5.1",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.5.2-alpha",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         status=tk.Label(dialog,text="Verificando versões…",font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
         notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
         notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
@@ -595,8 +595,8 @@ class LibraryWindow(tk.Tk):
         api_host = parsed.netloc or "não configurada"
         report = (
             "PANEL — Diagnóstico seguro\n"
-            f"Windows: 1.6.1\n"
-            "Android: 1.5.1\n"
+            f"Windows: {updater.CURRENT_VERSION}\n"
+            "Android: 1.5.2-alpha\n"
             f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n"
             f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
             f"API: {api_host}\n"
@@ -695,6 +695,7 @@ class LibraryWindow(tk.Tk):
             if len(short) > 40: short = "…" + short[-37:]
             tk.Label(hdr, text=short, font=FTINY, bg=c["bg"], fg=c["text_muted"]).pack(side="left", padx=10, pady=(6,0))
         make_pill(hdr, "+  Pasta", self._choose_folder, variant="accent", font=FSMALL).pack(side="right")
+        make_pill(hdr, "Série / Autor", self._metadata_filters, variant="soft", font=FSMALL).pack(side="right", padx=6)
 
         stf = tk.Frame(self._main, bg=c["bg"]); stf.pack(fill="x", padx=20, pady=(0, 4))
         tk.Label(stf, text=f"{TEXTS[LANG]['filter_status']}:", font=FTINY,
@@ -771,6 +772,27 @@ class LibraryWindow(tk.Tk):
         if total and page >= total - 1: return "done"
         return "reading"
 
+    def _metadata_filters(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Filtrar biblioteca")
+        dialog.configure(bg=THEME["bg"])
+        fields = {}
+        files = self._scan()
+        for key, label in [("series", "Série"), ("writer", "Autor")]:
+            tk.Label(dialog, text=label, bg=THEME["bg"], fg=THEME["text"]).pack(padx=20, pady=(12, 4))
+            choices = sorted({get_comic_info(path).get(key, "") for path in files} - {""})
+            entry = ttk.Combobox(dialog, values=[""] + choices, state="readonly", width=40)
+            entry.set(getattr(self, "_metadata_filter_" + key, ""))
+            entry.pack(padx=20, pady=4)
+            fields[key] = entry
+        def apply(clear=False):
+            for key, entry in fields.items():
+                setattr(self, "_metadata_filter_" + key, "" if clear else entry.get())
+            dialog.destroy()
+            self._populate_library_grid()
+        tk.Button(dialog, text="Aplicar filtros", command=apply).pack(pady=12)
+        tk.Button(dialog, text="Limpar filtros", command=lambda: apply(True)).pack(pady=(0, 12))
+
     def _populate_library_grid(self):
         c = THEME
         for w in self._lib_content.winfo_children():
@@ -778,6 +800,11 @@ class LibraryWindow(tk.Tk):
         self._card_map.clear()
 
         arquivos = self._scan()
+
+        for field in ("series", "writer"):
+            selected = getattr(self, "_metadata_filter_" + field, "")
+            if selected:
+                arquivos = [path for path in arquivos if get_comic_info(path).get(field, "") == selected]
 
         prog = load_progress()
         continuar = []
@@ -838,6 +865,7 @@ class LibraryWindow(tk.Tk):
             self._wire_card(card, path)
 
     def _wire_card(self, card, path):
+        custom_cover = get_comic_info(path).get('cover')
         if self._meta_tooltip:
             tt = self._meta_tooltip
             card.cv.bind("<Enter>",  lambda e, p=path, w=card.cv: tt.show(w, p), add="+")
@@ -845,6 +873,11 @@ class LibraryWindow(tk.Tk):
             card.lbl.bind("<Enter>", lambda e, p=path, w=card.cv: tt.show(w, p), add="+")
             card.lbl.bind("<Leave>", lambda e: tt.hide(), add="+")
         def _on_loaded(p, pil, _card=card):
+            if custom_cover:
+                try:
+                    with Image.open(custom_cover) as source:
+                        pil = source.convert('RGB')
+                except (OSError, ValueError): pass
             try: _card.set_image(pil)
             except Exception: pass
         self._cover_loader.request(path, _on_loaded)

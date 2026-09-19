@@ -33,6 +33,12 @@ class AuthResult:
     token: str
 
 
+def record_access(user: User) -> None:
+    now = _now()
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
+        user.last_seen_at = now
+
+
 def register_user(
     db: Session, *, username: str, password: str, email: str | None = None,
     display_name: str | None = None,
