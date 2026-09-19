@@ -1,0 +1,25 @@
+name: Manter API ativa
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Acordar API do PANEL
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --max-time 90 \
+            --retry 2 \
+            "https://panel-api-tr1a.onrender.com/health"
