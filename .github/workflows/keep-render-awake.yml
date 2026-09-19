@@ -2,7 +2,7 @@ name: Manter API ativa
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -16,10 +16,14 @@ jobs:
     steps:
       - name: Acordar API do PANEL
         run: |
-          curl \
-            --fail \
-            --silent \
-            --show-error \
+          echo "Ping iniciado em $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          status=$(curl \
+            --output /dev/null \
+            --write-out "%{http_code}" \
+            --connect-timeout 15 \
             --max-time 90 \
             --retry 2 \
-            "https://panel-api-tr1a.onrender.com/health"
+            --retry-all-errors \
+            "https://panel-api-tr1a.onrender.com/health")
+          echo "API respondeu HTTP $status"
+          test "$status" -ge 200 -a "$status" -lt 400
