@@ -1,7 +1,7 @@
 <p align="center">
   <img src="panellogo.png" width="240" alt="Logo PANEL">
   &nbsp;&nbsp;&nbsp;
-  <span style="font-size: 100px;">➜</span>
+  <span style="font-size: 150px;">➜</span>
   &nbsp;&nbsp;&nbsp;
   <img src="komicovelogo.png" width="240" alt="Logo Komicove">
 </p>
