@@ -7,6 +7,7 @@ import os
 import base64
 import struct
 import time
+import secrets
 
 _ITERATIONS = 260_000
 
@@ -32,3 +33,9 @@ def totp_code(secret: str, at: int | None=None) -> str:
 def verify_totp(secret: str, code: str) -> bool:
     now=int(time.time())
     return any(hmac.compare_digest(totp_code(secret,now+step*30),str(code).zfill(6)) for step in (-1,0,1))
+
+def new_recovery_codes(count: int = 8) -> list[str]:
+    return [f"{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(count)]
+
+def recovery_code_hash(code: str) -> str:
+    return hashlib.sha256(code.strip().lower().encode("utf-8")).hexdigest()

@@ -1,6 +1,7 @@
 from panel_app.runtime import *
 import panel_app.runtime as _runtime
 from panel_app.guided import detect_regions
+from panel_app.panel_editor import PanelEditor
 
 class LangWindow(tk.Toplevel):
     def __init__(self, master, cb):
@@ -8,7 +9,7 @@ class LangWindow(tk.Toplevel):
         try: self.iconbitmap(resource_path("panel.ico"))
         except Exception as _e: log.debug("silenced: %s", _e)
         self.cb = cb
-        self.title("Idioma / Language")
+        self.title(ui('Idioma / Language', 'Language'))
         self.configure(bg=THEME["bg"])
         self.resizable(False, False)
         self.grab_set()
@@ -17,8 +18,8 @@ class LangWindow(tk.Toplevel):
         self.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
         tk.Canvas(self, width=W, height=3, bg=THEME["accent"], highlightthickness=0).place(x=0, y=0)
         tk.Label(self, text="◈ PANEL", font=FLOGO, bg=THEME["bg"], fg=THEME["text"]).pack(pady=(24, 2))
-        tk.Label(self, text="Idioma / Language", font=FSMALL, bg=THEME["bg"], fg=THEME["text_dim"]).pack(pady=(0, 16))
-        for flag, txt, lang in [("🇧🇷", "Português", "pt"), ("🇺🇸", "English", "en")]:
+        tk.Label(self, text=ui('Idioma / Language', 'Language'), font=FSMALL, bg=THEME["bg"], fg=THEME["text_dim"]).pack(pady=(0, 16))
+        for flag, txt, lang in [("🇧🇷", ui('Português', 'Portuguese'), "pt"), ("🇺🇸", "English", "en")]:
             make_pill(self, f"{flag}   {txt}", lambda l=lang: self._pick(l),
                       variant="soft", font=FBTN, pad_x=20, pad_y=10, min_w=W-100).pack(pady=5)
 
@@ -78,7 +79,7 @@ class ThumbnailStrip(tk.Frame):
 class WebtoonViewer(tk.Toplevel):
     def __init__(self, parent, loader: SmartPageLoader, width=800, height=900):
         super().__init__(parent)
-        self.title("PANEL - Modo Webtoon")
+        self.title(ui('PANEL - Modo Webtoon', 'PANEL - Webtoon Mode'))
         self.geometry(f"{width}x{height}")
         bg = THEME["canvas_bg"]
         self.configure(bg=bg)
@@ -197,6 +198,7 @@ class ReaderWindow(tk.Toplevel):
         self._guide_overview = False
         self._guide_saved = None
         self._guide_written = None
+        self._read_started = time.monotonic()
         self._persist_zoom = bool(prefs.get("reader_persist_zoom", True))
         self._auto_fit = bool(prefs.get("reader_auto_fit", True))
         self._manga = prefs.get("manga", False)
@@ -259,9 +261,10 @@ class ReaderWindow(tk.Toplevel):
         self._mkbtn(right, "⛶", self._immersive_toggle).pack(side="right", padx=3)
         self._mkbtn(right, TEXTS[LANG]["fullscreen"], self._fullscreen).pack(side="right", padx=3)
         self._mkbtn(right, "📜  Webtoon", self._open_webtoon).pack(side="right", padx=3)
-        self._overview_btn = self._mkbtn(right, "Página inteira · V" if self._guided else TEXTS[LANG]["fit"], self._toggle_overview)
+        self._overview_btn = self._mkbtn(right, ui('Página inteira · V', 'Full page · V') if self._guided else TEXTS[LANG]["fit"], self._toggle_overview)
         self._overview_btn.pack(side="right", padx=3)
-        self._mkbtn(right, "⚙  Preferências", self._reader_preferences).pack(side="right", padx=3)
+        self._mkbtn(right, ui('⚙  Preferências', '⚙  Preferences'), self._reader_preferences).pack(side="right", padx=3)
+        self._mkbtn(right, ui('▣  Editar quadros', '▣  Edit panels'), self._edit_panels).pack(side="right", padx=3)
         self._mkbtn(right, current_theme_label(), self._toggle_theme, icon=ICONS.get("theme")).pack(side="right", padx=3)
 
         self._bm_btn = self._pill(right, self._bm_label(), self._toggle_bookmark, variant="soft")
@@ -313,9 +316,9 @@ class ReaderWindow(tk.Toplevel):
         sl.pack(side="left", padx=(8, 0))
         self._slider = sl
 
-        self._thumb_btn = self._pill(ib, "⊟  Miniaturas", self._toggle_thumbnails, variant="soft")
+        self._thumb_btn = self._pill(ib, ui('⊟  Miniaturas', '⊟  Thumbnails'), self._toggle_thumbnails, variant="soft")
         self._thumb_btn.pack(side="right", padx=6)
-        self._double_btn = self._pill(ib, "▭▭ Dupla", self._toggle_double, variant="soft")
+        self._double_btn = self._pill(ib, ui('▭▭ Dupla', '▭▭ Double page'), self._toggle_double, variant="soft")
         self._double_btn.pack(side="right", padx=3)
         self._nav_btn(ib, "↻", self._rotate).pack(side="right", padx=3)
         self._nav_btn(ib, "?", self._show_shortcuts).pack(side="right", padx=3)
@@ -427,11 +430,16 @@ class ReaderWindow(tk.Toplevel):
         ch = self._cv.winfo_height() or 600
         img = self._compose_pages()
         iw, ih = img.size
+        record_page_read(self._content_key, self._idx, self._count)
 
         if self._guided:
             key = (self._idx, self._rotation, self._double, self._manga)
             if key != self._guide_key:
-                self._regions, self._guide_fallback = detect_regions(img, self._manga)
+                manual=load_manual_panels(self._content_key,self._idx)
+                if manual:
+                    self._regions=[tuple(r) for r in manual]; self._guide_fallback=False
+                else:
+                    self._regions, self._guide_fallback = detect_regions(img, self._manga)
                 self._region_index = len(self._regions) - 1 if self._guide_last else 0
                 if self._guide_saved and self._guide_saved[0] == self._idx and not self._guide_last:
                     self._region_index = max(0, min(int(self._guide_saved[1]), len(self._regions) - 1))
@@ -516,6 +524,20 @@ class ReaderWindow(tk.Toplevel):
         self._loader.prefetch(self._idx + 2)
         self._loader.prefetch(self._idx - 1)
 
+    def _edit_panels(self):
+        if self._double:
+            messagebox.showinfo(ui('Editor de quadros','Panel editor'),
+                ui('Desative a página dupla para editar esta página.','Turn off double-page mode to edit this page.'),parent=self)
+            return
+        image=self._compose_pages()
+        automatic,_=detect_regions(image,self._manga)
+        current=load_manual_panels(self._content_key,self._idx) or automatic
+        def saved(regions):
+            save_manual_panels(self._content_key,self._idx,regions)
+            self._guide_key=None; self._regions=list(regions); self._region_index=0
+            self._show(reset=False)
+        PanelEditor(self,image,current,automatic,saved)
+
     def _update_progress_bar(self):
         if not hasattr(self, "_prog_cv") or not self._prog_cv.winfo_exists():
             return
@@ -537,12 +559,12 @@ class ReaderWindow(tk.Toplevel):
 
     def _hud(self):
         if hasattr(self, "_overview_btn"):
-            self._overview_btn.pill_set_text(("Voltar ao quadro · V" if self._guide_overview else "Página inteira · V") if self._guided else TEXTS[LANG]["fit"])
+            self._overview_btn.pill_set_text((ui('Voltar ao quadro · V', 'Return to panel · V') if self._guide_overview else ui('Página inteira · V', 'Full page · V')) if self._guided else TEXTS[LANG]["fit"])
         n = self._count
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
         if self._guided and self._regions:
-            label = "Trecho" if self._guide_fallback else "Quadro"
+            label = "Trecho" if self._guide_fallback else ui('Quadro', 'Panel')
             self._page_lbl.config(text=f"{self._idx+1}/{n}\n{label} {self._region_index+1}/{len(self._regions)}", width=13, font=("Consolas", 10, "bold"))
         else:
             self._page_lbl.config(width=11)
@@ -567,7 +589,7 @@ class ReaderWindow(tk.Toplevel):
         if on_last:
             if not hasattr(self, "_done_overlay") or not self._done_overlay.winfo_exists():
                 self._done_overlay = tk.Frame(self._cv, bg=c["canvas_bg"], highlightthickness=0)
-                lbl_txt = "✓  Concluído!" if is_done else "✓  Marcar como Concluído"
+                lbl_txt = ui('✓  Concluído!', '✓  Completed!') if is_done else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
                 fill = c["read_badge"] if is_done else c["accent"]
                 fg   = c["read_badge_text"] if is_done else "#ffffff"
                 self._done_pill = make_pill(self._done_overlay, lbl_txt,
@@ -577,7 +599,7 @@ class ReaderWindow(tk.Toplevel):
                 self._done_overlay.place(relx=0.5, rely=0.92, anchor="center")
             else:
                 is_done = get_manual_status(self._path) == "done"
-                lbl_txt = "✓  Concluído!" if is_done else "✓  Marcar como Concluído"
+                lbl_txt = ui('✓  Concluído!', '✓  Completed!') if is_done else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
                 if hasattr(getattr(self, "_done_pill", None), "pill_set_text"):
                     self._done_pill.pill_set_text(lbl_txt)
         else:
@@ -717,25 +739,25 @@ class ReaderWindow(tk.Toplevel):
 
     def _reader_preferences(self):
         dialog = tk.Toplevel(self)
-        dialog.title("Preferências do leitor")
+        dialog.title(ui('Preferências do leitor', 'Reader preferences'))
         dialog.configure(bg=THEME["bg"])
         dialog.resizable(False, False)
         dialog.geometry("560x560")
         dialog.transient(self); dialog.grab_set()
         header=tk.Frame(dialog,bg=THEME["surface"],height=72);header.pack(fill="x");header.pack_propagate(False)
-        tk.Label(header,text="⚙  Preferências do leitor",font=FTITLE,
+        tk.Label(header,text=ui('⚙  Preferências do leitor', '⚙  Reader preferences'),font=FTITLE,
                  bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(header,text="Personalize como cada página será aberta",font=FSMALL,
+        tk.Label(header,text=ui('Personalize como cada página será aberta', 'Choose how each page opens'),font=FSMALL,
                  bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=20,pady=16)
         persist = tk.BooleanVar(value=self._persist_zoom)
         autofit = tk.BooleanVar(value=self._auto_fit)
         guided = tk.BooleanVar(value=self._guided)
         animated = tk.BooleanVar(value=self._animate_guided)
-        for var, title, detail in ((persist, "Persistir zoom e deslocamento", "Mantém escala e posição ao trocar de página."),
-                                   (autofit, "Ajustar à tela automaticamente", "Abre cada HQ no melhor encaixe disponível."),
-                                   (guided, "Leitura guiada (experimental) · L", "Setas percorrem quadros; sem detecção, usa trechos aproximados."),
-                                   (animated, "Transições suaves entre quadros", "Desative para mover imediatamente, sem animação.")):
+        for var, title, detail in ((persist, ui('Persistir zoom e deslocamento', 'Keep zoom and position'), ui('Mantém escala e posição ao trocar de página.', 'Keeps scale and position when changing pages.')),
+                                   (autofit, ui('Ajustar à tela automaticamente', 'Automatically fit to screen'), ui('Abre cada HQ no melhor encaixe disponível.', 'Opens each comic using the best available fit.')),
+                                   (guided, ui('Leitura guiada (experimental) · L', 'Guided reading (experimental) · L'), ui('Setas percorrem quadros; sem detecção, usa trechos aproximados.', 'Arrow keys move through panels; when detection fails, approximate sections are used.')),
+                                   (animated, ui('Transições suaves entre quadros', 'Smooth transitions between panels'), ui('Desative para mover imediatamente, sem animação.', 'Disable to move immediately without animation.'))):
             card=tk.Frame(body,bg=THEME["surface_alt"],highlightthickness=1,highlightbackground=THEME["border"])
             card.pack(fill="x",pady=5)
             check=tk.Checkbutton(card,text=title,variable=var,anchor="w",font=FBTN,
@@ -744,7 +766,7 @@ class ReaderWindow(tk.Toplevel):
                 highlightthickness=0,bd=0)
             check.pack(fill="x",padx=12,pady=(9,0))
             tk.Label(card,text=detail,font=FSMALL,bg=THEME["surface_alt"],fg=THEME["text_dim"]).pack(anchor="w",padx=40,pady=(0,9))
-        tk.Label(body,text="E: encaixar página · V: página inteira / voltar ao quadro",font=FSMALL,
+        tk.Label(body,text=ui('E: encaixar página · V: página inteira / voltar ao quadro', 'E: fit page · V: full page / return to panel'),font=FSMALL,
                  bg=THEME["bg"],fg=THEME["text_dim"]).pack(anchor="w",pady=(8,0))
         def apply():
             if self._guide_animation:
@@ -764,7 +786,7 @@ class ReaderWindow(tk.Toplevel):
                 self._zoom = self.Z0; self._offset = [0, 0]; self._show(reset=False)
             dialog.destroy()
             self._show(reset=False)
-        self._pill(dialog, "Salvar preferências", apply, variant="accent", font=FBTN,
+        self._pill(dialog, ui('Salvar preferências', 'Save preferences'), apply, variant="accent", font=FBTN,
                    pad_x=24, pad_y=10).pack(pady=(4, 18))
 
     def _fit(self):
@@ -824,7 +846,7 @@ class ReaderWindow(tk.Toplevel):
     def _show_shortcuts(self):
         c = THEME
         win = tk.Toplevel(self)
-        win.title("Atalhos de teclado")
+        win.title(ui('Atalhos de teclado', 'Keyboard shortcuts'))
         win.configure(bg=c["surface"])
         win.resizable(False, False)
         win.grab_set()
@@ -832,24 +854,24 @@ class ReaderWindow(tk.Toplevel):
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
         win.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
         tk.Canvas(win, width=W, height=3, bg=c["accent"], highlightthickness=0).place(x=0, y=0)
-        tk.Label(win, text="Atalhos de Teclado", font=FBTN, bg=c["surface"],
+        tk.Label(win, text=ui('Atalhos de Teclado', 'Keyboard Shortcuts'), font=FBTN, bg=c["surface"],
                  fg=c["text"], pady=14).pack()
         tk.Frame(win, bg=c["border"], height=1).pack(fill="x", padx=16, pady=(0, 8))
         shortcuts = [
-            ("← / →", "Página anterior / próxima"),
+            ("← / →", ui('Página anterior / próxima', 'Previous / next page')),
             ("+ / -", "Zoom in / out"),
-            ("Ctrl + scroll", "Zoom no cursor"),
-            ("F / F11", "Tela cheia"),
-            ("I", "Modo imersivo"),
-            ("R", "Girar página"),
-            ("B", "Marcar bookmark"),
-            ("G", "Mostrar miniaturas"),
-            ("L", "Ativar / desativar leitura guiada"),
-            ("V", "Página inteira / voltar ao quadro"),
-            ("T", "Alternar tema"),
-            ("[ / ]", "Reduzir / aumentar brilho"),
-            ("?", "Esta janela"),
-            ("Esc", "Sair da tela cheia"),
+            ("Ctrl + scroll", ui('Zoom no cursor', 'Zoom at pointer')),
+            ("F / F11", ui('Tela cheia', 'Fullscreen')),
+            ("I", ui('Modo imersivo', 'Immersive mode')),
+            ("R", ui('Girar página', 'Rotate page')),
+            ("B", ui('Marcar bookmark', 'Toggle bookmark')),
+            ("G", ui('Mostrar miniaturas', 'Show thumbnails')),
+            ("L", ui('Ativar / desativar leitura guiada', 'Enable / disable guided reading')),
+            ("V", ui('Página inteira / voltar ao quadro', 'Full page / return to panel')),
+            ("T", ui('Alternar tema', 'Toggle theme')),
+            ("[ / ]", ui('Reduzir / aumentar brilho', 'Decrease / increase brightness')),
+            ("?", ui('Esta janela', 'This window')),
+            ("Esc", ui('Sair da tela cheia', 'Exit fullscreen')),
         ]
         frame = tk.Frame(win, bg=c["surface"]); frame.pack(padx=24, pady=4, fill="x")
         for key, desc in shortcuts:
@@ -858,12 +880,12 @@ class ReaderWindow(tk.Toplevel):
                      fg=c["accent"], padx=8, pady=3, relief="flat").pack(side="left")
             tk.Label(row, text=desc, font=FSMALL, bg=c["surface"],
                      fg=c["text_dim"], anchor="w").pack(side="left", padx=10)
-        make_pill(win, "Fechar", win.destroy, variant="soft", font=FBTN,
+        make_pill(win, ui('Fechar', 'Close'), win.destroy, variant="soft", font=FBTN,
                   pad_x=24, pad_y=10).pack(pady=14)
 
     def _toggle_double(self):
         if self._guided:
-            messagebox.showinfo("Leitura guiada", "Desative a leitura guiada nas Preferências para usar página dupla.")
+            messagebox.showinfo(ui('Leitura guiada', 'Guided reading'), ui('Desative a leitura guiada nas Preferências para usar página dupla.', 'Disable guided reading in Preferences to use double-page mode.'))
             return
         self._double = not self._double
         if hasattr(self._double_btn, "pill_set_active"):
@@ -923,7 +945,7 @@ class ReaderWindow(tk.Toplevel):
     def _toggle_thumbnails(self):
         if self._thumb_visible:
             self._thumb_visible = False
-            self._thumb_btn.pill_set_text("⊟  Miniaturas")
+            self._thumb_btn.pill_set_text(ui('⊟  Miniaturas', '⊟  Thumbnails'))
             self._thumb_btn.pill_set_active(False)
             self._thumb_frame.pack_forget()
             for w in self._thumb_frame.winfo_children():
@@ -935,7 +957,7 @@ class ReaderWindow(tk.Toplevel):
 
     def _open_thumbnails(self):
         self._thumb_visible = True
-        self._thumb_btn.pill_set_text("⊠  Miniaturas")
+        self._thumb_btn.pill_set_text(ui('⊠  Miniaturas', '⊠  Thumbnails'))
         self._thumb_btn.pill_set_active(True)
         for w in self._thumb_frame.winfo_children():
             try: w.destroy()
@@ -967,6 +989,7 @@ class ReaderWindow(tk.Toplevel):
         save_reader_state(self._content_key, page=self._idx,
                           zoom=self._zoom if self._persist_zoom else self.Z0,
                           offset=self._offset, double=self._double, manga=self._manga)
+        record_reading_time(self._content_key,time.monotonic()-self._read_started)
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()

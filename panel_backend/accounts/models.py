@@ -68,6 +68,28 @@ class SessionToken(Base):
         return _now() < self.expires_at
 
 
+class AccountActionToken(Base):
+    __tablename__ = "account_action_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
+class TotpRecoveryCode(Base):
+    __tablename__ = "totp_recovery_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
 class ModeratorInvite(Base):
     pass
 

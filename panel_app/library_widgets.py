@@ -110,7 +110,7 @@ class ComicCard:
                        relief="flat", borderwidth=1,
                        font=FSMALL)
 
-        fav_label = "★  Desfavoritar" if is_favorite(path) else "☆  Favoritar"
+        fav_label = ui('★  Desfavoritar', '★  Remove favorite') if is_favorite(path) else ui('☆  Favoritar', '☆  Add to favorites')
         def toggle_fav():
             toggle_favorite(path)
             self._draw(self._alpha)
@@ -134,15 +134,15 @@ class ComicCard:
             else:
                 set_manual_status(path, "done")
             self._draw(self._alpha)
-        done_label = "✓  Concluído  ✓" if cur == "done" else "✓  Marcar como Concluído"
+        done_label = ui('✓  Concluído  ✓', '✓  Completed  ✓') if cur == "done" else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
         menu.add_command(label=done_label, command=set_done)
 
         menu.add_separator()
-        menu.add_command(label="▶  Abrir", command=lambda: self._open_cb(path))
-        menu.add_command(label="Editar informações", command=lambda: book_metadata.edit(self._root, path, get_comic_info(path), self._root._refresh_library))
+        menu.add_command(label=ui('▶  Abrir', '▶  Open'), command=lambda: self._open_cb(path))
+        menu.add_command(label=ui('Editar informações', 'Edit information'), command=lambda: book_metadata.edit(self._root, path, get_comic_info(path), self._root._refresh_library))
 
         menu.add_separator()
-        menu.add_command(label="📤  Publicar na comunidade", command=lambda: self._publish())
+        menu.add_command(label=ui('📤  Publicar na comunidade', '📤  Publish to community'), command=lambda: self._publish())
 
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -153,10 +153,11 @@ class ComicCard:
         user = getattr(self._root, "current_user", None)
         if not _ACCOUNTS_AVAILABLE or user is None:
             messagebox.showinfo(
-                "Conta necessária",
-                "Crie uma conta ou entre com uma existente para publicar na comunidade.\n\n"
-                "Use \"Sair\" na barra lateral se quiser trocar de conta, ou reabra o app "
-                "e escolha \"Entrar\"/\"Cadastrar\" em vez de convidado.",
+                ui('Conta necessária', 'Account required'),
+                ui(
+                    "Crie uma conta ou entre com uma existente para publicar na comunidade.\n\nUse \"Sair\" na barra lateral se quiser trocar de conta, ou reabra o app e escolha \"Entrar\"/\"Cadastrar\" em vez de convidado.",
+                    "Create an account or sign in to publish to the community.\n\nUse \"Sign out\" in the sidebar to switch accounts, or reopen the app and choose \"Sign in\"/\"Sign up\" instead of guest mode.",
+                ),
             )
             return
         PublishDialog(self._root, self._path, user)
@@ -493,9 +494,9 @@ class MetaTooltip:
         tk.Label(frame, text=comic_display_title(path), font=FBTN,
                  bg=c["surface"], fg=c["text"], wraplength=220).pack(anchor="w")
         tk.Frame(frame, bg=c["border"], height=1).pack(fill="x", pady=(4, 6))
-        for key, label in [("series","Série"),("number","Nº"),("year","Ano"),
-                           ("writer","Roteiro"),("penciller","Desenho"),
-                           ("publisher","Editora"),("genre","Gênero")]:
+        for key, label in [("series",ui('Série', 'Series')),("number","Nº"),("year",ui('Ano', 'Year')),
+                           ("writer",ui('Roteiro', 'Writer')),("penciller",ui('Desenho', 'Artist')),
+                           ("publisher",ui('Editora', 'Publisher')),("genre",ui('Gênero', 'Genre'))]:
             val = info.get(key, "")
             if val:
                 row = tk.Frame(frame, bg=c["surface"]); row.pack(fill="x", pady=1)

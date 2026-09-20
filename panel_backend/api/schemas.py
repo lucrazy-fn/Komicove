@@ -34,7 +34,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
-    totp_code: str | None = Field(default=None,min_length=6,max_length=6)
+    totp_code: str | None = Field(default=None,min_length=6,max_length=32)
 
     @field_validator("username")
     @classmethod
@@ -48,6 +48,8 @@ class UserPublic(BaseModel):
     display_name: str
     is_moderator: bool = False
     role: str = "user"
+    email_verified: bool = False
+    totp_enabled: bool = False
 
 
 class AuthResponse(BaseModel):
@@ -57,6 +59,15 @@ class AuthResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     display_name: str = Field(min_length=1, max_length=64)
     email: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_profile_email(cls, value: str | None) -> str | None:
+        if value is None or not value.strip(): return None
+        normalized=value.strip().lower(); local,separator,domain=normalized.partition("@")
+        if not separator or not local or "." not in domain or domain.startswith("."):
+            raise ValueError("e-mail inválido / invalid email")
+        return normalized
 
 class NotificationPublic(BaseModel):
     id: str
@@ -91,6 +102,20 @@ class TotpSetup(BaseModel):
 
 class TotpConfirm(BaseModel):
     code: str = Field(min_length=6,max_length=6)
+
+class TotpDisable(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    code: str = Field(min_length=6, max_length=32)
+
+class AccountRecoveryRequest(BaseModel):
+    identifier: str = Field(min_length=3, max_length=255)
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+class EmailVerificationConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
 
 
 class ModeratorClaimRequest(BaseModel):

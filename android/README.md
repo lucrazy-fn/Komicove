@@ -1,6 +1,6 @@
 # PANEL Android — leitor nativo
 
-Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 1.6.0, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
+Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 1.6.1, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
 
 ## Biblioteca e leitura
 

@@ -11,7 +11,7 @@ class PublishDialog(tk.Toplevel):
         self._path = path
         self._user = user
         self._submit_in_progress = False
-        self.title("Publicar na comunidade")
+        self.title(ui('Publicar na comunidade', 'Publish to community'))
         self.configure(bg=THEME["bg"])
         self.resizable(True, True)
         self.minsize(440, 420)
@@ -35,7 +35,7 @@ class PublishDialog(tk.Toplevel):
         form.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         self.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
-        tk.Label(form, text="Publicar na comunidade", font=FTITLE,
+        tk.Label(form, text=ui('Publicar na comunidade', 'Publish to community'), font=FTITLE,
                  bg=c["bg"], fg=c["text"]).pack(pady=(22, 2), **pad)
         tk.Label(form, text=os.path.basename(path), font=FTINY,
                  bg=c["bg"], fg=c["text_dim"]).pack(pady=(0, 14), **pad)
@@ -49,15 +49,15 @@ class PublishDialog(tk.Toplevel):
             e.pack(fill="x", ipady=6, **pad)
             return e
 
-        self._title_e = field("Título")
+        self._title_e = field(ui('Título', 'Title'))
         self._title_e.insert(0, Path(path).stem)
-        self._author_e = field("Autor")
-        self._series_e = field("Série (opcional)")
-        self._chapter_e = field("Número do capítulo (opcional)")
-        self._tags_e = field("Tags (separadas por vírgula)")
-        self._license_e = field("Licença (opcional — ex: CC-BY-4.0, Domínio Público)")
+        self._author_e = field(ui('Autor', 'Author'))
+        self._series_e = field(ui('Série (opcional)', 'Series (optional)'))
+        self._chapter_e = field(ui('Número do capítulo (opcional)', 'Chapter number (optional)'))
+        self._tags_e = field(ui('Tags (separadas por vírgula)', 'Tags (comma-separated)'))
+        self._license_e = field(ui('Licença (opcional — ex: CC-BY-4.0, Domínio Público)', 'License (optional — e.g. CC-BY-4.0, Public Domain)'))
 
-        tk.Label(form, text="Descrição", font=FTINY, bg=c["bg"], fg=c["text_dim"],
+        tk.Label(form, text=ui('Descrição', 'Description'), font=FTINY, bg=c["bg"], fg=c["text_dim"],
                   anchor="w").pack(fill="x", pady=(8, 2), **pad)
         self._desc_txt = tk.Text(form, font=FSMALL, bg=c["surface_alt"], fg=c["text"],
                                    bd=0, highlightthickness=1, highlightbackground=c["border"],
@@ -71,9 +71,9 @@ class PublishDialog(tk.Toplevel):
                            activebackground=c["bg"], activeforeground=c["text"],
                            font=FTINY, anchor="w", relief="flat", bd=0,
                            highlightthickness=0)
-        tk.Checkbutton(form, text="Sou o autor original desta obra",
+        tk.Checkbutton(form, text=ui('Sou o autor original desta obra', 'I am the original author of this work'),
                         variable=self._authorship_var, **chk_kwargs).pack(fill="x", pady=(12, 0), **pad)
-        tk.Checkbutton(form, text="Tenho autorização do autor para publicar",
+        tk.Checkbutton(form, text=ui('Tenho autorização do autor para publicar', "I have the author's permission to publish"),
                         variable=self._authorization_var, **chk_kwargs).pack(fill="x", **pad)
 
         self._status = tk.Label(footer, text="", font=FTINY, bg=c["bg"], fg=c["text_dim"],
@@ -82,9 +82,9 @@ class PublishDialog(tk.Toplevel):
 
         btn_row = tk.Frame(footer, bg=c["bg"])
         btn_row.pack(pady=16, **pad, fill="x")
-        make_pill(btn_row, "Cancelar", self.destroy,
+        make_pill(btn_row, ui('Cancelar', 'Cancel'), self.destroy,
                   variant="ghost", font=FBTN, pad_x=18, pad_y=9).pack(side="left")
-        make_pill(btn_row, "Enviar para moderação", self._submit,
+        make_pill(btn_row, ui('Enviar para moderação', 'Submit for moderation'), self._submit,
                   variant="accent", font=FBTN, pad_x=18, pad_y=9).pack(side="right")
         self._fade_job = None
         self.bind("<Destroy>", self._cancel_fade, add="+")
@@ -109,12 +109,14 @@ class PublishDialog(tk.Toplevel):
         title = self._title_e.get().strip()
         author = self._author_e.get().strip()
         if not title or not author:
-            self._status.config(text="Preencha ao menos título e autor.", fg=THEME["accent2"])
+            self._status.config(text=ui('Preencha ao menos título e autor.', 'Enter at least a title and author.'), fg=THEME["accent2"])
             return
         if not self._authorship_var.get() and not self._authorization_var.get():
             self._status.config(
-                text="Marque que você é o autor ou tem autorização — publicações "
-                     "sem isso têm risco maior de ficar em revisão.",
+                text=ui(
+                    "Marque que você é o autor ou tem autorização — publicações sem isso têm risco maior de ficar em revisão.",
+                    "Confirm that you are the author or have permission — submissions without this have a higher chance of being held for review.",
+                ),
                 fg=THEME["accent2"])
             return
 
@@ -124,12 +126,12 @@ class PublishDialog(tk.Toplevel):
         series_title = self._series_e.get().strip() or None
         try: chapter_number = int(self._chapter_e.get()) if self._chapter_e.get().strip() else None
         except ValueError:
-            self._status.config(text="O número do capítulo precisa ser inteiro.",fg=THEME["accent2"]); return
+            self._status.config(text=ui('O número do capítulo precisa ser inteiro.', 'The chapter number must be an integer.'),fg=THEME["accent2"]); return
         authorship_declared = self._authorship_var.get()
         authorization_declared = self._authorization_var.get()
 
         self._submit_in_progress = True
-        self._status.config(text="Enviando para moderação…", fg=THEME["text_dim"])
+        self._status.config(text=ui('Enviando para moderação…', 'Submitting for moderation…'), fg=THEME["text_dim"])
 
         def worker():
             try:
@@ -147,12 +149,12 @@ class PublishDialog(tk.Toplevel):
             except api_client.ApiAuthError as exc:
                 outcome = (None, str(exc))
             except api_client.ApiUnavailableError:
-                outcome = (None, "Sem conexão com o servidor. Tente novamente mais tarde.")
+                outcome = (None, ui('Sem conexão com o servidor. Tente novamente mais tarde.', 'Could not connect to the server. Try again later.'))
             except api_client.ApiServerError as exc:
                 outcome = (None, str(exc))
             except Exception:
-                log.exception("Falha inesperada durante publicação")
-                outcome = (None, "Não foi possível enviar a publicação agora.")
+                log.exception(ui('Falha inesperada durante publicação', 'Unexpected publishing error'))
+                outcome = (None, ui('Não foi possível enviar a publicação agora.', 'Could not submit the publication now.'))
             try:
                 self.after(0, lambda: self._finish_submit(*outcome))
             except tk.TclError:
@@ -165,5 +167,5 @@ class PublishDialog(tk.Toplevel):
         if error:
             self._status.config(text=error, fg=THEME["accent2"])
             return
-        messagebox.showinfo("Publicação enviada", result.public_message)
+        messagebox.showinfo(ui('Publicação enviada', 'Submission sent'), result.public_message)
         self.destroy()

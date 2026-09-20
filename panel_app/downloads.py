@@ -3,6 +3,7 @@ from dataclasses import dataclass, asdict
 import os, threading, time, uuid
 import requests
 from .storage import APPDATA_DIR, json_load, json_save
+from .translations import ui
 
 HISTORY_FILE = os.path.join(APPDATA_DIR, "downloads.json")
 
@@ -67,16 +68,17 @@ def render_downloads(container, theme, fonts):
     def refresh():
         for child in area.winfo_children(): child.destroy()
         tasks=list(manager.tasks.values())[::-1]
-        if not tasks: tk.Label(area,text="Nenhum download ainda.",font=body,bg=theme["bg"],fg=theme["text_dim"]).pack(pady=40)
+        if not tasks: tk.Label(area,text=ui("Nenhum download ainda.", "No downloads yet."),font=body,bg=theme["bg"],fg=theme["text_dim"]).pack(pady=40)
         for task in tasks:
             card=tk.Frame(area,bg=theme["surface"],padx=14,pady=10); card.pack(fill="x",pady=5)
             pct=int(task.received*100/task.total) if task.total else 0
             tk.Label(card,text=task.title,font=body,bg=theme["surface"],fg=theme["text"]).pack(anchor="w")
-            tk.Label(card,text=f"{task.status} · {pct}% · {task.destination}",font=small,bg=theme["surface"],fg=theme["text_dim"]).pack(anchor="w")
+            status={"queued":ui("na fila", "queued"),"downloading":ui("baixando", "downloading"),"paused":ui("pausado", "paused"),"cancelled":ui("cancelado", "cancelled"),"completed":ui("concluído", "completed"),"failed":ui("falhou", "failed")}.get(task.status,task.status)
+            tk.Label(card,text=f"{status} · {pct}% · {task.destination}",font=small,bg=theme["surface"],fg=theme["text_dim"]).pack(anchor="w")
             controls=tk.Frame(card,bg=theme["surface"]); controls.pack(anchor="e")
-            if task.status=="downloading": tk.Button(controls,text="Pausar",command=lambda i=task.id:manager.pause(i)).pack(side="left")
-            if task.status=="paused": tk.Button(controls,text="Continuar",command=lambda i=task.id:manager.resume(i)).pack(side="left")
-            if task.status in {"downloading","paused","queued"}: tk.Button(controls,text="Cancelar",command=lambda i=task.id:manager.cancel(i)).pack(side="left",padx=5)
+            if task.status=="downloading": tk.Button(controls,text=ui("Pausar", "Pause"),command=lambda i=task.id:manager.pause(i)).pack(side="left")
+            if task.status=="paused": tk.Button(controls,text=ui("Continuar", "Resume"),command=lambda i=task.id:manager.resume(i)).pack(side="left")
+            if task.status in {"downloading","paused","queued"}: tk.Button(controls,text=ui("Cancelar", "Cancel"),command=lambda i=task.id:manager.cancel(i)).pack(side="left",padx=5)
         try: container.after(700,refresh)
         except tk.TclError: pass
     refresh()

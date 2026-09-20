@@ -14,7 +14,7 @@ final class ZoomPage extends View {
     Bitmap image;float zoom=1,panX,panY;private float downX,downY,lastX,lastY;private boolean pinching,moved;private final float touchSlop;
     private final ScaleGestureDetector scale;private final GestureDetector gestures;private final Actions actions;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
-    ZoomPage(Context c,Actions a){super(c);actions=a;touchSlop=ViewConfiguration.get(c).getScaledTouchSlop();setContentDescription("Página do quadrinho. Use dois dedos para ampliar; deslize para trocar de página.");setFocusable(true);
+    ZoomPage(Context c,Actions a){super(c);actions=a;touchSlop=ViewConfiguration.get(c).getScaledTouchSlop();setContentDescription(I18n.t(c,"Página do quadrinho. Use dois dedos para ampliar; deslize para trocar de página."));setFocusable(true);
         scale=new ScaleGestureDetector(c,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
             public boolean onScale(ScaleGestureDetector d){float old=zoom;zoom=Math.max(1,Math.min(6,zoom*d.getScaleFactor()));panX=(panX-(d.getFocusX()-getWidth()/2f))*zoom/old+(d.getFocusX()-getWidth()/2f);panY=(panY-(d.getFocusY()-getHeight()/2f))*zoom/old+(d.getFocusY()-getHeight()/2f);clamp();invalidate();return true;}
         });

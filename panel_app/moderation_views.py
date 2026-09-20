@@ -8,7 +8,7 @@ class ModerationWindow(tk.Toplevel):
         super().__init__(master)
         self._user = user
         self._items = []
-        self.title("PANEL — Moderação")
+        self.title(ui("PANEL — Moderação", "PANEL — Moderation"))
         self.geometry("900x560")
         self.minsize(720, 460)
         self.configure(bg=THEME["bg"])
@@ -17,9 +17,9 @@ class ModerationWindow(tk.Toplevel):
 
         header = tk.Frame(self, bg=THEME["bg"])
         header.pack(fill="x", padx=20, pady=(18, 10))
-        tk.Label(header, text="Pedidos de publicação", font=FTITLE,
+        tk.Label(header, text=ui('Pedidos de publicação', 'Publication requests'), font=FTITLE,
                  bg=THEME["bg"], fg=THEME["text"]).pack(side="left")
-        make_pill(header, "Atualizar", self._refresh, variant="ghost",
+        make_pill(header, ui('Atualizar', 'Refresh'), self._refresh, variant="ghost",
                   font=FBTN, pad_x=14, pad_y=7).pack(side="right")
 
         body = tk.Frame(self, bg=THEME["bg"])
@@ -46,14 +46,14 @@ class ModerationWindow(tk.Toplevel):
         self._status = tk.Label(actions, text="", font=FTINY,
                                 bg=THEME["bg"], fg=THEME["text_dim"])
         self._status.pack(side="left")
-        make_pill(actions, "Rejeitar", lambda: self._decide("rejected"),
+        make_pill(actions, ui('Rejeitar', 'Reject'), lambda: self._decide("rejected"),
                   variant="ghost", font=FBTN, pad_x=16, pad_y=8).pack(side="right")
-        make_pill(actions, "Aprovar", lambda: self._decide("approved"),
+        make_pill(actions, ui('Aprovar', 'Approve'), lambda: self._decide("approved"),
                   variant="accent", font=FBTN, pad_x=16, pad_y=8).pack(side="right", padx=8)
         self._refresh()
 
     def _run(self, operation, callback):
-        self._status.config(text="Carregando…", fg=THEME["text_dim"])
+        self._status.config(text=ui('Carregando…', 'Loading…'), fg=THEME["text_dim"])
 
         def worker():
             try:
@@ -61,10 +61,10 @@ class ModerationWindow(tk.Toplevel):
             except (api_client.ApiAuthError, api_client.ApiServerError) as exc:
                 outcome = (None, str(exc))
             except api_client.ApiUnavailableError:
-                outcome = (None, "Servidor indisponível.")
+                outcome = (None, ui('Servidor indisponível.', 'Server unavailable.'))
             except Exception:
-                log.exception("Falha na tela de moderação")
-                outcome = (None, "Não foi possível concluir a operação.")
+                log.exception(ui('Falha na tela de moderação', 'Moderation screen error'))
+                outcome = (None, ui('Não foi possível concluir a operação.', 'Could not complete the operation.'))
             try: self.after(0, lambda: callback(*outcome))
             except tk.TclError: pass
 
@@ -81,12 +81,12 @@ class ModerationWindow(tk.Toplevel):
         self._list.delete(0, "end")
         for item in items:
             self._list.insert("end", f"{item['title']} — @{item['uploader_username']}")
-        self._status.config(text=f"{len(items)} pedido(s) pendente(s)", fg=THEME["text_dim"])
+        self._status.config(text=ui(f"{len(items)} pedido(s) pendente(s)", f"{len(items)} pending request(s)"), fg=THEME["text_dim"])
         if items:
             self._list.selection_set(0)
             self._show_selected()
         else:
-            self._set_detail("Nenhum pedido aguardando revisão.")
+            self._set_detail(ui('Nenhum pedido aguardando revisão.', 'No requests awaiting review.'))
 
     def _selected(self):
         selection = self._list.curselection()
@@ -96,14 +96,10 @@ class ModerationWindow(tk.Toplevel):
         item = self._selected()
         if not item:
             return
-        self._set_detail(
-            f"Título: {item['title']}\n"
-            f"Autor: {item['author']}\n"
-            f"Enviado por: @{item['uploader_username']}\n"
-            f"Risco: {item['risk_level']}\n"
-            f"Confiança automática: {item['confidence']:.0%}\n\n"
-            f"Análise interna:\n{item['justification']}"
-        )
+        self._set_detail(ui(
+            f"Título: {item['title']}\nAutor: {item['author']}\nEnviado por: @{item['uploader_username']}\nRisco: {item['risk_level']}\nConfiança automática: {item['confidence']:.0%}\n\nAnálise interna:\n{item['justification']}",
+            f"Title: {item['title']}\nAuthor: {item['author']}\nSubmitted by: @{item['uploader_username']}\nRisk: {item['risk_level']}\nAutomatic confidence: {item['confidence']:.0%}\n\nInternal analysis:\n{item['justification']}",
+        ))
 
     def _set_detail(self, text):
         self._detail.config(state="normal")
@@ -114,11 +110,12 @@ class ModerationWindow(tk.Toplevel):
     def _decide(self, decision):
         item = self._selected()
         if not item:
-            messagebox.showinfo("Moderação", "Selecione um pedido primeiro.", parent=self)
+            messagebox.showinfo(ui('Moderação', 'Moderation'), ui('Selecione um pedido primeiro.', 'Select a request first.'), parent=self)
             return
-        verb = "aprovar" if decision == "approved" else "rejeitar"
+        verb = ui("aprovar", "approve") if decision == "approved" else ui("rejeitar", "reject")
         reason = simpledialog.askstring(
-            "Motivo da decisão", f"Explique por que deseja {verb} esta publicação:",
+            ui('Motivo da decisão', 'Decision reason'),
+            ui(f"Explique por que deseja {verb} esta publicação:", f"Explain why you want to {verb} this submission:"),
             parent=self,
         )
         if not reason or len(reason.strip()) < 3:
@@ -135,7 +132,5 @@ class ModerationWindow(tk.Toplevel):
             self._status.config(text=error, fg=THEME["accent2"])
             return
         self._refresh()
-
-
 
 

@@ -14,6 +14,7 @@ BOOKMARKS_FILE = os.path.join(APPDATA_DIR, "bookmarks.json")
 FAVORITES_FILE = os.path.join(APPDATA_DIR, "favorites.json")
 MANUAL_STATUS_FILE = os.path.join(APPDATA_DIR, "manual_status.json")
 PREFS_FILE = os.path.join(APPDATA_DIR, "prefs.json")
+STATS_FILE = os.path.join(APPDATA_DIR, "reading_stats.json")
 COVER_CACHE_DIR = os.path.join(APPDATA_DIR, "cover_cache")
 try:
     os.makedirs(COVER_CACHE_DIR, exist_ok=True)
@@ -93,14 +94,32 @@ def get_manual_status(path): return load_manual_status().get(path)
 def load_prefs(): return json_load(PREFS_FILE, {})
 def save_prefs(**values):
     data=load_prefs(); data.update(values); json_save(PREFS_FILE, data)
+def record_page_read(content_key, page, total=0):
+    data=json_load(STATS_FILE,{"books":{}}); books=data.setdefault("books",{})
+    item=books.setdefault(content_key,{"pages":[],"seconds":0,"completed":False})
+    page=int(page)
+    if page not in item["pages"]: item["pages"].append(page); item["pages"].sort()
+    if total and page >= int(total)-1: item["completed"]=True
+    json_save(STATS_FILE,data)
+def record_reading_time(content_key, seconds):
+    seconds=max(0,min(int(seconds),6*60*60))
+    data=json_load(STATS_FILE,{"books":{}}); books=data.setdefault("books",{})
+    item=books.setdefault(content_key,{"pages":[],"seconds":0,"completed":False})
+    item["seconds"]=int(item.get("seconds",0))+seconds; json_save(STATS_FILE,data)
+def personal_statistics():
+    books=json_load(STATS_FILE,{"books":{}}).get("books",{})
+    return {"completed":sum(bool(x.get("completed")) for x in books.values()),
+            "pages":sum(len(set(x.get("pages",[]))) for x in books.values()),
+            "seconds":sum(int(x.get("seconds",0)) for x in books.values()),
+            "started":len(books)}
 def export_backup(path):
     json_save(path, {"progress":json_load(PROGRESS_FILE,{}),"bookmarks":json_load(BOOKMARKS_FILE,{}),
         "favorites":json_load(FAVORITES_FILE,[]),"manual_status":json_load(MANUAL_STATUS_FILE,{}),
-        "prefs":json_load(PREFS_FILE,{}),"exported_at":time.time()})
+        "prefs":json_load(PREFS_FILE,{}),"statistics":json_load(STATS_FILE,{}),"exported_at":time.time()})
 def import_backup(path):
     data=json_load(path,{})
     for key,file,default in [("progress",PROGRESS_FILE,{}),("bookmarks",BOOKMARKS_FILE,{}),
-        ("manual_status",MANUAL_STATUS_FILE,{}),("prefs",PREFS_FILE,{})]:
+        ("manual_status",MANUAL_STATUS_FILE,{}),("prefs",PREFS_FILE,{}),("statistics",STATS_FILE,{})]:
         if key in data:
             current=json_load(file,default); current.update(data[key]); json_save(file,current)
     if "favorites" in data: json_save(FAVORITES_FILE,data["favorites"])

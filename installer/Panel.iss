@@ -1,6 +1,6 @@
 [Setup]
 AppId={{45B7906A-4DE9-4C45-90C0-6E43D8A48A40}
-AppVerName=PANEL 1.7.0
+AppVerName=PANEL 1.7.1
 AppPublisher=lucrazy-fn
 AppPublisherURL=https://github.com/lucrazy-fn/PANEL-ComicBookReader
 PrivilegesRequired=lowest
@@ -9,10 +9,10 @@ UninstallDisplayIcon={app}\PANEL.exe
 LicenseFile=..\LICENSE
 OutputDir=..\dist\installer
 AppName=PANEL Comic Reader
-AppVersion=1.7.0
+AppVersion=1.7.1
 DefaultDirName={localappdata}\Programs\PANEL
 DefaultGroupName=PANEL Comic Reader
-OutputBaseFilename=PANEL-Setup-1.7.0
+OutputBaseFilename=PANEL-Setup-1.7.1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

@@ -6,12 +6,14 @@ import threading
 import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from panel_backend.accounts import service as accounts
 from panel_backend.accounts import moderator_invites
-from panel_backend.accounts.models import SessionToken, User
-from panel_backend.accounts.security import verify_totp
+from panel_backend.accounts import account_actions
+from panel_backend.accounts.models import SessionToken, TotpRecoveryCode, User
+from panel_backend.accounts.security import hash_password, recovery_code_hash, verify_totp
 from panel_backend.api.deps import get_current_user, get_db
 from panel_backend.api.schemas import (
     AuthResponse,
@@ -19,11 +21,34 @@ from panel_backend.api.schemas import (
     ModeratorClaimRequest,
     RegisterRequest,
     UserPublic,
+    AccountRecoveryRequest, PasswordResetConfirm, EmailVerificationConfirm,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _attempts: dict[str, list[float]] = {}
 _attempt_lock = threading.Lock()
+
+def _public(user: User) -> UserPublic:
+    return UserPublic(id=user.id, username=user.username,
+        display_name=user.display_name or user.username,
+        is_moderator=user.is_moderator, role=user.role,
+        email_verified=bool(user.email_verified), totp_enabled=bool(user.totp_enabled))
+
+def _valid_second_factor(db: Session, user: User, code: str | None) -> bool:
+    if not code:
+        return False
+    if user.totp_secret and len(code.strip()) == 6 and verify_totp(user.totp_secret, code.strip()):
+        return True
+    row = db.scalar(select(TotpRecoveryCode).where(
+        TotpRecoveryCode.user_id == user.id,
+        TotpRecoveryCode.code_hash == recovery_code_hash(code),
+        TotpRecoveryCode.used_at.is_(None),
+    ))
+    if row:
+        from panel_backend.accounts.models import _now
+        row.used_at = _now()
+        return True
+    return False
 
 def _check_login_limit(key: str):
     now=time.time()
@@ -36,14 +61,7 @@ def _check_login_limit(key: str):
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)):
-    pass
-    return UserPublic(
-        id=user.id,
-        username=user.username,
-        display_name=user.display_name or user.username,
-        is_moderator=user.is_moderator,
-        role=user.role,
-    )
+    return _public(user)
 
 
 @router.post("/claim-moderator", response_model=UserPublic)
@@ -54,11 +72,7 @@ def claim_moderator(
 ):
     pass
     if user.role in {"admin", "owner"}:
-        return UserPublic(
-            id=user.id, username=user.username,
-            display_name=user.display_name or user.username,
-            is_moderator=True, role=user.role,
-        )
+        return _public(user)
     expected = os.environ.get("PANEL_MODERATOR_SETUP_TOKEN", "")
     master_matches = bool(expected) and hmac.compare_digest(payload.setup_token, expected)
     if not master_matches and user.role != "moderator":
@@ -69,11 +83,7 @@ def claim_moderator(
     user.is_moderator = True
     user.role = "owner" if master_matches else "admin"
     db.flush()
-    return UserPublic(
-        id=user.id, username=user.username,
-        display_name=user.display_name or user.username,
-        is_moderator=True, role=user.role,
-    )
+    return _public(user)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
@@ -86,14 +96,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=str(e))
 
     accounts.record_access(result.user)
+    if result.user.email:
+        try:
+            account_actions.send_verification(db, result.user)
+        except Exception:
+            pass
     return AuthResponse(
         token=result.token,
-        user=UserPublic(
-            id=result.user.id, username=result.user.username,
-            display_name=result.user.display_name or result.user.username,
-            is_moderator=result.user.is_moderator,
-            role=result.user.role,
-        ),
+        user=_public(result.user),
     )
 
 
@@ -105,8 +115,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         result = accounts.authenticate(db, username=payload.username, password=payload.password)
     except (accounts.InvalidCredentialsError, accounts.AccountRestrictedError) as e:
         raise HTTPException(status_code=401, detail=str(e))
-    if result.user.role in {"admin","owner"} and result.user.totp_enabled:
-        if not payload.totp_code or not verify_totp(result.user.totp_secret,payload.totp_code):
+    if result.user.totp_enabled:
+        if not _valid_second_factor(db, result.user, payload.totp_code):
             session = db.get(SessionToken,result.token)
             if session: db.delete(session)
             raise HTTPException(401,"Código de autenticação em duas etapas inválido.")
@@ -115,13 +125,41 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     accounts.record_access(result.user)
     return AuthResponse(
         token=result.token,
-        user=UserPublic(
-            id=result.user.id, username=result.user.username,
-            display_name=result.user.display_name or result.user.username,
-            is_moderator=result.user.is_moderator,
-            role=result.user.role,
-        ),
+        user=_public(result.user),
     )
+
+
+@router.post("/password-recovery/request")
+def request_password_recovery(payload: AccountRecoveryRequest, db: Session = Depends(get_db)):
+    identifier = payload.identifier.strip().lower()
+    user = db.scalar(select(User).where((User.username == identifier) | (User.email == identifier)))
+    if user and user.email and user.is_active and not user.deleted_at:
+        try:
+            account_actions.send_password_reset(db, user)
+        except Exception:
+            pass
+    return {"message": "Se a conta existir e tiver e-mail, enviaremos as instruções. / If the account exists and has an email, instructions will be sent."}
+
+
+@router.post("/password-recovery/confirm")
+def confirm_password_recovery(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
+    user = account_actions.consume(db, payload.token, "reset_password")
+    if not user:
+        raise HTTPException(400, "Código inválido ou expirado. / Invalid or expired code.")
+    user.password_hash, user.password_salt = hash_password(payload.new_password)
+    db.query(SessionToken).filter(SessionToken.user_id == user.id).delete()
+    db.flush()
+    return {"message": "Senha alterada. / Password changed."}
+
+
+@router.post("/email/confirm")
+def confirm_email(payload: EmailVerificationConfirm, db: Session = Depends(get_db)):
+    user = account_actions.consume(db, payload.token, "verify_email")
+    if not user:
+        raise HTTPException(400, "Código inválido ou expirado. / Invalid or expired code.")
+    user.email_verified = True
+    db.flush()
+    return {"message": "E-mail confirmado. / Email verified."}
 
 
 @router.post("/logout", status_code=204)

@@ -11,7 +11,7 @@ BASE_URL = os.environ.get(
     "PANEL_API_BASE_URL",
     "https://panel-api-tr1a.onrender.com",
 ).strip().rstrip("/")
-_TIMEOUT_SECONDS = 5
+_TIMEOUT_SECONDS = (10, 60)
 
 
 class ApiUnavailableError(Exception):
@@ -56,6 +56,16 @@ def setup_2fa(token: str, current_password: str, current_code: str | None=None) 
     return _request_json("POST","/account/2fa/setup",token=token,
         payload={"current_password":current_password,"current_code":current_code})
 def confirm_2fa(token: str, code: str): return _request_json("POST","/account/2fa/confirm",token=token,payload={"code":code})
+def disable_2fa(token: str, current_password: str, code: str):
+    return _request_json("POST","/account/2fa/disable",token=token,payload={"current_password":current_password,"code":code})
+def request_password_recovery(identifier: str):
+    return _request_json("POST","/auth/password-recovery/request",payload={"identifier":identifier})
+def confirm_password_recovery(code: str,new_password: str):
+    return _request_json("POST","/auth/password-recovery/confirm",payload={"token":code,"new_password":new_password})
+def resend_email_verification(token: str):
+    return _request_json("POST","/account/email/resend",token=token)
+def confirm_email(code: str):
+    return _request_json("POST","/auth/email/confirm",payload={"token":code})
 
 
 def logout(token: str) -> None:

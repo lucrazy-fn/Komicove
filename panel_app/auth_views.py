@@ -110,7 +110,9 @@ class AuthWindow(tk.Toplevel):
         status_y = field_y_end + round(20 * scale)
         btn_y = status_y + round(32 * scale)
         switch_y = btn_y + round(30 * scale)
-        card_h = (switch_y + round(20 * scale)) - card_y
+        forgot_y = switch_y + round(24 * scale)
+        card_bottom = forgot_y + round(22 * scale) if self._mode == "login" else switch_y + round(20 * scale)
+        card_h = card_bottom - card_y
         guest_y = card_y + card_h + round(34 * scale)
 
         cv = tk.Canvas(self, width=W, height=H, bg=c["bg"], highlightthickness=0)
@@ -119,8 +121,8 @@ class AuthWindow(tk.Toplevel):
 
 
         cv.create_text(W//2, round(40*scale), text="◈ PANEL", font=f_logo, fill=c["text"])
-        cv.create_text(W//2, round(64*scale), text="Sua biblioteca de quadrinhos", font=f_tiny, fill=c["text_dim"])
-        cv.create_text(W - 14, H - 14, text="F11 tela cheia", font=FTINY, fill=c["text_dim"], anchor="se")
+        cv.create_text(W//2, round(64*scale), text=ui('Sua biblioteca de quadrinhos', 'Your comic library'), font=f_tiny, fill=c["text_dim"])
+        cv.create_text(W - 14, H - 14, text=ui('F11 tela cheia', 'F11 fullscreen'), font=FTINY, fill=c["text_dim"], anchor="se")
 
         card_radius = round(22 * scale)
         _rrect(cv, card_x+4, card_y+6, card_x+card_w+4, card_y+card_h+6, card_radius, fill=c["shadow_light"])
@@ -136,9 +138,9 @@ class AuthWindow(tk.Toplevel):
 
         login_tag = cv.create_rectangle(tab_x0, tab_y0, tab_x0+half_w, tab_y1, outline="", fill="")
         register_tag = cv.create_rectangle(tab_x0+half_w, tab_y0, tab_x1, tab_y1, outline="", fill="")
-        cv.create_text(tab_x0 + half_w/2, (tab_y0+tab_y1)/2, text="Entrar", font=f_btn,
+        cv.create_text(tab_x0 + half_w/2, (tab_y0+tab_y1)/2, text=ui('Entrar', 'Sign in'), font=f_btn,
                         fill="#ffffff" if self._mode == "login" else c["text_dim"])
-        cv.create_text(tab_x0 + half_w*1.5, (tab_y0+tab_y1)/2, text="Cadastrar", font=f_btn,
+        cv.create_text(tab_x0 + half_w*1.5, (tab_y0+tab_y1)/2, text=ui('Cadastrar', 'Sign up'), font=f_btn,
                         fill="#ffffff" if self._mode == "register" else c["text_dim"])
         cv.tag_bind(login_tag, "<Button-1>", lambda e: self._switch_mode("login"))
         cv.tag_bind(register_tag, "<Button-1>", lambda e: self._switch_mode("register"))
@@ -154,13 +156,13 @@ class AuthWindow(tk.Toplevel):
         y = field_y
         self._entries.clear()
         if self._mode == "register":
-            y = self._add_field(cv, "username", "user", "Usuário", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "email", "mail", "E-mail (opcional)", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "password", "lock", "Senha (mín. 8 caracteres)", field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
+            y = self._add_field(cv, "username", "user", ui('Usuário', 'Username'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "email", "mail", ui('E-mail (opcional)', 'Email (optional)'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", ui('Senha (mín. 8 caracteres)', 'Password (8 characters minimum)'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
         else:
-            y = self._add_field(cv, "username", "user", "Usuário", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "password", "lock", "Senha", field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "totp", "lock", "Código 2FA (se ativado)", field_x0, y, field_w, field_h, scale=scale, font=f_entry)
+            y = self._add_field(cv, "username", "user", ui('Usuário', 'Username'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", ui('Senha', 'Password'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "totp", "lock", ui('Código 2FA (se ativado)', '2FA code (if enabled)'), field_x0, y, field_w, field_h, scale=scale, font=f_entry)
         self._restore_values(saved_values)
 
 
@@ -171,7 +173,7 @@ class AuthWindow(tk.Toplevel):
         )
 
 
-        btn_label = "Entrar" if self._mode == "login" else "Criar conta"
+        btn_label = ui('Entrar', 'Sign in') if self._mode == "login" else ui('Criar conta', 'Create account')
         btn = make_pill(cv, btn_label,
                          self._do_login if self._mode == "login" else self._do_register,
                          variant="accent", font=f_btn,
@@ -180,17 +182,24 @@ class AuthWindow(tk.Toplevel):
 
 
         if self._mode == "login":
-            cv.create_text(W//2, switch_y, text="Não tem conta?  Cadastre-se",
+            cv.create_text(W//2, switch_y, text=ui('Não tem conta?  Cadastre-se', 'No account yet?  Sign up'),
                             font=f_tiny, fill=c["text_dim"])
         else:
-            cv.create_text(W//2, switch_y, text="Já tem conta?  Entrar",
+            cv.create_text(W//2, switch_y, text=ui('Já tem conta?  Entrar', 'Already have an account?  Sign in'),
                             font=f_tiny, fill=c["text_dim"])
         link_tag = cv.create_rectangle(card_x, switch_y-10, card_x+card_w, switch_y+10, outline="", fill="")
         cv.tag_bind(link_tag, "<Button-1>",
                     lambda e: self._switch_mode("register" if self._mode == "login" else "login"))
 
+        if self._mode == "login":
+            forgot=cv.create_text(W//2,forgot_y,text=ui('Esqueci minha senha','Forgot my password'),
+                                  font=f_tiny,fill=c['accent2'])
+            cv.tag_bind(forgot,"<Button-1>",lambda e:self._recover_password())
+            cv.tag_bind(forgot,"<Enter>",lambda e:cv.config(cursor='hand2'))
+            cv.tag_bind(forgot,"<Leave>",lambda e:cv.config(cursor=''))
 
-        guest = cv.create_text(W//2, guest_y, text="Continuar como convidado",
+
+        guest = cv.create_text(W//2, guest_y, text=ui('Continuar como convidado', 'Continue as guest'),
                                 font=f_label, fill=c["text_dim"])
         cv.tag_bind(guest, "<Button-1>", lambda e: self._continue_guest())
         cv.tag_bind(guest, "<Enter>", lambda e: cv.itemconfig(guest, fill=c["text"]))
@@ -200,7 +209,7 @@ class AuthWindow(tk.Toplevel):
             cv.tag_bind(tag, "<Leave>", lambda e: cv.config(cursor=""))
 
         if not _ACCOUNTS_AVAILABLE:
-            self._set_status("Contas indisponíveis no momento — use o modo convidado.", error=True)
+            self._set_status(ui('Contas indisponíveis no momento — use o modo convidado.', 'Accounts are currently unavailable — use guest mode.'), error=True)
 
     def _capture_values(self):
         pass
@@ -283,13 +292,13 @@ class AuthWindow(tk.Toplevel):
 
     def _do_login(self):
         if not _ACCOUNTS_AVAILABLE:
-            self._set_status("Contas indisponíveis no momento.", error=True)
+            self._set_status(ui('Contas indisponíveis no momento.', 'Accounts are currently unavailable.'), error=True)
             return
         self._authenticate(api_client.login)
 
     def _do_register(self):
         if not _ACCOUNTS_AVAILABLE:
-            self._set_status("Contas indisponíveis no momento.", error=True)
+            self._set_status(ui('Contas indisponíveis no momento.', 'Accounts are currently unavailable.'), error=True)
             return
         self._authenticate(api_client.register, with_email=True)
 
@@ -299,11 +308,11 @@ class AuthWindow(tk.Toplevel):
         username = self._field_value("username")
         password = self._field_value("password")
         if not username or not password:
-            self._set_status("Preencha usuário e senha.", error=True)
+            self._set_status(ui('Preencha usuário e senha.', 'Enter your username and password.'), error=True)
             return
         email = (self._field_value("email") or None) if with_email else None
         self._auth_in_progress = True
-        self._set_status("Conectando…")
+        self._set_status(ui('Conectando…', 'Connecting…'))
 
         def worker():
             try:
@@ -312,12 +321,12 @@ class AuthWindow(tk.Toplevel):
             except api_client.ApiAuthError as exc:
                 result = (None, str(exc))
             except api_client.ApiUnavailableError:
-                result = (None, "Sem conexão com o servidor. Tente o modo convidado.")
+                result = (None, ui('Sem conexão com o servidor. Tente o modo convidado.', 'Could not connect to the server. Try guest mode.'))
             except api_client.ApiServerError as exc:
                 result = (None, str(exc))
             except Exception:
-                log.exception("Falha inesperada durante autenticação")
-                result = (None, "Não foi possível entrar agora.")
+                log.exception(ui('Falha inesperada durante autenticação', 'Unexpected authentication error'))
+                result = (None, ui('Não foi possível entrar agora.', 'Could not sign in right now.'))
             try:
                 self.after(0, lambda: self._finish_auth(*result))
             except tk.TclError:
@@ -343,4 +352,19 @@ class AuthWindow(tk.Toplevel):
         self.destroy()
         self.cb(None)
 
-
+    def _recover_password(self):
+        identifier=simpledialog.askstring(ui('Recuperar senha','Recover password'),
+            ui('Informe o usuário ou e-mail da conta:','Enter the account username or email:'),parent=self)
+        if not identifier:return
+        try: api_client.request_password_recovery(identifier)
+        except Exception as exc: messagebox.showerror(ui('Recuperar senha','Recover password'),str(exc),parent=self); return
+        code=simpledialog.askstring(ui('Recuperar senha','Recover password'),
+            ui('Se a conta existir, você receberá um código por e-mail. Cole-o aqui:','If the account exists, you will receive a code by email. Paste it here:'),parent=self)
+        if not code:return
+        password=simpledialog.askstring(ui('Nova senha','New password'),
+            ui('Digite a nova senha (mínimo de 8 caracteres):','Enter the new password (8 characters minimum):'),show='•',parent=self)
+        if not password:return
+        try:
+            api_client.confirm_password_recovery(code,password)
+            messagebox.showinfo(ui('Recuperar senha','Recover password'),ui('Senha alterada. Agora você já pode entrar.','Password changed. You can now sign in.'),parent=self)
+        except Exception as exc: messagebox.showerror(ui('Recuperar senha','Recover password'),str(exc),parent=self)

@@ -4,7 +4,7 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 1.7.0 · Linux 1.7.0-correction · Android 1.6.0 · Licença MIT**
+**Windows 1.7.1 · Linux 1.7.1 · Android 1.6.1 · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 

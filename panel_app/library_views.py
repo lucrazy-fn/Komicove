@@ -24,7 +24,7 @@ class LibraryWindow(tk.Tk):
         try: self.iconbitmap(resource_path("panel.ico"))
         except Exception as _e: log.debug("silenced: %s", _e)
         self.withdraw()
-        self.title("PANEL — Biblioteca")
+        self.title(ui("PANEL — Biblioteca", "PANEL — Library"))
         self.configure(bg=THEME["bg"])
         apply_scrollbar_style()
 
@@ -44,7 +44,6 @@ class LibraryWindow(tk.Tk):
         self._notification_count = 0
 
         self.current_user = None
-
         load_icons()
         load_library_config()
         self._sync_shared_settings()
@@ -57,6 +56,22 @@ class LibraryWindow(tk.Tk):
     def _language_ready(self):
         self._sync_shared_settings()
         self._show_auth()
+
+    def _change_language(self):
+        def changed():
+            self._sync_shared_settings()
+            self._build_shell()
+            active = getattr(self, "_active_tab", "library")
+            action = {
+                "collections": self._show_collections,
+                "discovery": self._open_discovery,
+                "downloads": self._open_downloads,
+                "submissions": self._open_my_publications,
+                "notifications": self._open_notifications,
+                "moderation": self._open_moderation,
+            }.get(active, self._refresh_library)
+            action()
+        LangWindow(self, changed)
 
     def _sync_shared_settings(self):
         pass
@@ -130,7 +145,7 @@ class LibraryWindow(tk.Tk):
                 if changed:
                     _json_save(PROGRESS_FILE, progress); _json_save(FAVORITES_FILE, sorted(favorites))
             except Exception:
-                log.debug("Sincronização da biblioteca indisponível", exc_info=True)
+                log.debug(ui('Sincronização da biblioteca indisponível', 'Library sync unavailable'), exc_info=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _schedule_sync(self, _kind=None, _path=None):
@@ -198,7 +213,7 @@ class LibraryWindow(tk.Tk):
 
     def _open_moderation(self):
         if self.current_user is None:
-            messagebox.showinfo("Moderação", "Entre em uma conta para continuar.")
+            messagebox.showinfo(ui('Moderação', 'Moderation'), ui('Entre em uma conta para continuar.', 'Sign in to continue.'))
             return
         role = getattr(self.current_user, "role", "user")
         if can_moderate(self.current_user):
@@ -207,15 +222,15 @@ class LibraryWindow(tk.Tk):
             self._render_moderation_tab()
             return
 
-        messagebox.showerror("Moderação", "Sua conta não possui acesso à moderação.", parent=self)
+        messagebox.showerror(ui('Moderação', 'Moderation'), ui('Sua conta não possui acesso à moderação.', 'Your account does not have moderation access.'), parent=self)
         return
 
     def _claim_admin_token(self):
         if getattr(self.current_user, "role", "user") != "moderator":
             return
         setup_token = simpledialog.askstring(
-            "Ativar administrador",
-            "Digite o token de administrador:", parent=self, show="•",
+            ui('Ativar administrador', 'Enable administrator role'),
+            ui('Digite o token de administrador:', 'Enter the administrator token:'), parent=self, show="•",
         )
         if not setup_token:
             return
@@ -229,10 +244,10 @@ class LibraryWindow(tk.Tk):
             except (api_client.ApiAuthError, api_client.ApiServerError) as exc:
                 outcome = (None, str(exc))
             except api_client.ApiUnavailableError:
-                outcome = (None, "Servidor indisponível.")
+                outcome = (None, ui('Servidor indisponível.', 'Server unavailable.'))
             except Exception:
-                log.exception("Falha ao ativar administrador")
-                outcome = (None, "Não foi possível ativar o cargo de administrador.")
+                log.exception(ui('Falha ao ativar administrador', 'Could not enable administrator role'))
+                outcome = (None, ui('Não foi possível ativar o cargo de administrador.', 'Could not enable the administrator role.'))
             self.after(0, lambda: self._finish_moderator_claim(*outcome))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -248,7 +263,7 @@ class LibraryWindow(tk.Tk):
 
     def _finish_moderator_claim(self, promoted, error):
         if error:
-            messagebox.showerror("Administrador", error, parent=self)
+            messagebox.showerror(ui('Administrador', 'Administrator'), error, parent=self)
             return
         self.current_user = promoted
         session_store.save_session(session_store.LocalSession(
@@ -268,17 +283,17 @@ class LibraryWindow(tk.Tk):
         self._moderation_images = []
         header = tk.Frame(self._main, bg=THEME["bg"])
         header.pack(fill="x", padx=28, pady=(24, 12))
-        tk.Label(header, text="Moderação", font=FTITLE, bg=THEME["bg"],
+        tk.Label(header, text=ui('Moderação', 'Moderation'), font=FTITLE, bg=THEME["bg"],
                  fg=THEME["text"]).pack(side="left")
-        make_pill(header, "Atualizar", self._render_moderation_tab,
+        make_pill(header, ui('Atualizar', 'Refresh'), self._render_moderation_tab,
                   variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right")
-        make_pill(header, "Denúncias", self._render_reports_tab,
+        make_pill(header, ui('Denúncias', 'Reports'), self._render_reports_tab,
                   variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right", padx=8)
         if getattr(self.current_user, "role", "user") == "moderator":
-            make_pill(header, "Usar token de administrador", self._claim_admin_token,
+            make_pill(header, ui('Usar token de administrador', 'Use administrator token'), self._claim_admin_token,
                       variant="accent", font=FSMALL, pad_x=12, pad_y=7).pack(side="right", padx=8)
         self._moderation_status = tk.Label(
-            self._main, text="Carregando pedidos…", font=FSMALL,
+            self._main, text=ui('Carregando pedidos…', 'Loading requests…'), font=FSMALL,
             bg=THEME["bg"], fg=THEME["text_dim"],
         )
         self._moderation_status.pack(anchor="w", padx=28)
@@ -308,19 +323,19 @@ class LibraryWindow(tk.Tk):
 
     def _render_reports_tab(self):
         for child in self._main.winfo_children(): child.destroy()
-        tk.Label(self._main,text="Denúncias",font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(anchor="w",padx=28,pady=(24,8))
-        status=tk.Label(self._main,text="Carregando…",font=FSMALL,bg=THEME["bg"],fg=THEME["text_dim"]);status.pack(anchor="w",padx=28)
+        tk.Label(self._main,text=ui('Denúncias', 'Reports'),font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(anchor="w",padx=28,pady=(24,8))
+        status=tk.Label(self._main,text=ui('Carregando…', 'Loading…'),font=FSMALL,bg=THEME["bg"],fg=THEME["text_dim"]);status.pack(anchor="w",padx=28)
         area=tk.Frame(self._main,bg=THEME["bg"]);area.pack(fill="both",expand=True,padx=28,pady=12)
         def worker():
             try: result,error=api_client.admin_reports(self.current_user.token),None
             except Exception as exc: result,error=None,str(exc)
             def done(items,error):
-                status.config(text=error or f"{len(items)} denúncia(s)",fg=THEME["accent2"] if error else THEME["text_dim"])
+                status.config(text=error or ui(f"{len(items)} denúncia(s)", f"{len(items)} report(s)"),fg=THEME["accent2"] if error else THEME["text_dim"])
                 if error:return
                 for item in items:
                     card=tk.Frame(area,bg=THEME["surface"],padx=14,pady=10);card.pack(fill="x",pady=5)
                     tk.Label(card,text=f"{item['target_type']} · {item['reason']} · {item['status']}",font=FLABEL,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w")
-                    tk.Label(card,text=item.get("description") or "Sem descrição",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=850,justify="left").pack(anchor="w")
+                    tk.Label(card,text=item.get("description") or ui('Sem descrição', 'No description'),font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=850,justify="left").pack(anchor="w")
             self.after(0,lambda:done(result,error))
         threading.Thread(target=worker,daemon=True).start()
 
@@ -330,10 +345,11 @@ class LibraryWindow(tk.Tk):
             return
         pending = sum(item.get("status") == "pending_review" for item in items)
         self._moderation_status.config(
-            text=f"{len(items)} pedido(s) no histórico · {pending} pendente(s)"
+            text=ui(f"{len(items)} pedido(s) no histórico · {pending} pendente(s)",
+                    f"{len(items)} request(s) in history · {pending} pending")
         )
         if not items:
-            tk.Label(self._moderation_grid, text="Nenhum pedido pendente.", font=FTITLE,
+            tk.Label(self._moderation_grid, text=ui('Nenhum pedido pendente.', 'No pending requests.'), font=FTITLE,
                      bg=THEME["bg"], fg=THEME["text_dim"]).grid(row=0, column=0, padx=40, pady=70)
             return
         for index, item in enumerate(items):
@@ -347,20 +363,20 @@ class LibraryWindow(tk.Tk):
         cover_box.pack(padx=10, pady=(10, 7))
         cover_box.pack_propagate(False)
         cover = tk.Label(cover_box,
-                         text="Carregando capa…" if item.get("has_file") else "Sem arquivo",
+                         text=ui('Carregando capa…', 'Loading cover…') if item.get("has_file") else ui('Sem arquivo', 'No file'),
                          bg=THEME["surface_alt"], fg=THEME["text_dim"], font=FTINY)
         cover.pack(fill="both", expand=True)
         tk.Label(card, text=item["title"], font=FBTN, bg=THEME["surface"],
                  fg=THEME["text"], wraplength=195).pack(padx=10)
-        status_labels = {"pending_review": "Pendente", "approved": "Aprovado", "rejected": "Rejeitado"}
+        status_labels = {"pending_review": ui('Pendente', 'Pending'), "approved": ui('Aprovado', 'Approved'), "rejected": ui('Rejeitado', 'Rejected')}
         tk.Label(card, text=f"{item['author']} · {status_labels.get(item.get('status'), item.get('status'))}", font=FTINY,
                  bg=THEME["surface"], fg=THEME["text_dim"], wraplength=195).pack(padx=10, pady=3)
         buttons = tk.Frame(card, bg=THEME["surface"])
         buttons.pack(side="bottom", fill="x", padx=8, pady=8)
         if item.get("has_file"):
-            make_pill(buttons, "Ler", lambda i=item: self._read_moderation_file(i),
+            make_pill(buttons, ui('Ler', 'Read'), lambda i=item: self._read_moderation_file(i),
                       variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left")
-            make_pill(buttons, "Baixar", lambda i=item: self._download_moderation_file(i),
+            make_pill(buttons, ui('Baixar', 'Download'), lambda i=item: self._download_moderation_file(i),
                       variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left", padx=3)
             self._load_moderation_cover(item, cover)
         if item.get("status") == "pending_review":
@@ -377,7 +393,7 @@ class LibraryWindow(tk.Tk):
                 image.thumbnail((190, 220), Image.LANCZOS)
                 self.after(0, lambda: self._set_moderation_cover(label, image))
             except Exception:
-                self.after(0, lambda: label.config(text="Capa indisponível"))
+                self.after(0, lambda: label.config(text=ui('Capa indisponível', 'Cover unavailable')))
         threading.Thread(target=worker, daemon=True).start()
 
     def _set_moderation_cover(self, label, image):
@@ -403,7 +419,7 @@ class LibraryWindow(tk.Tk):
             self._download_for_action(item, destination, open_after=False)
 
     def _download_for_action(self, item, destination, open_after):
-        self._moderation_status.config(text="Baixando arquivo…")
+        self._moderation_status.config(text=ui('Baixando arquivo…', 'Downloading file…'))
         def worker():
             try:
                 api_client.download_moderation_file(
@@ -419,18 +435,19 @@ class LibraryWindow(tk.Tk):
         if error:
             self._moderation_status.config(text=error, fg=THEME["accent2"])
             return
-        self._moderation_status.config(text="Download concluído.", fg=THEME["text_dim"])
+        self._moderation_status.config(text=ui('Download concluído.', 'Download completed.'), fg=THEME["text_dim"])
         if open_after:
             try:
                 loader = SmartPageLoader(destination)
                 ReaderWindow(self, destination, loader)
             except Exception as exc:
-                messagebox.showerror("Leitura", f"Não foi possível abrir o arquivo: {exc}", parent=self)
+                messagebox.showerror(ui('Leitura', 'Reading'), ui(f"Não foi possível abrir o arquivo: {exc}", f"Could not open the file: {exc}"), parent=self)
 
     def _moderate_from_tab(self, item, decision):
-        verb = "aprovar" if decision == "approved" else "rejeitar"
+        verb = ui("aprovar", "approve") if decision == "approved" else ui("rejeitar", "reject")
         reason = simpledialog.askstring(
-            "Motivo da decisão", f"Explique por que deseja {verb} esta publicação:", parent=self
+            ui('Motivo da decisão', 'Decision reason'),
+            ui(f"Explique por que deseja {verb} esta publicação:", f"Explain why you want to {verb} this submission:"), parent=self
         )
         if not reason or len(reason.strip()) < 3:
             return
@@ -447,7 +464,7 @@ class LibraryWindow(tk.Tk):
 
     def _moderation_decided(self, error):
         if error:
-            messagebox.showerror("Moderação", error, parent=self)
+            messagebox.showerror(ui('Moderação', 'Moderation'), error, parent=self)
         else:
             self._render_moderation_tab()
 
@@ -470,20 +487,25 @@ class LibraryWindow(tk.Tk):
             if result: self.after(0, lambda: self._show_update_notice(result))
         threading.Thread(target=worker, daemon=True).start()
 
+    def _release_notes(self, data):
+        if _runtime.LANG == "en":
+            return "A new PANEL release is available with reader fixes and stability improvements. Open the download page to read the complete release notes."
+        return (data.get("notes") or ui('Sem notas publicadas.', 'No release notes published.')).strip()
+
     def _show_update_notice(self, data):
         if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): return
         dialog=tk.Toplevel(self); self._update_notice=dialog
-        dialog.title("Atualização disponível"); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
+        dialog.title(ui('Atualização disponível', 'Update available')); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
         dialog.transient(self); dialog.attributes("-topmost", True)
         card=tk.Frame(dialog,bg=THEME["surface"],highlightthickness=1,highlightbackground=THEME["accent"]); card.pack(padx=2,pady=2)
-        tk.Label(card,text=f"PANEL {data['version']} disponível 🎉",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=22,pady=(18,4))
-        notes=(data.get("notes") or "Novidades e correções de estabilidade.").strip()
+        tk.Label(card,text=ui(f"PANEL {data['version']} disponível 🎉", f"PANEL {data['version']} available 🎉"),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=22,pady=(18,4))
+        notes=self._release_notes(data)
         summary=notes.split("\n\n",1)[0][:220]
         tk.Label(card,text=summary,font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=390,justify="left").pack(anchor="w",padx=22,pady=(0,14))
         actions=tk.Frame(card,bg=THEME["surface"]);actions.pack(fill="x",padx=18,pady=(0,16))
-        make_pill(actions,"Depois",dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
-        make_pill(actions,"Baixar",lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
-        make_pill(actions,"Ver novidades",lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
+        make_pill(actions,ui("Depois", "Later"),dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
+        make_pill(actions,ui('Baixar', 'Download'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
+        make_pill(actions,ui('Ver novidades', "See what's new"),lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
         dialog.protocol("WM_DELETE_WINDOW",dialog.destroy)
 
     def _open_update_details(self, data):
@@ -510,7 +532,7 @@ class LibraryWindow(tk.Tk):
         lc.create_line(20, 88, sidebar_width - 20, 88, fill=c["border"], width=1)
 
         self._active_tab = getattr(self, "_active_tab", "library")
-        self._sidebar_section("NAVEGAÇÃO")
+        self._sidebar_section(ui('NAVEGAÇÃO', 'NAVIGATION'))
         for label, cmd, tab, icon in [
             (TEXTS[LANG]['library'], self._refresh_library, "library", ICONS.get("library")),
             (TEXTS[LANG]['collections'], self._show_collections, "collections", ICONS.get("collections")),
@@ -519,43 +541,46 @@ class LibraryWindow(tk.Tk):
             self._sidebar_item(label, icon,
                 lambda f=cmd, t=tab: (setattr(self, "_active_tab", t), self._build_shell(), f())[-1],
                 active=active, font=FBTN, pady=8)
-        self._sidebar_item("Descobrir", ICONS.get("discover"),
+        self._sidebar_item(ui('Descobrir', 'Discover'), ICONS.get("discover"),
                            self._open_discovery, active=(self._active_tab == "discovery"), font=FBTN, pady=8)
 
-        self._sidebar_section("ATIVIDADE")
+        self._sidebar_section(ui('ATIVIDADE', 'ACTIVITY'))
         self._sidebar_item("Downloads", ICONS.get("downloads"), self._open_downloads,
                            active=(self._active_tab == "downloads"), font=FLABEL, pady=7)
+        self._sidebar_item(ui('Estatísticas', 'Statistics'), ICONS.get("library"), self._open_statistics,
+                           active=(self._active_tab == "statistics"), font=FLABEL, pady=7)
 
         if self.current_user is not None:
-            self._sidebar_item("Meus envios", ICONS.get("submissions"), self._open_my_publications,
+            self._sidebar_item(ui('Meus envios', 'My submissions'), ICONS.get("submissions"), self._open_my_publications,
                                 active=(self._active_tab == "submissions"), font=FLABEL, pady=7)
-            self._sidebar_item("Notificações", ICONS.get("notifications"), self._open_notifications,
+            self._sidebar_item(ui('Notificações', 'Notifications'), ICONS.get("notifications"), self._open_notifications,
                                 active=(self._active_tab == "notifications"), font=FLABEL, pady=7,
                                 badge=self._notification_count or None)
             role = getattr(self.current_user, "role", "user")
             has_moderation_access = can_moderate(self.current_user)
             if has_moderation_access:
-                self._sidebar_section("EQUIPE")
-                self._sidebar_item("Moderação", ICONS.get("moderation"),
+                self._sidebar_section(ui('EQUIPE', 'TEAM'))
+                self._sidebar_item(ui('Moderação', 'Moderation'), ICONS.get("moderation"),
                                     self._open_moderation,
                                     active=(self._active_tab == "moderation"), font=FLABEL, pady=7)
 
         tk.Frame(self._sb, bg=c["surface"]).pack(fill="both", expand=True)
-        self._sidebar_section("PREFERÊNCIAS")
+        self._sidebar_section(ui('PREFERÊNCIAS', 'PREFERENCES'))
         for txt, cmd, icon in [
+            (ui('Idioma', 'Language'), self._change_language, ICONS.get("language")),
             (current_theme_label().strip(), self._toggle_theme, ICONS.get("theme")),
             (TEXTS[LANG]['folder'], self._choose_folder, ICONS.get("folder")),
             ("Backup", self._do_backup, ICONS.get("backup")),
-            ("Restaurar", self._do_restore, ICONS.get("restore")),
-            ("Atualizações", self._check_updates, ICONS.get("downloads")),
-            ("Diagnóstico seguro", self._copy_diagnostics, ICONS.get("notifications")),
+            (ui('Restaurar', 'Restore'), self._do_restore, ICONS.get("restore")),
+            (ui('Atualizações', 'Updates'), self._check_updates, ICONS.get("downloads")),
+            (ui('Diagnóstico seguro', 'Safe diagnostics'), self._copy_diagnostics, ICONS.get("notifications")),
         ]:
             self._sidebar_item(txt, icon, cmd, font=FSMALL, pady=6)
 
         if self.current_user is not None:
             self._sidebar_account_card()
         else:
-            tk.Label(self._sb, text="Modo convidado", font=FSMALL, bg=c["surface"],
+            tk.Label(self._sb, text=ui('Modo convidado', 'Guest mode'), font=FSMALL, bg=c["surface"],
                      fg=c["text_dim"]).pack(anchor="w", padx=20, pady=(8, 14))
 
         tk.Frame(self._sb, bg=c["border"], width=1).place(relx=1, rely=0, relheight=1, anchor="ne")
@@ -564,49 +589,55 @@ class LibraryWindow(tk.Tk):
         self._main.pack(side="right", fill="both", expand=True)
 
     def _check_updates(self):
-        dialog=tk.Toplevel(self); dialog.title("Atualizações do PANEL"); dialog.configure(bg=THEME["bg"])
+        dialog=tk.Toplevel(self); dialog.title(ui('Atualizações do PANEL', 'PANEL updates')); dialog.configure(bg=THEME["bg"])
         dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); dialog.grab_set()
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
-        tk.Label(head,text="✦  Atualizações",font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.5.2-alpha",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
-        status=tk.Label(dialog,text="Verificando versões…",font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
+        tk.Label(head,text=ui('✦  Atualizações', '✦  Updates'),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
+        tk.Label(head,text=f"Windows {updater.CURRENT_VERSION}  ·  Android 1.6.1",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        status=tk.Label(dialog,text=ui('Verificando versões…', 'Checking versions…'),font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
         notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
         notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
         actions=tk.Frame(dialog,bg=THEME["bg"]); actions.pack(fill="x",padx=24,pady=16)
-        make_pill(actions,"Fechar",dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
+        make_pill(actions,ui('Fechar', 'Close'),dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
         def worker():
             try: data=updater.check(); error=None
             except Exception as exc: data=None; error=exc
             def done():
                 if not dialog.winfo_exists(): return
                 if error:
-                    status.config(text="Não foi possível verificar agora. A leitura local continua disponível.",fg=THEME["accent2"]); return
+                    status.config(text=ui('Não foi possível verificar agora. A leitura local continua disponível.', 'Could not check right now. Local reading remains available.'),fg=THEME["accent2"]); return
                 if not data:
-                    status.config(text="Você já está usando a versão mais recente.",fg=THEME["read_badge_text"]); return
-                status.config(text=f"Nova versão disponível: {data['version']}",fg=THEME["read_badge_text"])
-                notes.configure(state="normal"); notes.insert("1.0",data.get("notes","Sem notas publicadas.")); notes.configure(state="disabled")
-                make_pill(actions,"Abrir downloads",lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=8)
+                    status.config(text=ui('Você já está usando a versão mais recente.', 'You are already using the latest version.'),fg=THEME["read_badge_text"]); return
+                status.config(text=ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}"),fg=THEME["read_badge_text"])
+                notes.configure(state="normal"); notes.insert("1.0",self._release_notes(data)); notes.configure(state="disabled")
+                make_pill(actions,ui('Abrir downloads', 'Open downloads'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=8)
             self.after(0,done)
         threading.Thread(target=worker,daemon=True).start()
 
     def _copy_diagnostics(self):
         api_url = getattr(api_client, "BASE_URL", "")
         parsed = urlparse(api_url)
-        api_host = parsed.netloc or "não configurada"
-        report = (
-            "PANEL — Diagnóstico seguro\n"
+        api_host = parsed.netloc or ui('não configurada', 'not configured')
+        report = ui(
+            "PANEL — Diagnóstico seguro\n",
+            "PANEL — Safe diagnostics\n",
+        ) + (
             f"Windows: {updater.CURRENT_VERSION}\n"
-            "Android: 1.5.2-alpha\n"
-            f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n"
-            f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
-            f"API: {api_host}\n"
-            f"7-Zip: {'disponível' if find_7zip() else 'não encontrado'}\n"
-            f"PDF: {'disponível' if HAS_PDF else 'indisponível'}\n"
-            f"RAR: {'disponível' if HAS_RAR else 'indisponível'}\n"
-            "\nNenhum token, senha, caminho local ou conteúdo de quadrinhos foi incluído."
+            + "Android: 1.6.1\n"
+            +
+            ui(f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n",
+               f"System: {platform.system()} {platform.release()} ({platform.machine()})\n")
+            + f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
+            + f"API: {api_host}\n"
+            + f"7-Zip: {ui('disponível', 'available') if find_7zip() else ui('não encontrado', 'not found')}\n"
+            + f"PDF: {ui('disponível', 'available') if HAS_PDF else ui('indisponível', 'unavailable')}\n"
+            + f"RAR: {ui('disponível', 'available') if HAS_RAR else ui('indisponível', 'unavailable')}\n"
+            +
+            ui("\nNenhum token, senha, caminho local ou conteúdo de quadrinhos foi incluído.",
+               "\nNo token, password, local path, or comic content was included.")
         )
         self.clipboard_clear(); self.clipboard_append(report); self.update()
-        messagebox.showinfo("Diagnóstico seguro", "Relatório copiado para a área de transferência.\n\nCole-o na issue sem adicionar tokens ou senhas.", parent=self)
+        messagebox.showinfo(ui('Diagnóstico seguro', 'Safe diagnostics'), ui('Relatório copiado para a área de transferência.\n\nCole-o na issue sem adicionar tokens ou senhas.', 'Report copied to the clipboard.\n\nPaste it into the issue without adding tokens or passwords.'), parent=self)
 
     def _sidebar_section(self, text):
         tk.Label(self._sb, text=text, font=(_SANS, 8, "bold"), bg=THEME["surface"],
@@ -620,7 +651,7 @@ class LibraryWindow(tk.Tk):
                           bg=c["accent"], fg="#ffffff", width=30, height=30)
         avatar.pack(side="left", padx=(10, 8), pady=10)
         info = tk.Frame(card, bg=c["surface_alt"]); info.pack(side="left", fill="x", expand=True)
-        name_label = tk.Label(info, text=getattr(self.current_user, "display_name", "Conta"), font=FSMALL,
+        name_label = tk.Label(info, text=getattr(self.current_user, "display_name", ui('Conta', 'Account')), font=FSMALL,
                               bg=c["surface_alt"], fg=c["text"], anchor="w")
         name_label.pack(fill="x")
         role_text = tk.Label(info, text=role_label(self.current_user), font=FTINY,
@@ -694,8 +725,8 @@ class LibraryWindow(tk.Tk):
             short = LIBRARY_FOLDER
             if len(short) > 40: short = "…" + short[-37:]
             tk.Label(hdr, text=short, font=FTINY, bg=c["bg"], fg=c["text_muted"]).pack(side="left", padx=10, pady=(6,0))
-        make_pill(hdr, "+  Pasta", self._choose_folder, variant="accent", font=FSMALL).pack(side="right")
-        make_pill(hdr, "Série / Autor", self._metadata_filters, variant="soft", font=FSMALL).pack(side="right", padx=6)
+        make_pill(hdr, ui('+  Pasta', '+  Folder'), self._choose_folder, variant="accent", font=FSMALL).pack(side="right")
+        make_pill(hdr, ui('Série / Autor', 'Series / Author'), self._metadata_filters, variant="soft", font=FSMALL).pack(side="right", padx=6)
 
         stf = tk.Frame(self._main, bg=c["bg"]); stf.pack(fill="x", padx=20, pady=(0, 4))
         tk.Label(stf, text=f"{TEXTS[LANG]['filter_status']}:", font=FTINY,
@@ -703,7 +734,7 @@ class LibraryWindow(tk.Tk):
         self._status_btns = {}
         for key, lbl in [("all", TEXTS[LANG]["f_all"]), ("unread", TEXTS[LANG]["f_unread"]),
                          ("reading", TEXTS[LANG]["f_reading"]), ("done", TEXTS[LANG]["f_done"]),
-                         ("favorites", "★ Favoritos")]:
+                         ("favorites", ui('★ Favoritos', '★ Favorites'))]:
             b = make_pill(stf, lbl, lambda k=key: self._set_status_filter(k),
                           variant="soft", font=FTINY, pad_x=12, pad_y=5,
                           active=(self._status_filter == key))
@@ -749,6 +780,26 @@ class LibraryWindow(tk.Tk):
         for k, b in self._status_btns.items():
             b.pill_set_active(k == key)
 
+    def _open_statistics(self):
+        self._active_tab="statistics"; self._build_shell()
+        for w in self._main.winfo_children(): w.destroy()
+        data=personal_statistics(); c=THEME
+        tk.Label(self._main,text=ui('Estatísticas pessoais','Personal statistics'),font=FTITLE,
+                 bg=c['bg'],fg=c['text']).pack(anchor='w',padx=30,pady=(28,6))
+        tk.Label(self._main,text=ui('Os dados ficam somente neste dispositivo.','Your data stays on this device.'),
+                 font=FSMALL,bg=c['bg'],fg=c['text_dim']).pack(anchor='w',padx=30,pady=(0,24))
+        row=tk.Frame(self._main,bg=c['bg']); row.pack(fill='x',padx=24)
+        hours=data['seconds']//3600; minutes=(data['seconds']%3600)//60
+        cards=[(ui('HQs concluídas','Completed comics'),data['completed']),
+               (ui('Páginas lidas','Pages read'),data['pages']),
+               (ui('Tempo de leitura','Reading time'),f"{hours}h {minutes:02d}min"),
+               (ui('HQs iniciadas','Started comics'),data['started'])]
+        for title,value in cards:
+            card=tk.Frame(row,bg=c['surface'],highlightthickness=1,highlightbackground=c['border'])
+            card.pack(side='left',fill='x',expand=True,padx=7)
+            tk.Label(card,text=str(value),font=("Segoe UI",26,"bold"),bg=c['surface'],fg=c['accent']).pack(pady=(22,5))
+            tk.Label(card,text=title,font=FBTN,bg=c['surface'],fg=c['text']).pack(pady=(0,22))
+
     def _bubble_search_changed(self, val):
         self._search_query = val
         self._populate_library_grid()
@@ -774,11 +825,11 @@ class LibraryWindow(tk.Tk):
 
     def _metadata_filters(self):
         dialog = tk.Toplevel(self)
-        dialog.title("Filtrar biblioteca")
+        dialog.title(ui('Filtrar biblioteca', 'Filter library'))
         dialog.configure(bg=THEME["bg"])
         fields = {}
         files = self._scan()
-        for key, label in [("series", "Série"), ("writer", "Autor")]:
+        for key, label in [("series", ui('Série', 'Series')), ("writer", ui('Autor', 'Author'))]:
             tk.Label(dialog, text=label, bg=THEME["bg"], fg=THEME["text"]).pack(padx=20, pady=(12, 4))
             choices = sorted({get_comic_info(path).get(key, "") for path in files} - {""})
             entry = ttk.Combobox(dialog, values=[""] + choices, state="readonly", width=40)
@@ -790,8 +841,8 @@ class LibraryWindow(tk.Tk):
                 setattr(self, "_metadata_filter_" + key, "" if clear else entry.get())
             dialog.destroy()
             self._populate_library_grid()
-        tk.Button(dialog, text="Aplicar filtros", command=apply).pack(pady=12)
-        tk.Button(dialog, text="Limpar filtros", command=lambda: apply(True)).pack(pady=(0, 12))
+        tk.Button(dialog, text=ui('Aplicar filtros', 'Apply filters'), command=apply).pack(pady=12)
+        tk.Button(dialog, text=ui('Limpar filtros', 'Clear filters'), command=lambda: apply(True)).pack(pady=(0, 12))
 
     def _populate_library_grid(self):
         c = THEME
@@ -898,7 +949,7 @@ class LibraryWindow(tk.Tk):
             tk.Label(f, text="🔍", font=("Segoe UI Emoji", 42), bg=c["bg"], fg=c["text_muted"]).pack(pady=(20, 6))
             tk.Label(f, text=f'{TEXTS[LANG]["no_results"]} "{self._search_query}"',
                      font=FLABEL, bg=c["bg"], fg=c["text_dim"]).pack()
-            make_pill(f, "✕  Limpar busca", self._bubble_search_clear,
+            make_pill(f, ui('✕  Limpar busca', '✕  Clear search'), self._bubble_search_clear,
                       variant="soft", font=FBTN, pad_x=18, pad_y=9).pack(pady=12)
         else:
             tk.Label(f, text="📚", font=("Segoe UI Emoji", 42), bg=c["bg"], fg=c["text_muted"]).pack(pady=(20, 6))
@@ -922,7 +973,7 @@ class LibraryWindow(tk.Tk):
         except Exception as e:
             messagebox.showerror(TEXTS[LANG]["error"], str(e)); return
         if loader.count == 0:
-            messagebox.showerror(TEXTS[LANG]["error"], "Sem imagens."); return
+            messagebox.showerror(TEXTS[LANG]["error"], ui('Sem imagens.', 'No images.')); return
 
         if sibling_list is None:
             sibling_list = self._siblings_of(path)
@@ -961,23 +1012,23 @@ class LibraryWindow(tk.Tk):
 
     def _do_backup(self):
         path = filedialog.asksaveasfilename(
-            title="Exportar backup", defaultextension=".json",
+            title=ui('Exportar backup', 'Export backup'), defaultextension=".json",
             filetypes=[("JSON", "*.json")],
             initialfile="panel_backup.json")
         if path:
             try:
                 export_backup(path)
-                messagebox.showinfo("Backup", f"Backup salvo em:\n{path}")
+                messagebox.showinfo("Backup", ui(f"Backup salvo em:\n{path}", f"Backup saved to:\n{path}"))
             except Exception as e:
                 messagebox.showerror(TEXTS[LANG]["error"], str(e))
 
     def _do_restore(self):
         path = filedialog.askopenfilename(
-            title="Importar backup", filetypes=[("JSON", "*.json")])
+            title=ui('Importar backup', 'Import backup'), filetypes=[("JSON", "*.json")])
         if path:
             try:
                 import_backup(path)
-                messagebox.showinfo("Restaurar", "Backup importado com sucesso!")
+                messagebox.showinfo(ui('Restaurar', 'Restore'), ui('Backup importado com sucesso!', 'Backup imported successfully!'))
                 self._refresh_library()
             except Exception as e:
                 messagebox.showerror(TEXTS[LANG]["error"], str(e))

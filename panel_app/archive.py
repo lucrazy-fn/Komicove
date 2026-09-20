@@ -2,6 +2,7 @@ from __future__ import annotations
 import io, os, re, threading, zipfile, shutil, subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw
+from .translations import ui
 try:
     import rarfile
 except ImportError: rarfile=None
@@ -24,9 +25,9 @@ def run_7zip(executable, arguments):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired as exc:
-        raise ValueError("O 7-Zip demorou demais para abrir o arquivo.") from exc
+        raise ValueError(ui("O 7-Zip demorou demais para abrir o arquivo.", "7-Zip took too long to open the file.")) from exc
     if result.returncode != 0:
-        raise ValueError("O 7-Zip não conseguiu ler o arquivo. Verifique se está íntegro e sem senha.")
+        raise ValueError(ui("O 7-Zip não conseguiu ler o arquivo. Verifique se está íntegro e sem senha.", "7-Zip could not read the file. Make sure it is intact and not password-protected."))
     return result.stdout
 def natural_key(value): return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(value))]
 class ArchiveBackend:
@@ -52,8 +53,8 @@ class ArchiveBackend:
             with rarfile.RarFile(self.path) as source: self.names=sorted([n for n in source.namelist() if Path(n).suffix.lower() in IMG_EXTS and not Path(n).name.startswith('.')],key=natural_key)
         elif fitz and suffix==".pdf": self.kind="pdf"; self._pdf_doc=fitz.open(self.path); self.names=[f"page_{i}" for i in range(self._pdf_doc.page_count)]
         elif suffix in {".7z", ".cb7", ".tar", ".cbt"}:
-            raise ValueError("Instale o 7-Zip ou configure PANEL_7ZIP_PATH com o caminho do 7z.exe.")
-        else: raise ValueError(f"Formato não suportado: {suffix}")
+            raise ValueError(ui("Instale o 7-Zip ou configure PANEL_7ZIP_PATH com o caminho do 7z.exe.", "Install 7-Zip or set PANEL_7ZIP_PATH to the 7z executable."))
+        else: raise ValueError(ui(f"Formato não suportado: {suffix}", f"Unsupported format: {suffix}"))
     @property
     def count(self): return len(self.names)
     def read_page(self,index):
@@ -71,7 +72,7 @@ def extract_cover_only(path):
     backend=ArchiveBackend(path)
     try:
         if backend.count == 0:
-            raise ValueError("O arquivo não contém páginas de imagem reconhecidas.")
+            raise ValueError(ui("O arquivo não contém páginas de imagem reconhecidas.", "The file does not contain recognized image pages."))
         return backend.read_page(0)
     finally:backend.close()
 def pil_from_bytes(data): return Image.open(io.BytesIO(data)).convert("RGBA")

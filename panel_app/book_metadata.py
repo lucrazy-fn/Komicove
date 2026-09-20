@@ -1,5 +1,6 @@
 import os
 from .storage import APPDATA_DIR, json_load, json_save
+from .translations import ui
 
 FILE = os.path.join(APPDATA_DIR, 'book_metadata.json')
 
@@ -13,7 +14,7 @@ def save(path, values):
     data[os.path.abspath(path)] = {key: str(value).strip() for key, value in values.items()
                                  if key in {'title', 'writer', 'series', 'number', 'cover'}}
     if not json_save(FILE, data):
-        raise OSError('Não foi possível salvar as informações da HQ.')
+        raise OSError(ui('Não foi possível salvar as informações da HQ.', 'Could not save the comic information.'))
 
 
 def edit(parent, path, original, refresh):
@@ -23,11 +24,11 @@ def edit(parent, path, original, refresh):
     from .runtime import THEME, FLABEL
     values = {**original, **get(path)}
     dialog = tk.Toplevel(parent)
-    dialog.title('Editar informações da HQ')
+    dialog.title(ui('Editar informações da HQ', 'Edit comic information'))
     dialog.configure(bg=THEME['bg'])
     dialog.geometry('480x490')
     entries = {}
-    for key, title in [('title', 'Título'), ('writer', 'Autor'), ('series', 'Série'), ('number', 'Número da edição')]:
+    for key, title in [('title', ui('Título', 'Title')), ('writer', ui('Autor', 'Author')), ('series', ui('Série', 'Series')), ('number', ui('Número da edição', 'Issue number'))]:
         tk.Label(dialog, text=title, bg=THEME['bg'], fg=THEME['text'], font=FLABEL).pack(anchor='w', padx=20, pady=(12, 3))
         entry = tk.Entry(dialog, font=FLABEL)
         entry.insert(0, values.get(key, ''))
@@ -35,11 +36,11 @@ def edit(parent, path, original, refresh):
         entries[key] = entry
     cover = [values.get('cover', '')]
     def choose():
-        selected = filedialog.askopenfilename(parent=dialog, filetypes=[('Imagens', '*.png *.jpg *.jpeg *.webp')])
+        selected = filedialog.askopenfilename(parent=dialog, filetypes=[(ui('Imagens', 'Images'), '*.png *.jpg *.jpeg *.webp')])
         if selected:
             cover[0] = selected
-            cover_button.configure(text='Capa selecionada')
-    cover_button = tk.Button(dialog, text='Escolher capa', command=choose)
+            cover_button.configure(text=ui('Capa selecionada', 'Cover selected'))
+    cover_button = tk.Button(dialog, text=ui('Escolher capa', 'Choose cover'), command=choose)
     cover_button.pack(pady=14)
     def commit():
         try:
@@ -56,9 +57,9 @@ def edit(parent, path, original, refresh):
                 new['cover'] = dest
             save(path, new)
         except Exception as error:
-            messagebox.showerror('Não foi possível salvar', str(error), parent=dialog)
+            messagebox.showerror(ui('Não foi possível salvar', 'Could not save'), str(error), parent=dialog)
             return
         dialog.destroy()
         refresh()
-    tk.Button(dialog, text='Salvar informações', command=commit).pack(pady=8)
-    tk.Label(dialog, text='O arquivo original não será alterado.', bg=THEME['bg'], fg=THEME['text_dim']).pack()
+    tk.Button(dialog, text=ui('Salvar informações', 'Save information'), command=commit).pack(pady=8)
+    tk.Label(dialog, text=ui('O arquivo original não será alterado.', 'The original file will not be changed.'), bg=THEME['bg'], fg=THEME['text_dim']).pack()

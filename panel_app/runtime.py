@@ -5,6 +5,7 @@ import zipfile
 import os, sys, io, json, time, threading, hashlib, re, shutil, logging
 from pathlib import Path
 from collections import deque
+from panel_app.translations import ui
 
 from panel_app.storage import (
     APPDATA_DIR as _APPDATA, BOOKMARKS_FILE, COVER_CACHE_DIR, FAVORITES_FILE,
@@ -15,10 +16,12 @@ from panel_app.storage import (
     load_favorites, load_manual_status, load_prefs, load_progress, save_prefs,
     save_progress, set_manual_status, toggle_bookmark, toggle_favorite,
     register_change_listener,
+    personal_statistics, record_page_read, record_reading_time,
 )
 from panel_app.account_views import render_notifications, render_profile
 from panel_app.sync import build_sync_payload, content_id
-from panel_app.reader import load_state as load_reader_state, save_state as save_reader_state
+from panel_app.reader import (load_state as load_reader_state, save_state as save_reader_state,
+    load_manual_panels, save_manual_panels)
 from panel_app.downloads import manager as download_manager, render_downloads
 from panel_app.community import load_catalog, save_catalog
 from panel_app.moderation import can_moderate
@@ -231,7 +234,8 @@ def load_icons(size=(18, 18)):
     icon_files = {
         "library": "library.png", "collections": "collections.png",
         "next": "next.png", "open": "open.png", "prev": "prev.png",
-        "theme": "theme.png", "zoom_in": "zoom_in.png", "zoom_out": "zoom_out.png",
+        "theme": "theme.png", "language": "language.png",
+        "zoom_in": "zoom_in.png", "zoom_out": "zoom_out.png",
         "backup": "backup.png", "restore": "restore.png", "favorited": "favorited.png",
     }
     for name, filename in icon_files.items():

@@ -1,6 +1,38 @@
 import threading
 import tkinter as tk
+import re
 from tkinter import messagebox, simpledialog
+from panel_app.translations import ui
+
+
+def _notification_copy(item):
+    title, message = item.get("title", ""), item.get("message", "")
+    kind = item.get("kind")
+    if kind == "publication_decision":
+        match = re.match(r'^“(.+)” foi (aprovado|rejeitado)\.\s*(.*)$', message, re.DOTALL)
+        translated_title = ui("Seu envio foi analisado", "Your submission was reviewed")
+        if match:
+            comic, decision, reason = match.groups()
+            decision = ui("aprovado", "approved") if decision == "aprovado" else ui("rejeitado", "rejected")
+            return translated_title, ui(
+                f'“{comic}” foi {decision}. {reason}',
+                f'“{comic}” was {decision}. {reason}',
+            )
+        return translated_title, message
+    if kind == "punishment":
+        if title == "Conta suspensa":
+            title = ui("Conta suspensa", "Account suspended")
+            match = re.match(r'^Suspensa por (.+?) hora\(s\)\. Motivo: (.*)$', message, re.DOTALL)
+            if match:
+                message = ui(
+                    f"Suspensa por {match.group(1)} hora(s). Motivo: {match.group(2)}",
+                    f"Suspended for {match.group(1)} hour(s). Reason: {match.group(2)}",
+                )
+        elif title == "Conta banida":
+            title = ui("Conta banida", "Account banned")
+            if message.startswith("Motivo: "):
+                message = ui(message, "Reason: " + message[len("Motivo: "):])
+    return title, message
 
 
 def _clear(container):
@@ -122,13 +154,13 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
     role_holder = tk.Frame(sub, bg=c["bg"]); role_holder.pack(side="left", padx=(8, 0))
     _role_badge(role_holder, theme, getattr(user, "role", "user")).pack()
 
-    status = tk.Label(container, text="Carregando…", font=small, bg=c["bg"], fg=c["text_dim"])
+    status = tk.Label(container, text=ui('Carregando…', 'Loading…'), font=small, bg=c["bg"], fg=c["text_dim"])
     status.pack(anchor="w", padx=30)
 
     if getattr(user, "role", "user") == "user":
         def use_setup_token():
             secret = simpledialog.askstring(
-                "Ativar cargo", "Cole o token de configuração do servidor:",
+                ui('Ativar cargo', 'Enable role'), ui('Cole o token de configuração do servidor:', 'Paste the server setup token:'),
                 parent=root, show="•",
             )
             if not secret:
@@ -137,18 +169,18 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
                 promoted = api.claim_moderator(user.token, secret.strip())
                 user.role = promoted.role
                 user.is_moderator = True
-                status.config(text="Cargo ativado. Reabra o app para atualizar o menu.", fg=c["read_badge_text"])
+                status.config(text=ui('Cargo ativado. Reabra o app para atualizar o menu.', 'Role enabled. Reopen the app to refresh the menu.'), fg=c["read_badge_text"])
                 on_updated(promoted)
             except Exception as exc:
-                messagebox.showerror("Ativar cargo", str(exc), parent=root)
-        _pill_button(container, "Tenho um token de cargo", use_setup_token, theme, font=small, variant="ghost").pack(anchor="w", padx=30, pady=(8, 0))
+                messagebox.showerror(ui('Ativar cargo', 'Enable role'), str(exc), parent=root)
+        _pill_button(container, ui('Tenho um token de cargo', 'I have a role token'), use_setup_token, theme, font=small, variant="ghost").pack(anchor="w", padx=30, pady=(8, 0))
 
     form = _card(container, theme)
     form.pack(fill="x", padx=30, pady=(14, 18))
-    tk.Label(form, text="Informações", font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    tk.Label(form, text=ui('Informações', 'Information'), font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
 
     fields = {}
-    for key, label in [("username", "Usuário"), ("display_name", "Nome de exibição"), ("email", "E-mail")]:
+    for key, label in [("username", ui('Usuário', 'Username')), ("display_name", ui('Nome de exibição', 'Display name')), ("email", ui('E-mail', 'Email'))]:
         fields[key] = _labeled_entry(form, theme, label, font_label=small, font_entry=body)
     fields["username"].config(state="disabled")
 
@@ -162,6 +194,11 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
         for w in role_holder.winfo_children(): w.destroy()
         _role_badge(role_holder, theme, data.get("role", "user")).pack()
         status.config(text="")
+        email_verified["value"]=bool(data.get("email_verified"))
+        totp_enabled["value"]=bool(data.get("totp_enabled"))
+        refresh_security_labels()
+
+    email_verified={"value":False}; totp_enabled={"value":False}
 
     def fetch():
         try: result = (api.get_profile(user.token), None)
@@ -170,7 +207,7 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
     threading.Thread(target=fetch, daemon=True).start()
 
     def save():
-        status.config(text="Salvando…", fg=c["text_dim"])
+        status.config(text=ui("Salvando…", "Saving…"), fg=c["text_dim"])
         def work():
             try:
                 result = (api.update_profile(
@@ -180,23 +217,30 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
                 result = (None, str(exc))
             def done(data, error):
                 if error: status.config(text=error, fg=c["accent2"]); return
-                status.config(text="Perfil atualizado.", fg=c["read_badge_text"])
+                status.config(text=ui('Perfil atualizado.', 'Profile updated.'), fg=c["read_badge_text"])
                 on_updated(data)
             root.after(0, lambda: done(*result))
         threading.Thread(target=work, daemon=True).start()
 
     btn_row = tk.Frame(form, bg=c["surface"]); btn_row.pack(fill="x", pady=(18, 0))
-    _pill_button(btn_row, "Salvar alterações", save, theme, font=body, variant="accent").pack(side="right")
+    _pill_button(btn_row, ui('Salvar alterações', 'Save changes'), save, theme, font=body, variant="accent").pack(side="right")
 
     security = _card(container, theme)
     security.pack(fill="x", padx=30, pady=(0, 18))
-    tk.Label(security, text="Segurança", font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
-    old = _labeled_entry(security, theme, "Senha atual", font_label=small, font_entry=body, secret=True)
-    new = _labeled_entry(security, theme, "Nova senha", font_label=small, font_entry=body, secret=True)
+    tk.Label(security, text=ui('Segurança', 'Security'), font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    email_status=tk.Label(security,text='',font=small,bg=c['surface'],fg=c['text_dim']); email_status.pack(anchor='w',pady=(8,0))
+    twofa_status=tk.Label(security,text='',font=small,bg=c['surface'],fg=c['text_dim']); twofa_status.pack(anchor='w',pady=(4,8))
+    def refresh_security_labels():
+        email_status.config(text=ui('E-mail confirmado' if email_verified['value'] else 'E-mail não confirmado',
+            'Email verified' if email_verified['value'] else 'Email not verified'))
+        twofa_status.config(text=ui('2FA ativado' if totp_enabled['value'] else '2FA desativado',
+            '2FA enabled' if totp_enabled['value'] else '2FA disabled'))
+    old = _labeled_entry(security, theme, ui('Senha atual', 'Current password'), font_label=small, font_entry=body, secret=True)
+    new = _labeled_entry(security, theme, ui('Nova senha', 'New password'), font_label=small, font_entry=body, secret=True)
 
     def change_password():
         if len(new.get()) < 8:
-            messagebox.showerror("Segurança", "A nova senha precisa ter ao menos 8 caracteres.", parent=root)
+            messagebox.showerror(ui('Segurança', 'Security'), ui('A nova senha precisa ter ao menos 8 caracteres.', 'The new password must contain at least 8 characters.'), parent=root)
             return
         def work():
             try:
@@ -204,20 +248,30 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
             except Exception as exc:
                 error = str(exc)
             def done():
-                if error: messagebox.showerror("Segurança", error, parent=root)
-                else: messagebox.showinfo("Segurança", "Senha alterada. Entre novamente no próximo acesso.", parent=root)
+                if error: messagebox.showerror(ui('Segurança', 'Security'), error, parent=root)
+                else: messagebox.showinfo(ui('Segurança', 'Security'), ui('Senha alterada. Entre novamente no próximo acesso.', 'Password changed. Sign in again next time.'), parent=root)
             root.after(0, done)
         threading.Thread(target=work, daemon=True).start()
 
     sec_btn_row = tk.Frame(security, bg=c["surface"]); sec_btn_row.pack(fill="x", pady=(18, 0))
-    _pill_button(sec_btn_row, "Trocar senha", change_password, theme, font=body, variant="accent").pack(side="right")
+    _pill_button(sec_btn_row, ui('Trocar senha', 'Change password'), change_password, theme, font=body, variant="accent").pack(side="right")
 
-    if getattr(user, "role", "user") in {"admin", "owner"}:
-        def enable_2fa():
-            password = simpledialog.askstring("Configurar 2FA", "Confirme sua senha atual:", show="*", parent=root)
+    def verify_email():
+        try: api.resend_email_verification(user.token)
+        except Exception as exc: messagebox.showerror(ui('Confirmar e-mail','Verify email'),str(exc),parent=root); return
+        code=simpledialog.askstring(ui('Confirmar e-mail','Verify email'),ui('Cole o código enviado ao seu e-mail:','Paste the code sent to your email:'),parent=root)
+        if not code:return
+        try:
+            api.confirm_email(code); email_verified['value']=True; refresh_security_labels()
+            messagebox.showinfo(ui('Confirmar e-mail','Verify email'),ui('E-mail confirmado.','Email verified.'),parent=root)
+        except Exception as exc: messagebox.showerror(ui('Confirmar e-mail','Verify email'),str(exc),parent=root)
+    _pill_button(sec_btn_row,ui('Confirmar e-mail','Verify email'),verify_email,theme,font=small,variant='soft').pack(side='left')
+
+    def enable_2fa():
+            password = simpledialog.askstring(ui('Configurar 2FA', 'Set up 2FA'), ui('Confirme sua senha atual:', 'Confirm your current password:'), show="*", parent=root)
             if not password: return
-            previous_code = simpledialog.askstring("Configurar 2FA",
-                "Código do autenticador atual (deixe vazio na primeira ativação):", parent=root)
+            previous_code = simpledialog.askstring(ui('Configurar 2FA', 'Set up 2FA'),
+                ui('Código do autenticador atual (deixe vazio na primeira ativação):', 'Current authenticator code (leave empty on first setup):'), parent=root)
             if previous_code is None: return
             def work():
                 try: setup, error = api.setup_2fa(user.token, password, previous_code or None), None
@@ -225,26 +279,37 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
                 def show(setup, error):
                     if error: messagebox.showerror("2FA", error, parent=root); return
                     code = simpledialog.askstring(
-                        "Ativar 2FA",
-                        f"Adicione este segredo ao autenticador:\n\n{setup['secret']}\n\nDigite o código gerado:",
+                        ui('Ativar 2FA', 'Enable 2FA'),
+                        ui(f"Adicione este segredo ao autenticador:\n\n{setup['secret']}\n\nDigite o código gerado:",
+                           f"Add this secret to your authenticator:\n\n{setup['secret']}\n\nEnter the generated code:"),
                         parent=root)
                     if not code: return
                     try:
-                        api.confirm_2fa(user.token, code)
-                        messagebox.showinfo("2FA", "Autenticação em duas etapas ativada.", parent=root)
+                        result=api.confirm_2fa(user.token, code); totp_enabled['value']=True; refresh_security_labels()
+                        recovery='\n'.join(result.get('recovery_codes',[]))
+                        messagebox.showinfo("2FA", ui(f'2FA ativado. Guarde estes códigos de recuperação em local seguro:\n\n{recovery}',f'2FA enabled. Store these recovery codes somewhere safe:\n\n{recovery}'), parent=root)
                     except Exception as exc:
                         messagebox.showerror("2FA", str(exc), parent=root)
                 root.after(0, lambda: show(setup, error))
             threading.Thread(target=work, daemon=True).start()
-        _pill_button(sec_btn_row, "Configurar 2FA", enable_2fa, theme, font=small, variant="soft").pack(
-            side="right", padx=(0, 10))
+    def disable_2fa():
+        password=simpledialog.askstring(ui('Desativar 2FA','Disable 2FA'),ui('Confirme sua senha:','Confirm your password:'),show='•',parent=root)
+        if not password:return
+        code=simpledialog.askstring(ui('Desativar 2FA','Disable 2FA'),ui('Código do autenticador ou de recuperação:','Authenticator or recovery code:'),parent=root)
+        if not code:return
+        try:
+            api.disable_2fa(user.token,password,code); totp_enabled['value']=False; refresh_security_labels()
+            messagebox.showinfo('2FA',ui('2FA desativado. Entre novamente.','2FA disabled. Sign in again.'),parent=root)
+        except Exception as exc: messagebox.showerror('2FA',str(exc),parent=root)
+    _pill_button(sec_btn_row, ui('Configurar 2FA', 'Set up 2FA'), enable_2fa, theme, font=small, variant="soft").pack(side="right", padx=(0, 10))
+    _pill_button(sec_btn_row, ui('Desativar 2FA', 'Disable 2FA'), disable_2fa, theme, font=small, variant="ghost").pack(side="right", padx=(0, 10))
 
 
 def render_notifications(container, root, user, api, theme, fonts, on_count):
     _clear(container); title, body, small = fonts
     head = tk.Frame(container, bg=theme["bg"]); head.pack(fill="x", padx=30, pady=(28, 10))
-    tk.Label(head, text="Notificações", font=title, bg=theme["bg"], fg=theme["text"]).pack(side="left")
-    status = tk.Label(container, text="Carregando…", font=small, bg=theme["bg"], fg=theme["text_dim"])
+    tk.Label(head, text=ui('Notificações', 'Notifications'), font=title, bg=theme["bg"], fg=theme["text"]).pack(side="left")
+    status = tk.Label(container, text=ui('Carregando…', 'Loading…'), font=small, bg=theme["bg"], fg=theme["text_dim"])
     status.pack(anchor="w", padx=30)
     canvas = tk.Canvas(container, bg=theme["bg"], highlightthickness=0)
     canvas.pack(fill="both", expand=True, padx=30, pady=12)
@@ -254,23 +319,25 @@ def render_notifications(container, root, user, api, theme, fonts, on_count):
     content.bind("<Configure>", lambda e: canvas.config(scrollregion=canvas.bbox("all")))
 
     def loaded(items, error=None):
-        status.config(text=error or f"{sum(not x.get('read_at') for x in items)} não lida(s)",
+        unread_count = sum(not x.get("read_at") for x in items)
+        status.config(text=error or ui(f"{unread_count} não lida(s)", f"{unread_count} unread"),
                       fg=theme["accent2"] if error else theme["text_dim"])
         if error: return
         on_count(sum(not x.get("read_at") for x in items))
         if not items:
-            tk.Label(content, text="Nenhuma notificação.", font=body, bg=theme["bg"],
+            tk.Label(content, text=ui('Nenhuma notificação.', 'No notifications.'), font=body, bg=theme["bg"],
                       fg=theme["text_dim"]).pack(pady=50)
             return
         for item in items:
+            notification_title, notification_message = _notification_copy(item)
             unread = not item.get("read_at")
             card = tk.Frame(content, bg=theme["surface_alt"] if unread else theme["surface"],
                              padx=16, pady=12,
                              highlightbackground=theme["accent"] if unread else theme["border"],
                              highlightthickness=1)
             card.pack(fill="x", pady=5)
-            tk.Label(card, text=item["title"], font=body, bg=card["bg"], fg=theme["text"]).pack(anchor="w")
-            tk.Label(card, text=item["message"], font=small, bg=card["bg"], fg=theme["text_dim"],
+            tk.Label(card, text=notification_title, font=body, bg=card["bg"], fg=theme["text"]).pack(anchor="w")
+            tk.Label(card, text=notification_message, font=small, bg=card["bg"], fg=theme["text_dim"],
                       wraplength=760, justify="left").pack(anchor="w")
             if unread:
                 threading.Thread(target=lambda i=item: api.mark_notification_read(user.token, i["id"]),
