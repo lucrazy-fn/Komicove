@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="panellogo.png" width="260" alt="Logo PANEL">
-  <img src="arrow.png" width="100" alt="→">
-  <img src="komicovelogo.png" width="260" alt="Logo Komicove">
+  <img src="panellogo.png" width="160" alt="Logo PANEL">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="komicovelogo.png" width="160" alt="Logo Komicove">
 </p>
 
 # PANEL · Comic Book Reader
