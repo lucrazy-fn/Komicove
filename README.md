@@ -1,6 +1,6 @@
 <p align="center">
   <img src="panellogo.png" width="160" alt="Logo PANEL">
-  &nbsp;&nbsp;&nbsp;&nbsp;
+  &nbsp;&nbsp; ➜ &nbsp;&nbsp;
   <img src="komicovelogo.png" width="160" alt="Logo Komicove">
 </p>
 
