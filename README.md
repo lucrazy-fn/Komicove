@@ -10,6 +10,22 @@ Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android.
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
+## 📢 PANEL está se tornando Komicove
+
+**O PANEL está mudando de nome para Komicove.**
+
+Quando comecei o projeto, escolhi o nome **PANEL** sem saber que já existia outro leitor de quadrinhos com um nome muito parecido. Eu não conhecia esse aplicativo antes de criar e publicar o PANEL.
+
+Agora que descobri essa semelhança e o projeto está crescendo, decidi mudar o nome para dar a ele uma identidade mais própria e evitar possíveis confusões no futuro.
+
+A partir das próximas versões, o projeto passará a usar o nome **Komicove**.
+
+**Nada além do nome está mudando:** Komicove continua sendo o mesmo projeto open-source, com o mesmo desenvolvimento, recursos e objetivos. As versões anteriores continuarão disponíveis com o nome PANEL.
+
+Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até agora! ❤️
+
+**PANEL → Komicove**
+
 ## Para começar
 
 - **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
