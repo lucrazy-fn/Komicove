@@ -1,9 +1,5 @@
 <p align="center">
-  <img src="panellogo.png" width="300" alt="Logo PANEL">
-  &nbsp;&nbsp;
-  <img src="arrow.png" width="150" alt="PANEL para Komicove">
-  &nbsp;&nbsp;
-  <img src="komicovelogo.png" width="300" alt="Logo Komicove">
+  <img src="transition.png" width="850" alt="PANEL está se tornando Komicove">
 </p>
 
 # PANEL · Comic Book Reader
