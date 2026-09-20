@@ -43,8 +43,16 @@ def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Sessi
 def resend_email_verification(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     if not user.email: raise HTTPException(400,"Adicione um e-mail à conta. / Add an email to your account.")
     if user.email_verified: return {"message":"E-mail já confirmado. / Email already verified."}
-    try: account_actions.send_verification(db,user)
-    except Exception: pass
+    try:
+        delivered = account_actions.send_verification(db,user)
+    except Exception:
+        raise HTTPException(503,
+            "O servidor de e-mail recusou o envio. Verifique o log do Render. / "
+            "The mail server rejected delivery. Check the Render log.")
+    if not delivered:
+        raise HTTPException(503,
+            "O envio de e-mail não está configurado no servidor. / "
+            "Email delivery is not configured on the server.")
     return {"message":"Se o serviço de e-mail estiver disponível, enviamos um novo código. / A new code was sent if email delivery is available."}
 
 @router.post("/password", status_code=204)
