@@ -1,4 +1,4 @@
-<p align="center"><img src="panellogo.png" width="160" alt="Logo PANEL"></p>
+<p align="center"><img src="panellogo.png" width="160" alt="Logo PANEL"></p> <p align="center"><img src="komicovelogo.png" width="160" alt="Logo Komicove"></p>
 
 # PANEL · Comic Book Reader
 
