@@ -1,16 +1,8 @@
-<table align="center">
-  <tr>
-    <td>
-      <img src="panellogo.png" width="260" alt="Logo PANEL">
-    </td>
-    <td>
-      <h1>⟹</h1>
-    </td>
-    <td>
-      <img src="komicovelogo.png" width="260" alt="Logo Komicove">
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="panellogo.png" width="260" alt="Logo PANEL">
+  <img src="arrow.png" width="100" alt="→">
+  <img src="komicovelogo.png" width="260" alt="Logo Komicove">
+</p>
 
 # PANEL · Comic Book Reader
 
