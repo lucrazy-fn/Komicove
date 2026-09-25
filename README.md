@@ -2,27 +2,25 @@
   <img src="transition.png" width="850" alt="PANEL está se tornando Komicove">
 </p>
 
-# PANEL · Comic Book Reader
+# Komicove · Comic Book Reader
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 1.7.1 · Linux 1.7.1 · Android 1.6.1 · Licença MIT**
+**Windows 0.1.0 · Android 0.1.0 · Linux em preparação · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
-## 📢 PANEL está se tornando Komicove
+## 📢 PANEL agora é Komicove
 
-**O PANEL está mudando de nome para Komicove.**
+**A partir da versão 0.1.0, o PANEL passa a se chamar Komicove.**
 
 Quando comecei o projeto, escolhi o nome **PANEL** sem saber que já existia outro leitor de quadrinhos com um nome muito parecido. Eu não conhecia esse aplicativo antes de criar e publicar o PANEL.
 
 Agora que descobri essa semelhança e o projeto está crescendo, decidi mudar o nome para dar a ele uma identidade mais própria e evitar possíveis confusões no futuro.
 
-A partir das próximas versões, o projeto passará a usar o nome **Komicove**.
-
-**Nada além do nome está mudando:** Komicove continua sendo o mesmo projeto open-source, com o mesmo desenvolvimento, recursos e objetivos. As versões anteriores continuarão disponíveis com o nome PANEL.
+Komicove continua sendo o mesmo projeto open-source, com o mesmo desenvolvimento e objetivos. Os dados e contas existentes continuam acessíveis; as versões anteriores permanecem disponíveis com o nome PANEL.
 
 Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até agora! ❤️
 
@@ -31,15 +29,15 @@ Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até a
 ## Para começar
 
 - **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
-- **Linux x86_64:** baixe o pacote portátil ou o Flatpak experimental. A compatibilidade pode variar conforme a distribuição.
+- **Linux x86_64:** o código desktop é compartilhado com Windows, mas o pacote Komicove 0.1.0 para Linux ainda precisa ser gerado e validado.
 - **Android 8 ou superior:** baixe o APK na mesma página.
 
-No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, importe os arquivos pelo seletor do dispositivo. Escolha uma HQ na biblioteca para começar.
+No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, adicione arquivos ou uma pasta pelo seletor do dispositivo. Os arquivos da pasta ficam no local original; o app usa uma cópia temporária enquanto a HQ está aberta. As HQs já importadas em versões anteriores continuam na biblioteca.
 
 ## Recursos
 
-- Biblioteca com capas, busca, favoritos e progresso salvo.
-- Coleções para organizar seu acervo.
+- Biblioteca com capas, busca, favoritos, progresso salvo e ordem alfanumérica no Android.
+- Coleções para organizar seu acervo, com seleção de várias HQs no Android.
 - Leitor com zoom, marcadores, página dupla, modo mangá e leitura vertical.
 - Preferências de persistência do zoom e encaixe automático.
 - Leitura guiada experimental no Windows e no Android.
@@ -63,7 +61,7 @@ Quando a detecção não reconhece as divisões da página, o leitor usa trechos
 
 Arquivos compactados devem conter páginas de imagem, inclusive dentro de pastas. O Android inclui suporte a RAR5. Arquivos com senha não são suportados.
 
-## Colaborar com o PANEL
+## Colaborar com o Komicove
 
 Sugestões, relatos de bugs, melhorias de acessibilidade, traduções e contribuições de código são bem-vindos.
 
@@ -75,10 +73,10 @@ Sugestões, relatos de bugs, melhorias de acessibilidade, traduções e contribu
 
 ## Encontrou um problema?
 
-Abra uma [Issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues) com a versão do PANEL, seu sistema operacional, os passos para reproduzir e o resultado esperado. Se possível, inclua a mensagem de erro ou uma captura de tela.
+Abra uma [Issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues) com a versão do Komicove, seu sistema operacional, os passos para reproduzir e o resultado esperado. Se possível, inclua a mensagem de erro ou uma captura de tela.
 
 Para falhas na leitura guiada, informe a página e se o contador mostrava **Quadro** ou **Trecho**. Não compartilhe senhas, tokens ou arquivos de quadrinhos sem autorização.
 
 ## Licença
 
-O PANEL usa a [licença MIT](LICENSE). As dependências mantêm suas próprias licenças.
+O Komicove usa a [licença MIT](LICENSE). As dependências mantêm suas próprias licenças.

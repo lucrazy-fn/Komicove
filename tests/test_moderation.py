@@ -1,6 +1,6 @@
-from panel_backend.moderation.analyzers.metadata_rules import MetadataRulesAnalyzer
-from panel_backend.moderation.known_works import KnownWorksRepository
-from panel_backend.moderation.models import PublicationSubmission, RiskLevel
+from komicove_backend.moderation.analyzers.metadata_rules import MetadataRulesAnalyzer
+from komicove_backend.moderation.known_works import KnownWorksRepository
+from komicove_backend.moderation.models import PublicationSubmission, RiskLevel
 
 
 def _submission(**overrides):

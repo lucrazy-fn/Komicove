@@ -3,9 +3,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from panel_backend.api.app import app
-from panel_backend.api.deps import get_db
-from panel_backend.db import Base
+from komicove_backend.api.app import app
+from komicove_backend.api.deps import get_db
+from komicove_backend.db import Base
 
 
 def test_only_uploader_can_remove_publication():

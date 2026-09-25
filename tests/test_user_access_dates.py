@@ -3,11 +3,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from panel_backend.api.app import app
-from panel_backend.api.deps import get_db
-from panel_backend.accounts import service
-from panel_backend.accounts.models import User
-from panel_backend import db as database
+from komicove_backend.api.app import app
+from komicove_backend.api.deps import get_db
+from komicove_backend.accounts import service
+from komicove_backend.accounts.models import User
+from komicove_backend import db as database
 
 
 def test_record_access_throttles_updates(monkeypatch):

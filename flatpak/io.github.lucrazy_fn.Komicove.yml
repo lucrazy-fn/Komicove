@@ -1,0 +1,178 @@
+id: io.github.lucrazy_fn.Komicove
+runtime: org.freedesktop.Sdk
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: komicove
+
+# Tkinter não usa o portal de arquivos (xdg-desktop-portal), então o próprio
+# diálogo "Escolher pasta" do app só vê o que o sandbox permite. Por isso é
+# preciso liberar --filesystem=home (mesma solução usada pelo Thonny, que
+# também é feito em Tkinter). --share=network é usado pelo login/downloads/
+# checagem de atualização opcionais do app.
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --device=dri
+  - --filesystem=home
+  - --env=KOMICOVE_APPDATA_DIR=
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /man
+  - /share/man
+  - /share/doc
+  - '*.la'
+  - '*.a'
+
+modules:
+  # ---------------------------------------------------------------------
+  # Tkinter não vem no Python do org.freedesktop.Sdk. Construímos Tcl/Tk
+  # a partir do código-fonte e o módulo _tkinter separadamente, seguindo
+  # a receita usada pelo Thonny (também um app Tkinter) no Flathub.
+  # https://github.com/iwalton3/tkinter-standalone
+  # ---------------------------------------------------------------------
+  - name: tkinter
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=${FLATPAK_DEST} --no-build-isolation .
+    sources:
+      - type: git
+        url: https://github.com/iwalton3/tkinter-standalone
+        commit: 8e78e38ef0cceb44a3a0062e1c314a4ff3f981db
+    modules:
+      - name: tcl9.0
+        buildsystem: autotools
+        subdir: unix
+        config-opts:
+          - --disable-zipfs
+        post-install:
+          - chmod +w ${FLATPAK_DEST}/lib/libtcl9.0.so
+        cleanup:
+          - /bin
+          - /lib/pkgconfig
+          - /man
+        sources:
+          - type: archive
+            url: https://prdownloads.sourceforge.net/tcl/tcl9.0.2-src.tar.gz
+            sha256: e074c6a8d9ba2cddf914ba97b6677a552d7a52a3ca102924389a05ccb249b520
+      - name: tk9.0
+        buildsystem: autotools
+        subdir: unix
+        config-opts:
+          - --disable-zipfs
+        post-install:
+          - chmod +w ${FLATPAK_DEST}/lib/libtcl9tk9.0.so
+        cleanup:
+          - /bin
+          - /lib/pkgconfig
+          - /man
+        sources:
+          - type: archive
+            url: https://prdownloads.sourceforge.net/tcl/tk9.0.2-src.tar.gz
+            sha256: 76fb852b2f167592fe8b41aa6549ce4e486dbf3b259a269646600e3894517c76
+
+  # ---------------------------------------------------------------------
+  # Dependências Python do Komicove (pyproject.toml), como wheels prontas
+  # (manylinux) para evitar compilar Pillow/PyMuPDF do zero no sandbox.
+  # Gerado com o flatpak-pip-generator e ajustado para usar wheels.
+  # ---------------------------------------------------------------------
+  - name: python3-Pillow
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation "Pillow==12.3.0"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/f7/62/de5bdd77d935331f4f802edc11e4d82950f642caad6cb2f949837b8560e2/pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3
+      - type: file
+        url: https://files.pythonhosted.org/packages/1f/01/e18aff37cb0b4aac47ac90f016d347a49aca667ef97f190b06ac2aabc928/pillow-12.3.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+        sha256: f7401aebd7f581d7f83a439d87d474999317ee099218e5ad25d125290990ba65
+
+  - name: python3-PyMuPDF
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation "PyMuPDF==1.28.2"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/c7/06/dace3e27af26690cb20bead80dbac42941b0841eb689b8aabbd67dde16f0/pymupdf-1.28.2-cp310-abi3-manylinux_2_28_x86_64.whl
+        sha256: 397d6715c1f0df7548a92d0afd8ce370fc48fa47aeefac16be2bc04a16a8227f
+      - type: file
+        url: https://files.pythonhosted.org/packages/d2/86/4a68f080b71b46802178346af46486e1697508e760855ff5f3b218a6dff7/pymupdf-1.28.2-cp310-abi3-manylinux_2_28_aarch64.whl
+        sha256: 3050a233dde1211efe89ada74e2add6238436434159f46097a1423aad2842545
+
+  - name: python3-rarfile
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation "rarfile==4.5"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/f5/36/ffd87452bf72310dfd1185ade33e5b8be374ab370d19573a8197ca25c95b/rarfile-4.5-py3-none-any.whl
+        sha256: c74341f4b9a3a3ebb35ef396d59daf059eb028f34995a7162950a41d97b84de9
+
+  - name: python3-requests
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-build-isolation "requests>=2.32,<3"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
+        sha256: 62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+      - type: file
+        url: https://files.pythonhosted.org/packages/cc/61/d01fc49b8dea277640b55a9e15960dbca9fdc8c9fde18e572d39c59f4019/charset_normalizer-3.5.1-py3-none-any.whl
+        sha256: 6df0ec430f9a831772c23ca5a224cba36517a58a84bb32c32bb59a9fa67c47f6
+      - type: file
+        url: https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl
+        sha256: ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+      - type: file
+        url: https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl
+        sha256: 2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+      - type: file
+        url: https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl
+        sha256: 0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+
+  # ---------------------------------------------------------------------
+  # O app em si. Troque "url"/"tag" pela branch/tag real que você quer
+  # publicar, ou use "type: dir" com "path: ../.." para empacotar a partir
+  # do checkout local em vez do GitHub.
+  # ---------------------------------------------------------------------
+  - name: komicove
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation .
+      - mkdir -p ${FLATPAK_DEST}/Icons
+      - cp -r Icons/* ${FLATPAK_DEST}/Icons/
+      - install -Dm644 komicovelogo.png ${FLATPAK_DEST}/komicovelogo.png
+      - install -Dm644 flatpak/io.github.lucrazy_fn.Komicove.desktop
+        ${FLATPAK_DEST}/share/applications/io.github.lucrazy_fn.Komicove.desktop
+      - install -Dm644 flatpak/io.github.lucrazy_fn.Komicove.metainfo.xml
+        ${FLATPAK_DEST}/share/metainfo/io.github.lucrazy_fn.Komicove.metainfo.xml
+      - install -Dm644 flatpak/Komicove-128.png
+        ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/io.github.lucrazy_fn.Komicove.png
+      - install -Dm644 flatpak/Komicove-256.png
+        ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/io.github.lucrazy_fn.Komicove.png
+      - install -Dm644 flatpak/Komicove-512.png
+        ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/io.github.lucrazy_fn.Komicove.png
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - .flatpak-builder
+          - build-dir
+          - build
+          - dist
+          - .venv
+          - .venv-linux
+          - .idea
+          - .env
+          - panel_storage
+          - panel.db
+          - komicove_storage
+          - komicove.db
+          - docs/security-audit

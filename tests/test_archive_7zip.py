@@ -1,6 +1,6 @@
 import subprocess
 import pytest
-from panel_app import archive
+from komicove_app import archive
 
 
 def test_7zip_lists_images_in_page_order_and_reads_stdout(monkeypatch, tmp_path):

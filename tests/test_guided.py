@@ -1,6 +1,6 @@
 import unittest
 from PIL import Image, ImageDraw
-from panel_app.guided import detect_regions, reading_regions
+from komicove_app.guided import detect_regions, reading_regions
 
 
 class GuidedTests(unittest.TestCase):

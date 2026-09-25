@@ -3,8 +3,8 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "panel-comic-book-reader"
-version = "1.7.1"
+name = "komicove"
+version = "0.1.0"
 description = "Leitor de quadrinhos local com biblioteca e API opcional."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,11 +31,15 @@ test = [
 ]
 
 [project.scripts]
-panel-reader = "panel_app.launcher:main"
+komicove = "komicove_app.launcher:main"
+panel-reader = "komicove_app.launcher:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q -p no:cacheprovider"
 
 [tool.setuptools.packages.find]
-include = ["panel_app*", "panel_backend*", "panel_client*"]
+include = ["komicove_app*", "komicove_backend*", "komicove_client*"]
+
+[tool.setuptools]
+py-modules = ["panel_backend"]

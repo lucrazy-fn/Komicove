@@ -2,8 +2,8 @@
 setlocal
 cd /d "%~dp0"
 if exist ".venv\Scripts\python.exe" (
-  ".venv\Scripts\python.exe" -m panel_app
+  ".venv\Scripts\python.exe" -m komicove_app
 ) else (
-  py -m panel_app
+  py -m komicove_app
 )
 if errorlevel 1 pause

@@ -1,7 +1,7 @@
 import io
 import zipfile
 from PIL import Image
-from panel_app.archive import ArchiveBackend, pil_from_bytes
+from komicove_app.archive import ArchiveBackend, pil_from_bytes
 
 
 def test_nested_pages_are_read_in_natural_order(tmp_path):

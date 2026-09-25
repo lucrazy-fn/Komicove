@@ -1,13 +1,13 @@
 plugins { id 'com.android.application' }
 android {
-    namespace 'com.lucrazy.panel'
+    namespace 'com.lucrazy.komicove'
     compileSdk 35
     defaultConfig {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 35
-        versionCode 10601
-        versionName '1.6.1'
+        versionCode 10603
+        versionName '0.1.0'
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -19,7 +19,7 @@ tasks.register('copyNamedDebugApk', Copy) {
     dependsOn('assembleDebug')
     from(layout.buildDirectory.file('outputs/apk/debug/app-debug.apk'))
     into(rootProject.layout.projectDirectory.dir('build/outputs/named'))
-    rename { "PANEL-Android-${android.defaultConfig.versionName}.apk" }
+    rename { "Komicove-Android-${android.defaultConfig.versionName}.apk" }
 }
 
 dependencies {

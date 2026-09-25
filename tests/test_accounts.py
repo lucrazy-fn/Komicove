@@ -1,8 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from panel_backend.accounts.service import authenticate, get_user_by_token, logout, register_user
-from panel_backend.db import Base
+from komicove_backend.accounts.service import authenticate, get_user_by_token, logout, register_user
+from komicove_backend.db import Base
 
 
 def test_register_login_validate_and_logout():

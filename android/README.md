@@ -1,11 +1,11 @@
-# PANEL Android — leitor nativo
+# Komicove Android: leitor nativo
 
-Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 1.6.1, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. As setas e o botão de retorno à biblioteca têm área de toque ampliada.
+Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 0.1.0, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. A biblioteca pode vincular arquivos e pastas sem guardar uma segunda cópia permanente. Há ordenação alfanumérica e seleção de várias HQs para coleções.
 
 ## Biblioteca e leitura
 
 - Importação de vários arquivos ou de uma pasta pelo seletor de documentos do Android.
-- Cópias privadas das HQs, sem acesso amplo ao armazenamento. Desinstalar o app remove essas cópias; os originais selecionados permanecem no local de origem.
+- Arquivos importados individualmente ficam em cópias privadas; arquivos adicionados por pasta permanecem no local original e são vinculados à biblioteca. Desinstalar o app remove as cópias privadas, mas não os originais da pasta.
 - Identificação SHA-256 para evitar duplicatas, capas, busca, favoritos, coleções e renomeação.
 - Mantenha a capa pressionada para organizar, publicar ou remover uma HQ.
 - Leitor com pinça, arrasto, duplo toque para zoom, gestos de página, botões e teclas de volume.

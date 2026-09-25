@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 3
 
     steps:
-      - name: Acordar API do PANEL
+      - name: Acordar API do Komicove
         run: |
           echo "Ping iniciado em $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           status=$(curl \

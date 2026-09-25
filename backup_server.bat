@@ -8,4 +8,4 @@ if not exist ".venv\Scripts\python.exe" (
   echo Crie a .venv antes de executar.
   exit /b 2
 )
-".venv\Scripts\python.exe" -m panel_backend.server_backup create "%~1"
+".venv\Scripts\python.exe" -m komicove_backend.server_backup create "%~1"

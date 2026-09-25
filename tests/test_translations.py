@@ -2,8 +2,8 @@ import ast
 import pathlib
 import re
 
-from panel_app import runtime
-from panel_app.translations import ui
+from komicove_app import runtime
+from komicove_app.translations import ui
 
 
 PORTUGUESE_UI = re.compile(
@@ -30,7 +30,7 @@ def test_explicit_language_selection_covers_reported_labels(monkeypatch):
 
 
 def test_desktop_widget_literals_use_explicit_ui_choice():
-    root = pathlib.Path(__file__).parents[1] / "panel_app"
+    root = pathlib.Path(__file__).parents[1] / "komicove_app"
     sinks = {
         "Label", "Button", "Checkbutton", "Radiobutton", "title", "showerror",
         "showinfo", "showwarning", "askyesno", "askstring", "create_text",
@@ -69,7 +69,7 @@ def test_desktop_widget_literals_use_explicit_ui_choice():
 
 
 def test_android_uses_explicit_translation_at_component_boundaries():
-    root = pathlib.Path(__file__).parents[1] / "android" / "app" / "src" / "main" / "java" / "com" / "lucrazy" / "panel"
+    root = pathlib.Path(__file__).parents[1] / "android" / "app" / "src" / "main" / "java" / "com" / "lucrazy" / "komicove"
     i18n = (root / "I18n.java").read_text(encoding="utf-8")
     ui_source = (root / "Ui.java").read_text(encoding="utf-8")
     dialog_source = (root / "PanelDialog.java").read_text(encoding="utf-8")

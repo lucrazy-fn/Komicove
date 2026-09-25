@@ -1,4 +1,4 @@
-from panel_app import book_metadata as metadata
+from komicove_app import book_metadata as metadata
 
 
 def test_edit_does_not_change_original(tmp_path, monkeypatch):

@@ -5,3 +5,5 @@
 @media(max-width:420px){.features{grid-template-columns:1fr}.featured{grid-column:auto}.formats{grid-template-columns:1fr}.formats article{border-right:0;border-bottom:1px solid var(--line)}.formats strong{min-height:0;margin-bottom:18px}.button{padding:14px 20px}.hero h1{font-size:3.8rem}.gallery-controls{gap:0}.gallery-controls button{padding:10px}}
 html:not(.js) .gallery-controls,html:not(.js) #expand{display:none}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.tilt{transform:none!important}}
+.brand img{width:140px;height:72px;object-fit:contain}.footer img{width:130px;height:auto}.hero-logo{width:100%;object-fit:contain}
+@media(max-width:760px){.brand img{width:112px;height:64px}.footer img{width:120px}}

@@ -1,12 +1,12 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from panel_backend.accounts.models import User
-from panel_backend.db import Base
-from panel_backend.moderation.models import (
+from komicove_backend.accounts.models import User
+from komicove_backend.db import Base
+from komicove_backend.moderation.models import (
     ModerationResult, ModerationStatus, RiskLevel,
 )
-from panel_backend.moderation.storage import SqlAlchemyModerationStore
+from komicove_backend.moderation.storage import SqlAlchemyModerationStore
 
 
 def test_sql_store_round_trip():

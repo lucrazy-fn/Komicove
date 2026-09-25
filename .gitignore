@@ -15,7 +15,9 @@ build/
 .coverage
 htmlcov/
 panel_storage/
+komicove_storage/
 .idea/
 docs/security-audit/
 commit-site.bat
 commit-app.bat
+.flatpak-builder/

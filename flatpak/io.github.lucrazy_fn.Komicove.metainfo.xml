@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.lucrazy_fn.Komicove</id>
+  <name>Komicove</name>
+  <summary>Leitor de quadrinhos local</summary>
+  <summary xml:lang="en">Local comic book reader</summary>
+  <description>
+    <p>Organize e leia quadrinhos no Linux com biblioteca, coleções e leitura guiada.</p>
+    <p xml:lang="en">Organize and read comics on Linux with a library, collections, and guided reading.</p>
+  </description>
+  <launchable type="desktop-id">io.github.lucrazy_fn.Komicove.desktop</launchable>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <url type="homepage">https://github.com/lucrazy-fn/PANEL-ComicBookReader</url>
+  <provides><binary>komicove</binary></provides>
+  <releases><release version="0.1.0" date="2026-09-24"/></releases>
+</component>

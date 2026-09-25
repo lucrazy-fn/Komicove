@@ -3,12 +3,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from panel_backend.accounts import account_actions
-from panel_backend.accounts.models import AccountActionToken, User
-from panel_backend.accounts.security import totp_code
-from panel_backend.api.app import app
-from panel_backend.api.deps import get_db
-from panel_backend.db import Base
+from komicove_backend.accounts import account_actions
+from komicove_backend.accounts.models import AccountActionToken, User
+from komicove_backend.accounts.security import totp_code
+from komicove_backend.api.app import app
+from komicove_backend.api.deps import get_db
+from komicove_backend.db import Base
 
 
 def test_email_recovery_and_2fa_for_regular_user(monkeypatch):

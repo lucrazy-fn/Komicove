@@ -12,7 +12,7 @@ def test_guided_motion_reaches_target_and_can_be_disabled(tmp_path):
     root.withdraw()
     errors = []
     root.report_callback_exception = lambda *args: errors.append(args)
-    from panel_app.reader_views import ReaderWindow
+    from komicove_app.reader_views import ReaderWindow
     class Loader:
         count = 2
         def get_pil(self, index):

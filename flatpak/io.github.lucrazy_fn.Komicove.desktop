@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Komicove
+Comment=Leitor de quadrinhos para Linux
+Comment[en]=Comic book reader for Linux
+Exec=komicove
+Icon=io.github.lucrazy_fn.Komicove
+Categories=Graphics;Viewer;
+Terminal=false
+StartupNotify=true
+MimeType=application/x-cbz;application/vnd.comicbook+zip;application/pdf;

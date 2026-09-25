@@ -2,7 +2,7 @@ import io
 import zipfile
 import pytest
 from PIL import Image
-from panel_app.archive import ArchiveBackend
+from komicove_app.archive import ArchiveBackend
 
 
 def fixture(path, body='<img src="../images/2.png"/>', encrypted=False):
