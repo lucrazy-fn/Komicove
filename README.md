@@ -8,7 +8,7 @@ Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android.
 
 **Windows 0.1.0 · Android 0.1.0 · Linux 0.1.0 (experimental) · Licença MIT**
 
-[Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
+[Site](https://lucrazy-fn.github.io/Komicove/) · [Downloads](https://github.com/lucrazy-fn/Komicove/releases) · [Issues](https://github.com/lucrazy-fn/Komicove/issues)
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
