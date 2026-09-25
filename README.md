@@ -6,7 +6,7 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 0.1.0 · Android 0.1.0 · Linux em preparação · Licença MIT**
+**Windows 0.1.0 · Android 0.1.0 · Linux 0.1.0 (experimental) · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
@@ -29,7 +29,7 @@ Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até a
 ## Para começar
 
 - **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
-- **Linux x86_64:** o código desktop é compartilhado com Windows, mas o pacote Komicove 0.1.0 para Linux ainda precisa ser gerado e validado.
+- **Linux x86_64:** há pacotes portátil (`.tar.gz`) e Flatpak experimental. Confira a disponibilidade na página de Releases. A compatibilidade pode variar entre distribuições.
 - **Android 8 ou superior:** baixe o APK na mesma página.
 
 No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, adicione arquivos ou uma pasta pelo seletor do dispositivo. Os arquivos da pasta ficam no local original; o app usa uma cópia temporária enquanto a HQ está aberta. As HQs já importadas em versões anteriores continuam na biblioteca.
