@@ -2,14 +2,49 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 import time
 
-_appdata_root = os.environ.get("APPDATA", os.path.expanduser("~"))
-_legacy_appdata = os.path.join(_appdata_root, "Panel")
-APPDATA_DIR = (os.environ.get("KOMICOVE_APPDATA_DIR")
-               or os.environ.get("PANEL_APPDATA_DIR")
-               or (_legacy_appdata if os.path.isdir(_legacy_appdata)
-                   else os.path.join(_appdata_root, "Komicove")))
+def _migrate_legacy_data(legacy, destination):
+    """Copy old local data once without replacing anything already in Komicove."""
+    for source_dir, dirs, files in os.walk(legacy):
+        dirs[:] = [name for name in dirs if not os.path.islink(os.path.join(source_dir, name))]
+        target_dir = os.path.join(destination, os.path.relpath(source_dir, legacy))
+        os.makedirs(target_dir, exist_ok=True)
+        for name in files:
+            source = os.path.join(source_dir, name)
+            target = os.path.join(target_dir, name)
+            if os.path.islink(source) or os.path.lexists(target):
+                continue
+            fd, temporary = tempfile.mkstemp(prefix=".komicove-migration-", dir=target_dir)
+            os.close(fd)
+            try:
+                shutil.copy2(source, temporary)
+                if not os.path.lexists(target):
+                    os.replace(temporary, target)
+            finally:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+
+
+def _appdata_directory():
+    explicit = os.environ.get("KOMICOVE_APPDATA_DIR") or os.environ.get("PANEL_APPDATA_DIR")
+    if explicit:
+        return explicit
+    root = os.environ.get("APPDATA", os.path.expanduser("~"))
+    current = os.path.join(root, "Komicove")
+    legacy = os.path.join(root, "Panel")
+    if os.path.isdir(legacy):
+        try:
+            _migrate_legacy_data(legacy, current)
+        except OSError:
+            # An incomplete copy must never make the existing library vanish.
+            return legacy
+    return current
+
+
+APPDATA_DIR = _appdata_directory()
 os.makedirs(APPDATA_DIR, exist_ok=True)
 LIBRARY_CONFIG_FILE = os.path.join(APPDATA_DIR, "library_config.json")
 PROGRESS_FILE = os.path.join(APPDATA_DIR, "reading_progress.json")

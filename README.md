@@ -34,6 +34,8 @@ Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até a
 
 No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, adicione arquivos ou uma pasta pelo seletor do dispositivo. Os arquivos da pasta ficam no local original; o app usa uma cópia temporária enquanto a HQ está aberta. As HQs já importadas em versões anteriores continuam na biblioteca.
 
+Na primeira abertura da nova versão para desktop, os dados locais da antiga pasta `Panel` são copiados para `Komicove`. A pasta antiga permanece como cópia de segurança e não é apagada automaticamente.
+
 ## Recursos
 
 - Biblioteca com capas, busca, favoritos, progresso salvo e ordem alfanumérica no Android.
