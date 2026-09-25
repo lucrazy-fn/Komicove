@@ -1,8 +1,8 @@
 // Adicione caminhos relativos para screenshots reais em image (ex.: assets/biblioteca.webp).
 const screens = {
-  biblioteca: {title: 'Biblioteca', description: 'Seu acervo, capas e progresso em uma única visão.', image: 'assets/biblioteca.png', alt: 'Biblioteca do PANEL com capas e progresso de leitura'},
-  leitor: {title: 'Leitor', description: 'A história em primeiro plano. Zoom, miniaturas e marcadores ao alcance.', image: 'assets/leitor.png', alt: 'Tela de leitura do PANEL'},
-  colecoes: {title: 'Coleções', description: 'Suas séries organizadas, do primeiro volume à próxima leitura.', image: 'assets/colecoes.png', alt: 'Tela de coleções do PANEL'}
+  biblioteca: {title: 'Biblioteca', description: 'Seu acervo, capas e progresso em uma única visão.', image: 'assets/biblioteca.png', alt: 'Biblioteca da interface anterior, PANEL, com capas e progresso de leitura'},
+  leitor: {title: 'Leitor', description: 'A história em primeiro plano. Zoom, miniaturas e marcadores ao alcance.', image: 'assets/leitor.png', alt: 'Tela de leitura da interface anterior, PANEL'},
+  colecoes: {title: 'Coleções', description: 'Suas séries organizadas, do primeiro volume à próxima leitura.', image: 'assets/colecoes.png', alt: 'Tela de coleções da interface anterior, PANEL'}
 };
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 document.documentElement.classList.add('js');
@@ -79,7 +79,7 @@ function selectTab(key) {
   tabs.forEach(tab => {const active = tab.dataset.tab === key; tab.classList.toggle('selected', active); tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1;});
   body.setAttribute('aria-labelledby', `tab-${key}`);
   body.replaceChildren(contentFor(key));
-  document.querySelector('#gallery-title').textContent = `PANEL / ${screens[key].title}`;
+  document.querySelector('#gallery-title').textContent = `Komicove / ${screens[key].title}`;
   if (!reduced.matches) body.animate([{opacity:.1,transform:'translateY(10px)'},{opacity:1,transform:'translateY(0)'}],{duration:320,easing:'ease-out'});
 }
 tabs.forEach((tab, index) => {
@@ -96,7 +96,7 @@ tabs.forEach((tab, index) => {
 });
 selectTab(selected);
 document.querySelector('#expand').addEventListener('click', () => {
-  document.querySelector('#modal-title').textContent = `PANEL / ${screens[selected].title}`;
+  document.querySelector('#modal-title').textContent = `Komicove / ${screens[selected].title}`;
   document.querySelector('#modal-content').replaceChildren(contentFor(selected));
   lightbox.showModal();
   if (!reduced.matches) lightbox.animate([{opacity:0,transform:'translateY(12px) scale(.98)'},{opacity:1,transform:'none'}],{duration:250,easing:'ease-out'});
