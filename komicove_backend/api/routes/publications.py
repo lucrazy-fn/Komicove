@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from komicove_backend.accounts import service as accounts
@@ -16,7 +16,10 @@ from komicove_backend.api.schemas import (
     PublicationSubmitRequest,
 )
 from komicove_backend.catalog import service as catalog
-from komicove_backend.catalog.assets import UnsafeAssetError, cover_jpeg, delete_remote, resolve_asset, save_upload
+from komicove_backend.catalog.assets import (
+    RemoteStorageError, UnsafeAssetError, asset_exists, cover_jpeg, delete_remote,
+    resolve_asset, resolve_cover, save_cover_preview, save_upload,
+)
 from komicove_backend.catalog.models import Comic, Publication, PublicationAsset
 from komicove_backend.moderation.service import ModerationService
 from komicove_backend.moderation.db_models import ModerationRecordRow
@@ -40,9 +43,14 @@ def remove_publication(publication_id: str, user: User = Depends(get_current_use
     db.flush()
 
 def _asset_available(asset: PublicationAsset | None) -> bool:
-    if asset is None:return False
-    try: resolve_asset(asset.stored_name);return True
-    except FileNotFoundError:return False
+    return bool(asset is not None and asset_exists(asset.stored_name))
+
+
+def _asset_cover(asset: PublicationAsset) -> bytes:
+    preview = resolve_cover(asset.stored_name)
+    if preview is not None:
+        return preview.read_bytes()
+    return cover_jpeg(resolve_asset(asset.stored_name))
 
 
 def _authorized_asset(
@@ -85,6 +93,8 @@ def content(
         path = resolve_asset(asset.stored_name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no armazenamento.") from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(path, filename=asset.original_filename, media_type="application/octet-stream")
 
 
@@ -96,16 +106,46 @@ def publication_cover(
 ):
     asset = _authorized_asset(publication_id, authorization, db)
     try:
-        data = cover_jpeg(resolve_asset(asset.stored_name))
+        data = _asset_cover(asset)
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (FileNotFoundError, UnsafeAssetError, OSError) as exc:
         raise HTTPException(status_code=422, detail=f"Não foi possível gerar a capa: {exc}") from exc
     return Response(content=data, media_type="image/jpeg")
+
+
+@router.put("/{publication_id}/cover", response_model=PublicationAssetResponse)
+async def upload_cover(
+    publication_id: str,
+    cover: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    publication = db.get(Publication, publication_id)
+    if publication is None or publication.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Publicação não encontrada.")
+    asset = db.scalar(select(PublicationAsset).where(
+        PublicationAsset.publication_id == publication_id
+    ))
+    if asset is None:
+        raise HTTPException(status_code=409, detail="Reanexe o arquivo da publicação primeiro.")
+    try:
+        await save_cover_preview(cover, asset.stored_name)
+    except UnsafeAssetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return PublicationAssetResponse(
+        publication_id=publication_id, original_filename=asset.original_filename,
+        size_bytes=asset.size_bytes, sha256=asset.sha256,
+    )
 
 
 @router.put("/{publication_id}/file", response_model=PublicationAssetResponse)
 async def upload_file(
     publication_id: str,
     file: UploadFile = File(...),
+    cover: UploadFile | None = File(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -116,21 +156,18 @@ async def upload_file(
         PublicationAsset.publication_id == publication_id
     )) is not None:
         raise HTTPException(status_code=409, detail="Esta publicação já possui um arquivo.")
-    record = db.get(ModerationRecordRow, publication.moderation_record_id)
-    if record is None or record.manual_override_status is not None:
-        raise HTTPException(409,"Não é possível anexar arquivo após a decisão. Faça um novo envio.")
     try:
         stored_name, original, size, sha256 = await save_upload(file)
+        try:
+            if cover is not None:
+                await save_cover_preview(cover, stored_name)
+        except Exception:
+            delete_remote(stored_name)
+            raise
     except UnsafeAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    gate = db.execute(update(ModerationRecordRow).where(
-        ModerationRecordRow.id == publication.moderation_record_id,
-        ModerationRecordRow.manual_override_status.is_(None),
-    ).values(manual_override_status=None))
-    if gate.rowcount != 1:
-        resolve_asset(stored_name).unlink(missing_ok=True)
-        raise HTTPException(409,"A publicação foi decidida durante o upload. Faça um novo envio.")
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     asset = PublicationAsset(
         publication_id=publication_id, stored_name=stored_name,

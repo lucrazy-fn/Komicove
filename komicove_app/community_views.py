@@ -1,5 +1,17 @@
 from komicove_app.runtime import *
 from komicove_app.reader_views import ReaderWindow
+from komicove_app.design.styles import KomicoveButton, KomicoveCard, KomicoveInput
+from komicove_app.archive import SUPPORTED_EXTENSIONS
+from komicove_app.publishing_views import PublishDialog, _publication_cover_preview
+from PIL import ImageOps, ImageDraw
+
+
+def filter_community_items(items, query="", status="all"):
+    query = query.strip().casefold()
+    return [item for item in items
+            if (status == "all" or item.get("status") == status)
+            and (not query or any(query in str(item.get(field) or "").casefold()
+                                  for field in ("title", "author", "description")))]
 
 class CommunityWindow(tk.Toplevel):
     pass
@@ -247,20 +259,66 @@ class CommunityTab(tk.Frame):
     def __init__(self, master, root, user=None, mine=False):
         super().__init__(master,bg=THEME["bg"])
         self.root,self.user,self.mine=root,user,mine
-        self.images=[];self.items=[]
+        self.images=[];self.items=[];self._cover_cache={}
+        self.query="";self.status_filter="all"
         self.pack(fill="both",expand=True)
-        head=tk.Frame(self,bg=THEME["bg"]);head.pack(fill="x",padx=24,pady=(18,8))
-        tk.Label(head,text=ui('Meus envios', 'My submissions') if mine else ui('Descobrir', 'Discover'),font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(side="left")
-        make_pill(head,ui('Atualizar', 'Refresh'),self.refresh,variant="ghost",font=FBTN,pad_x=14,pad_y=7).pack(side="right")
-        self.status=tk.Label(self,text=ui('Carregando…', 'Loading…'),font=FSMALL,bg=THEME["bg"],fg=THEME["text_dim"]);self.status.pack(anchor="w",padx=24)
+        head=tk.Frame(self,bg=THEME["bg"]);head.pack(fill="x",padx=30,pady=(21,8))
+        tk.Label(head,text=ui('Meus envios', 'My submissions') if mine else ui('Descobrir', 'Discover'),
+                 font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(side="left",padx=(0,25))
+        self.search=KomicoveInput(
+            head,THEME,
+            placeholder=ui('Buscar nos seus envios…', 'Search your submissions…') if mine
+                        else ui('Buscar títulos, autores…', 'Search titles, authors…'),
+            on_change=self._search_changed,width=510)
+        self.search.pack(side="left")
+        KomicoveButton(head,ui('Atualizar', 'Refresh'),self.refresh,THEME,
+                       compact=True).pack(side="right")
+        if mine:
+            KomicoveButton(head,ui('Novo envio', 'New submission'),self._publish_new,
+                           THEME,kind="primary",compact=True).pack(side="right",padx=(0,8))
+        if mine:
+            filters=tk.Frame(self,bg=THEME["bg"]);filters.pack(fill="x",padx=30,pady=(3,5))
+            self._filter_buttons={}
+            for key,label,icon_name in (("all",ui('Todos','All'),"grid-2x2"),
+                                        ("approved",ui('Aprovados','Approved'),"check"),
+                                        ("pending_review",ui('Em análise','Under review'),"refresh-cw"),
+                                        ("rejected",ui('Rejeitados','Rejected'),"x")):
+                button=make_pill(filters,label,lambda value=key:self._set_status(value),
+                                 variant="soft",font=FSMALL,pad_x=13,pad_y=6,
+                                 active=(key=="all"),icon_name=icon_name)
+                button.pack(side="left",padx=(0,7))
+                self._filter_buttons[key]=button
+        self.status=tk.Label(self,text=ui('Carregando…', 'Loading…'),font=FSMALL,
+                             bg=THEME["bg"],fg=THEME["text_dim"])
+        self.status.pack(anchor="w",padx=30,pady=(1,5))
         self.canvas=tk.Canvas(self,bg=THEME["bg"],highlightthickness=0)
         bar=ttk.Scrollbar(self,orient="vertical",command=self.canvas.yview)
         self.grid_frame=tk.Frame(self.canvas,bg=THEME["bg"])
         self.window=self.canvas.create_window((0,0),window=self.grid_frame,anchor="nw")
         self.grid_frame.bind("<Configure>",lambda _e:self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>",lambda e:(self.canvas.itemconfigure(self.window,width=e.width),self._arrange()))
-        self.canvas.configure(yscrollcommand=bar.set);bar.pack(side="right",fill="y");self.canvas.pack(fill="both",expand=True,padx=(18,0),pady=10)
+        self.canvas.configure(yscrollcommand=bar.set);bar.pack(side="right",fill="y");self.canvas.pack(fill="both",expand=True,padx=(23,0),pady=6)
         self.refresh()
+
+    def _search_changed(self, value):
+        self.query=value
+        self._apply_filters()
+
+    def _publish_new(self):
+        if self.user is None:
+            return
+        extensions=" ".join("*"+ext for ext in SUPPORTED_EXTENSIONS)
+        path=filedialog.askopenfilename(
+            parent=self.root,title=ui('Escolha uma HQ para enviar', 'Choose a comic to submit'),
+            filetypes=[(ui('Quadrinhos', 'Comics'),extensions),(ui('Todos os arquivos', 'All files'),'*.*')])
+        if path:
+            PublishDialog(self.root,path,self.user)
+
+    def _set_status(self, value):
+        self.status_filter=value
+        for key, button in self._filter_buttons.items():
+            button.pill_set_active(key==value)
+        self._apply_filters()
     def refresh(self):
         self.status.config(text=ui('Carregando…', 'Loading…'),fg=THEME["text_dim"])
         def work():
@@ -276,35 +334,99 @@ class CommunityTab(tk.Frame):
         if error:self.status.config(text=error,fg=THEME["accent2"]);return
         self.items=items or []
         if not self.mine:save_catalog(self.items)
+        self._apply_filters()
+
+    def _apply_filters(self):
         for child in self.grid_frame.winfo_children():child.destroy()
         self.images=[];self.cards=[]
+        visible=filter_community_items(self.items,self.query,self.status_filter)
         noun = ui("envio(s)", "submission(s)") if self.mine else ui("obra(s)", "work(s)")
-        self.status.config(text=f"{len(self.items)} {noun}",fg=THEME["text_dim"])
-        if not self.items:
-            tk.Label(self.grid_frame,text=ui('Nenhum item encontrado.', 'No items found.'),font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]).grid(row=0,column=0,padx=30,pady=60);return
-        for item in self.items:self.cards.append(self._card(item))
+        total=len(self.items)
+        count=f"{len(visible)} {noun}" if len(visible)==total else f"{len(visible)} / {total} {noun}"
+        self.status.config(text=count,fg=THEME["text_dim"])
+        if not visible:
+            message=(ui('Você ainda não enviou nenhuma HQ.', 'You have not submitted any comics yet.')
+                     if self.mine and not self.items else
+                     ui('Nenhuma obra corresponde aos filtros.', 'No works match the filters.')
+                     if self.items else ui('Nenhuma obra disponível.', 'No works available.'))
+            tk.Label(self.grid_frame,text=message,font=FLABEL,bg=THEME["bg"],
+                     fg=THEME["text_dim"]).grid(row=0,column=0,padx=30,pady=65)
+            if self.mine and not self.items:
+                KomicoveButton(self.grid_frame,ui('Enviar primeira HQ', 'Submit your first comic'),
+                               self._publish_new,THEME,kind="primary").grid(
+                                   row=1,column=0,pady=(0,30))
+            return
+        for item in visible:self.cards.append(self._card(item))
         self._arrange()
     def _arrange(self):
         if not getattr(self,"cards",None):return
-        cols=max(1,self.canvas.winfo_width()//210)
-        for i,card in enumerate(self.cards):card.grid(row=i//cols,column=i%cols,padx=10,pady=10,sticky="n")
+        cols=max(1,self.canvas.winfo_width()//250)
+        for i,card in enumerate(self.cards):card.grid(row=i//cols,column=i%cols,padx=7,pady=8,sticky="n")
     def _card(self,item):
-        card=tk.Frame(self.grid_frame,bg=THEME["surface"],width=184,height=400 if self.mine else 370,highlightthickness=1,highlightbackground=THEME["border"]);card.pack_propagate(False)
-        animate_color(card,"highlightbackground",THEME["bg"],THEME["border"],duration=300)
-        card.bind("<Enter>",lambda e:animate_color(card,"highlightbackground",card.cget("highlightbackground"),THEME["accent"]))
-        card.bind("<Leave>",lambda e:animate_color(card,"highlightbackground",card.cget("highlightbackground"),THEME["border"]))
-        cover_box=tk.Frame(card,width=160,height=220,bg=THEME["surface_alt"])
-        cover_box.pack(padx=11,pady=(11,7));cover_box.pack_propagate(False)
+        card=KomicoveCard(self.grid_frame,THEME,height=500 if self.mine else 430,
+                          radius=22,padding=9,outline=THEME["border"])
+        card.configure(width=222)
+        inside=card.content
+        cover_box=tk.Frame(inside,width=190,height=264,bg=THEME["surface_alt"])
+        cover_box.pack(padx=5,pady=(2,8));cover_box.pack_propagate(False)
         cover=tk.Label(cover_box,text=ui('Carregando capa…', 'Loading cover…') if item.get("has_file") else ui('Arquivo indisponível', 'File unavailable'),font=FTINY,bg=THEME["surface_alt"],fg=THEME["text_dim"],wraplength=145);cover.pack(fill="both",expand=True)
-        tk.Label(card,text=item.get("title") or ui('Sem título', 'Untitled'),font=FBTN,bg=THEME["surface"],fg=THEME["text"],wraplength=160).pack(padx=8)
+        tk.Label(inside,text=item.get("title") or ui('Sem título', 'Untitled'),font=FBTN,bg=THEME["surface"],fg=THEME["text"],wraplength=190,anchor="w").pack(fill="x",padx=5)
         meta=self.status_label(item.get("status")) if self.mine else item.get("author",ui('Autor desconhecido', 'Unknown author'))
-        tk.Label(card,text=meta,font=FTINY,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=160).pack(padx=8,pady=2)
-        if self.mine:
-            make_pill(card,ui('Remover envio', 'Remove submission'),lambda i=item:self._remove(i),variant="ghost",font=FSMALL,pad_x=10,pad_y=5).pack(side="bottom",pady=(0,8))
+        tk.Label(inside,text=meta,font=FTINY,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=190,anchor="w").pack(fill="x",padx=5,pady=2)
+        actions=tk.Frame(inside,bg=THEME["surface"])
+        actions.pack(side="bottom",fill="x",padx=5,pady=(8,1))
         if item.get("has_file"):
-            make_pill(card,ui('Baixar', 'Download'),lambda i=item:self._download(i),variant="accent",font=FSMALL,pad_x=12,pad_y=6).pack(side="bottom",pady=9)
+            KomicoveButton(
+                actions,ui('Baixar', 'Download'),lambda i=item:self._download(i),
+                THEME,kind="primary",compact=True,min_width=190,
+                icon_name="download",
+            ).pack(pady=(0,6))
             self._load_cover(item,cover)
+        if self.mine:
+            repair_text = (ui('Corrigir capa', 'Repair cover') if item.get("has_file")
+                           else ui('Reanexar arquivo', 'Reattach file'))
+            KomicoveButton(
+                actions,repair_text,lambda i=item:self._repair_submission(i),
+                THEME,kind="secondary",compact=True,min_width=190,
+                icon_name="refresh-cw" if item.get("has_file") else "upload",
+            ).pack(pady=(0,6))
+            KomicoveButton(
+                actions,ui('Remover envio', 'Remove submission'),
+                lambda i=item:self._remove(i),THEME,kind="ghost",compact=True,
+                min_width=190,icon_name="trash-2",
+            ).pack()
         return card
+    def _repair_submission(self,item):
+        if getattr(self,"_repairing",False):return
+        path=filedialog.askopenfilename(
+            parent=self.root,
+            title=ui('Selecione o arquivo original da HQ', 'Select the original comic file'),
+            filetypes=[(ui('Quadrinhos', 'Comics'), '*.cbz *.zip *.cbr *.rar *.pdf')],
+        )
+        if not path:return
+        self._repairing=True
+        self.status.config(text=ui('Preparando arquivo e capa…', 'Preparing file and cover…'),fg=THEME["text_dim"])
+        def work():
+            try:
+                cover_bytes=_publication_cover_preview(path)
+                if cover_bytes is None:
+                    raise ValueError(ui('Não foi possível extrair a capa deste arquivo.',
+                                        'Could not extract a cover from this file.'))
+                if item.get("has_file"):
+                    api_client.upload_publication_cover(
+                        self.user.token,item["publication_id"],cover_bytes)
+                else:
+                    api_client.upload_publication_file(
+                        self.user.token,item["publication_id"],path,cover_bytes=cover_bytes)
+                error=None
+            except Exception as exc:error=str(exc)
+            def done():
+                if not self.winfo_exists():return
+                self._repairing=False
+                if error:self.status.config(text=error,fg=THEME["accent2"])
+                else:self.refresh()
+            self.root.after(0,done)
+        threading.Thread(target=work,daemon=True).start()
     def _remove(self,item):
         if getattr(self,"_removing",False):return
         comic_title = item.get("title", ui("Quadrinho", "Comic"))
@@ -332,9 +454,19 @@ class CommunityTab(tk.Frame):
         threading.Thread(target=work,daemon=True).start()
     def _load_cover(self,item,label):
         token=self.user.token if self.user else None
+        publication_id=item["publication_id"]
         def work():
             try:
-                data=api_client.publication_cover(item["publication_id"],token);image=Image.open(io.BytesIO(data)).convert("RGB");image.thumbnail((160,220),Image.LANCZOS);error=None
+                image=self._cover_cache.get(publication_id)
+                if image is None:
+                    data=api_client.publication_cover(publication_id,token)
+                    with Image.open(io.BytesIO(data)) as source:
+                        image=ImageOps.fit(source.convert("RGBA"),(190,264),method=Image.LANCZOS)
+                    mask=Image.new("L",image.size,0)
+                    ImageDraw.Draw(mask).rounded_rectangle((0,0,189,263),radius=15,fill=255)
+                    image.putalpha(mask)
+                    self._cover_cache[publication_id]=image
+                error=None
             except Exception as exc:image,error=None,str(exc)
             def done(image,error):
                 if not label.winfo_exists():return

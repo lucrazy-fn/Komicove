@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import time
+from datetime import datetime, timezone
 
 def _migrate_legacy_data(legacy, destination):
     """Copy old local data once without replacing anything already in Komicove."""
@@ -132,24 +133,121 @@ def get_manual_status(path): return load_manual_status().get(path)
 def load_prefs(): return json_load(PREFS_FILE, {})
 def save_prefs(**values):
     data=load_prefs(); data.update(values); json_save(PREFS_FILE, data)
-def record_page_read(content_key, page, total=0):
-    data=json_load(STATS_FILE,{"books":{}}); books=data.setdefault("books",{})
-    item=books.setdefault(content_key,{"pages":[],"seconds":0,"completed":False})
-    page=int(page)
-    if page not in item["pages"]: item["pages"].append(page); item["pages"].sort()
-    if total and page >= int(total)-1: item["completed"]=True
-    json_save(STATS_FILE,data)
-def record_reading_time(content_key, seconds):
-    seconds=max(0,min(int(seconds),6*60*60))
-    data=json_load(STATS_FILE,{"books":{}}); books=data.setdefault("books",{})
-    item=books.setdefault(content_key,{"pages":[],"seconds":0,"completed":False})
-    item["seconds"]=int(item.get("seconds",0))+seconds; json_save(STATS_FILE,data)
+def _stats_data():
+    data = json_load(STATS_FILE, {"books": {}, "daily": {}})
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("version", 2)
+    data.setdefault("books", {})
+    data.setdefault("daily", {})
+    return data
+
+
+def _stats_book(data, content_key, *, path=None, metadata=None):
+    books = data.setdefault("books", {})
+    item = books.setdefault(content_key, {
+        "pages": [], "seconds": 0, "completed": False, "sessions": 0,
+    })
+    item.setdefault("pages", [])
+    item.setdefault("seconds", 0)
+    item.setdefault("completed", False)
+    item.setdefault("sessions", 0)
+    if path:
+        item["path"] = os.path.abspath(path)
+        item.setdefault("title", os.path.splitext(os.path.basename(path))[0])
+    for key in ("title", "series", "genre", "writer"):
+        value = (metadata or {}).get(key)
+        if value:
+            item[key] = str(value).strip()
+    return item
+
+
+def _day_key(timestamp=None):
+    moment = datetime.fromtimestamp(timestamp or time.time(), tz=timezone.utc).astimezone()
+    return moment.strftime("%Y-%m-%d")
+
+
+def record_page_read(content_key, page, total=0, *, path=None, metadata=None, timestamp=None):
+    """Record a real page view while keeping legacy totals compatible.
+
+    A page is counted once per book for the all-time total and once per day for
+    charts. Repaints of the same page therefore do not inflate the numbers.
+    """
+    data = _stats_data()
+    item = _stats_book(data, content_key, path=path, metadata=metadata)
+    page = int(page)
+    now = float(timestamp or time.time())
+    if page not in item["pages"]:
+        item["pages"].append(page)
+        item["pages"].sort()
+    item.setdefault("first_read_at", now)
+    item["last_read_at"] = now
+    if total:
+        item["total_pages"] = max(0, int(total))
+        if page >= int(total) - 1:
+            item["completed"] = True
+            item.setdefault("completed_at", now)
+
+    daily = data.setdefault("daily", {})
+    day = daily.setdefault(_day_key(now), {"page_keys": [], "seconds": 0, "sessions": 0})
+    page_key = f"{content_key}:{page}"
+    page_keys = day.setdefault("page_keys", [])
+    if page_key not in page_keys:
+        page_keys.append(page_key)
+    day["pages"] = len(page_keys)
+    json_save(STATS_FILE, data)
+
+
+def record_reading_time(content_key, seconds, *, path=None, metadata=None, timestamp=None):
+    """Finish a reading session and add its real duration to daily history."""
+    seconds = max(0, min(int(seconds), 6 * 60 * 60))
+    if seconds <= 0:
+        return
+    data = _stats_data()
+    item = _stats_book(data, content_key, path=path, metadata=metadata)
+    now = float(timestamp or time.time())
+    item["seconds"] = int(item.get("seconds", 0)) + seconds
+    item["sessions"] = int(item.get("sessions", 0)) + 1
+    item.setdefault("first_read_at", now)
+    item["last_read_at"] = now
+    day = data.setdefault("daily", {}).setdefault(
+        _day_key(now), {"page_keys": [], "seconds": 0, "sessions": 0}
+    )
+    day["seconds"] = int(day.get("seconds", 0)) + seconds
+    day["sessions"] = int(day.get("sessions", 0)) + 1
+    day["pages"] = len(day.get("page_keys", []))
+    json_save(STATS_FILE, data)
+
+
 def personal_statistics():
-    books=json_load(STATS_FILE,{"books":{}}).get("books",{})
-    return {"completed":sum(bool(x.get("completed")) for x in books.values()),
-            "pages":sum(len(set(x.get("pages",[]))) for x in books.values()),
-            "seconds":sum(int(x.get("seconds",0)) for x in books.values()),
-            "started":len(books)}
+    data = _stats_data()
+    books = data.get("books", {})
+    daily = data.get("daily", {})
+    genres = {}
+    for item in books.values():
+        page_count = len(set(item.get("pages", [])))
+        raw = str(item.get("genre") or "").replace(";", ",")
+        names = [name.strip() for name in raw.split(",") if name.strip()]
+        for name in names:
+            genres[name] = genres.get(name, 0) + page_count
+    normalized_daily = {}
+    for day, entry in daily.items():
+        if not isinstance(entry, dict):
+            continue
+        normalized_daily[day] = {
+            "pages": max(0, int(entry.get("pages", len(entry.get("page_keys", []))) or 0)),
+            "seconds": max(0, int(entry.get("seconds", 0) or 0)),
+            "sessions": max(0, int(entry.get("sessions", 0) or 0)),
+        }
+    return {
+        "completed": sum(bool(x.get("completed")) for x in books.values()),
+        "pages": sum(len(set(x.get("pages", []))) for x in books.values()),
+        "seconds": sum(int(x.get("seconds", 0)) for x in books.values()),
+        "started": len(books),
+        "sessions": sum(int(x.get("sessions", 0)) for x in books.values()),
+        "daily": normalized_daily,
+        "genres": genres,
+    }
 def export_backup(path):
     json_save(path, {"progress":json_load(PROGRESS_FILE,{}),"bookmarks":json_load(BOOKMARKS_FILE,{}),
         "favorites":json_load(FAVORITES_FILE,[]),"manual_status":json_load(MANUAL_STATUS_FILE,{}),

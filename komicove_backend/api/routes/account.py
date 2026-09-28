@@ -18,7 +18,7 @@ router = APIRouter(prefix="/account", tags=["account"])
 def get_profile(user: User=Depends(get_current_user)):
     return {"username":user.username,"display_name":user.display_name or user.username,
         "email":user.email,"role":user.role,"email_verified":bool(user.email_verified),
-        "totp_enabled":bool(user.totp_enabled)}
+        "totp_enabled":bool(user.totp_enabled),"bio":user.bio}
 
 @router.patch("/profile", response_model=UserPublic)
 def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Session=Depends(get_db)):
@@ -26,7 +26,7 @@ def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Sessi
     if email and db.scalar(select(User).where(User.email==email, User.id!=user.id)):
         raise HTTPException(409,"Este e-mail já está cadastrado.")
     email_changed = email != user.email
-    user.display_name=body.display_name.strip(); user.email=email
+    user.display_name=body.display_name.strip(); user.email=email; user.bio=body.bio
     if email_changed:
         user.email_verified=False
         db.execute(delete(AccountActionToken).where(AccountActionToken.user_id==user.id,
@@ -36,8 +36,8 @@ def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Sessi
         try: account_actions.send_verification(db,user)
         except Exception: pass
     return UserPublic(id=user.id,username=user.username,display_name=user.display_name,
-        is_moderator=user.is_moderator,role=user.role,email_verified=user.email_verified,
-        totp_enabled=user.totp_enabled)
+        email=user.email,is_moderator=user.is_moderator,role=user.role,email_verified=user.email_verified,
+        totp_enabled=user.totp_enabled,bio=user.bio)
 
 @router.post("/email/resend")
 def resend_email_verification(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -131,6 +131,44 @@ def read_notification(notification_id: str,user: User=Depends(get_current_user),
     item=db.get(Notification,notification_id)
     if not item or item.user_id!=user.id: raise HTTPException(404,"Notificação não encontrada.")
     item.read_at=_now(); db.flush()
+
+
+def _session_id(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+
+
+@router.get("/sessions")
+def active_sessions(authorization: str = Header(...), user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    current = authorization.removeprefix("Bearer ").strip()
+    rows = db.scalars(select(SessionToken).where(SessionToken.user_id == user.id)
+                      .order_by(SessionToken.created_at.desc())).all()
+    for row in rows:
+        if row.token == current:
+            row.last_seen_at = _now()
+    return [{
+        "id": _session_id(row.token),
+        "device_name": row.device_name or "Komicove",
+        "created_at": row.created_at,
+        "last_seen_at": row.last_seen_at,
+        "expires_at": row.expires_at,
+        "current": row.token == current,
+    } for row in rows]
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def revoke_session(session_id: str, authorization: str = Header(...),
+                   user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current = authorization.removeprefix("Bearer ").strip()
+    for row in db.scalars(select(SessionToken).where(SessionToken.user_id == user.id)).all():
+        if _session_id(row.token) == session_id:
+            if row.token == current:
+                raise HTTPException(400, "Não é possível encerrar a sessão atual aqui. / "
+                                         "The current session cannot be ended here.")
+            db.delete(row)
+            db.flush()
+            return None
+    raise HTTPException(404, "Sessão não encontrada. / Session not found.")
 
 @router.get("/library-state", response_model=list[LibraryStateItem])
 def get_state(user: User=Depends(get_current_user),db: Session=Depends(get_db)):

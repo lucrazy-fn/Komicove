@@ -2,6 +2,78 @@ from komicove_app.runtime import *
 import komicove_app.runtime as _runtime
 from komicove_app.guided import detect_regions
 from komicove_app.panel_editor import PanelEditor
+from komicove_app.design.icons import lucide_icon
+from komicove_app.design.styles import KomicoveButton, KomicoveCard
+from komicove_app.design.spacing import RADIUS_LARGE, RADIUS_MEDIUM, RADIUS_SMALL
+
+
+class ReaderSlider(tk.Canvas):
+    """Small native slider drawn in the same visual language as the reader."""
+    def __init__(self, parent, value, minimum, maximum, command, *, width=124):
+        super().__init__(parent, width=width, height=34, bg=parent.cget("bg"),
+                         highlightthickness=0, bd=0, cursor="hand2", takefocus=1)
+        self.minimum = minimum
+        self.maximum = maximum
+        self.command = command
+        self.value = max(minimum, min(maximum, float(value)))
+        self._width = width
+        self.bind("<Configure>", lambda _e: self._draw())
+        self.bind("<Button-1>", self._move)
+        self.bind("<B1-Motion>", self._move)
+        self.bind("<Left>", lambda _e: self.set(self.value - (maximum - minimum) / 20, notify=True))
+        self.bind("<Right>", lambda _e: self.set(self.value + (maximum - minimum) / 20, notify=True))
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        c = THEME
+        left, right, cy = 9, max(10, self.winfo_width() - 9), 17
+        ratio = (self.value - self.minimum) / max(.0001, self.maximum - self.minimum)
+        x = left + (right - left) * ratio
+        self.create_line(left, cy, right, cy, fill=c["progress_bg"], width=5,
+                         capstyle="round")
+        self.create_line(left, cy, x, cy, fill=c["accent"], width=5,
+                         capstyle="round")
+        self.create_oval(x - 8, cy - 8, x + 8, cy + 8, fill=c["border_glow"], outline="")
+        self.create_oval(x - 5, cy - 5, x + 5, cy + 5, fill=c["accent2"], outline="#ffffff")
+
+    def _move(self, event):
+        left, right = 9, max(10, self.winfo_width() - 9)
+        ratio = max(0., min(1., (event.x - left) / max(1, right - left)))
+        self.set(self.minimum + ratio * (self.maximum - self.minimum), notify=True)
+
+    def set(self, value, notify=False):
+        self.value = max(self.minimum, min(self.maximum, float(value)))
+        self._draw()
+        if notify and self.command:
+            self.command(str(self.value))
+
+
+class ReaderSwitch(tk.Canvas):
+    def __init__(self, parent, variable, *, command=None):
+        super().__init__(parent, width=48, height=26, bg=parent.cget("bg"),
+                         highlightthickness=0, bd=0, cursor="hand2")
+        self.variable = variable
+        self.command = command
+        self.bind("<Button-1>", self._toggle)
+        self._draw()
+
+    def _toggle(self, _event=None):
+        self.variable.set(not self.variable.get())
+        self._draw()
+        if self.command:
+            self.command()
+
+    def _draw(self):
+        self.delete("all")
+        on = bool(self.variable.get())
+        fill = THEME["accent"] if on else THEME["surface_hover"]
+        outline = THEME["accent2"] if on else THEME["border"]
+        _rrect(self, 1, 1, 47, 25, 13, fill=fill, outline=outline, width=1)
+        x = 35 if on else 13
+        if on:
+            self.create_oval(x - 10, 3, x + 10, 23, fill=THEME["border_glow"], outline="")
+        self.create_oval(x - 8, 5, x + 8, 21, fill="#ffffff", outline="")
 
 class LangWindow(tk.Toplevel):
     def __init__(self, master, cb):
@@ -183,6 +255,11 @@ class ReaderWindow(tk.Toplevel):
         self._slider    = None
         try: self._content_key = content_id(path)
         except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
+        try:
+            from komicove_app.library_widgets import get_comic_info
+            self._statistics_metadata = get_comic_info(path)
+        except Exception:
+            self._statistics_metadata = {}
 
         prefs = load_prefs()
         self._animate_guided = bool(prefs.get("reader_animate_guided", True))
@@ -237,100 +314,127 @@ class ReaderWindow(tk.Toplevel):
             w.destroy()
         c = THEME
 
-        self._top = tk.Frame(self, bg=c["surface"], height=58)
+        self._top = tk.Frame(self, bg=c["surface"], height=72)
         self._top.pack(fill="x")
         self._top.pack_propagate(False)
         inner = tk.Frame(self._top, bg=c["surface"])
-        inner.pack(fill="both", expand=True, padx=16, pady=9)
+        inner.pack(fill="both", expand=True, padx=28, pady=13)
 
         left = tk.Frame(inner, bg=c["surface"])
         left.pack(side="left", fill="y")
-        self._pill(left, f"◀  {TEXTS[LANG]['back']}", self._close, variant="accent", font=FBTN, pad_x=20, pad_y=10, min_w=120).pack(side="left", padx=(0, 14))
+        self._pill(left, ui('Voltar', 'Back'), self._close, icon_name="arrow-left",
+                   variant="accent", font=FBTN, pad_x=22, pad_y=10, min_w=134).pack(side="left", padx=(0, 22))
+
+        tk.Frame(left, width=1, bg=c["border"]).pack(side="left", fill="y", padx=(0, 22))
 
         title_box = tk.Frame(left, bg=c["surface"])
         title_box.pack(side="left", fill="y")
         fname = Path(self._path).stem
         if len(fname) > 48: fname = fname[:45] + "…"
-        tk.Label(title_box, text=fname, font=("Segoe UI", 11, "bold"),
+        tk.Label(title_box, text=fname, font=("Segoe UI", 14, "bold"),
                  bg=c["surface"], fg=c["text"], anchor="w").pack(anchor="w")
+        tk.Label(title_box, text=ui('Leitor', 'Reader'), font=("Segoe UI", 8),
+                 bg=c["surface"], fg=c["text_dim"], anchor="w").pack(anchor="w", pady=(1, 0))
 
         right = tk.Frame(inner, bg=c["surface"])
         right.pack(side="right", fill="y")
-        self._mkbtn(right, "⛶", self._immersive_toggle).pack(side="right", padx=3)
-        self._mkbtn(right, TEXTS[LANG]["fullscreen"], self._fullscreen).pack(side="right", padx=3)
-        self._mkbtn(right, "📜  Webtoon", self._open_webtoon).pack(side="right", padx=3)
-        self._overview_btn = self._mkbtn(right, ui('Página inteira · V', 'Full page · V') if self._guided else TEXTS[LANG]["fit"], self._toggle_overview)
+        self._mkbtn(right, ui('Tela cheia', 'Fullscreen'), self._fullscreen,
+                    icon_name="maximize").pack(side="right", padx=3)
+        self._mkbtn(right, "Webtoon", self._open_webtoon, icon_name="columns-2").pack(side="right", padx=3)
+        self._overview_btn = self._mkbtn(
+            right,
+            ui('Página inteira', 'Full page') if self._guided else ui('Encaixar', 'Fit'),
+            self._toggle_overview, icon_name="scan",
+        )
         self._overview_btn.pack(side="right", padx=3)
-        self._mkbtn(right, ui('⚙  Preferências', '⚙  Preferences'), self._reader_preferences).pack(side="right", padx=3)
-        self._mkbtn(right, ui('▣  Editar quadros', '▣  Edit panels'), self._edit_panels).pack(side="right", padx=3)
-        self._mkbtn(right, current_theme_label(), self._toggle_theme, icon=ICONS.get("theme")).pack(side="right", padx=3)
+        self._mkbtn(right, ui('Preferências', 'Preferences'), self._reader_preferences,
+                    icon_name="sliders-horizontal").pack(side="right", padx=3)
+        self._mkbtn(right, ui('Editar quadros', 'Edit panels'), self._edit_panels,
+                    icon_name="pencil").pack(side="right", padx=3)
+        self._mkbtn(right, ui('Modo claro', 'Light mode') if IS_DARK else ui('Modo escuro', 'Dark mode'), self._toggle_theme,
+                    icon_name="moon" if IS_DARK else "sun").pack(side="right", padx=3)
 
-        self._bm_btn = self._pill(right, self._bm_label(), self._toggle_bookmark, variant="soft")
+        self._bm_btn = self._pill(right, self._bm_label(), self._toggle_bookmark,
+                                  icon_name="bookmark", variant="soft")
         self._bm_btn.pack(side="right", padx=3)
 
-        txt = TEXTS[LANG]["manga_on"] if self._manga else TEXTS[LANG]["manga_off"]
-        self._manga_btn = self._pill(right, txt, self._toggle_manga, variant="soft")
-        self._manga_btn.pill_set_active(self._manga)
-        self._manga_btn.pack(side="right", padx=(3, 10))
-
-        tk.Frame(self, bg=c["accent"], height=2).pack(fill="x")
+        tk.Frame(self, bg=c["border"], height=1).pack(fill="x")
 
         self._cv = tk.Canvas(self, bg=c["canvas_bg"], highlightthickness=0, cursor="crosshair")
         self._cv.pack(fill="both", expand=True)
 
-        self._bot = tk.Frame(self, bg=c["surface"], height=78)
+        self._bot = tk.Frame(self, bg=c["canvas_bg"], height=94)
         self._bot.pack(fill="x")
         self._bot.pack_propagate(False)
-        self._prog_cv = tk.Canvas(self._bot, height=6, bg=c["progress_bg"], highlightthickness=0)
-        self._prog_cv.pack(fill="x")
+        bot_card = KomicoveCard(self._bot, c, height=82, radius=RADIUS_LARGE, padding=7)
+        bot_card.pack(fill="x", padx=28, pady=(4, 8))
+        ib = bot_card.content
+        self._prog_cv = tk.Canvas(ib, height=5, bg=c["surface"], highlightthickness=0)
+        self._prog_cv.pack(fill="x", padx=8)
         self._prog_cv.bind("<Button-1>", self._seek_click)
-        ib = tk.Frame(self._bot, bg=c["surface"])
-        ib.pack(fill="both", expand=True, padx=16, pady=8)
+        controls = tk.Frame(ib, bg=c["surface"])
+        controls.pack(fill="both", expand=True, padx=7, pady=(4, 0))
 
-        nf = tk.Frame(ib, bg=c["surface"]); nf.pack(side="left")
-        self._nav_btn(nf, "‹" if not ICONS.get("prev") else "", self._prev,
-                      icon=ICONS.get("prev"), size=52).pack(side="left", padx=(0, 8))
+        nf = tk.Frame(controls, bg=c["surface"]); nf.pack(side="left")
+        self._nav_btn(nf, "", self._prev,
+                      icon=lucide_icon("chevron-left", size=22, state="normal", dark=IS_DARK), size=48).pack(side="left", padx=(0, 7))
         self._page_lbl = tk.Label(nf, text="", font=("Consolas", 12, "bold"),
-                                  bg=c["surface_alt"], fg=c["text"], width=11, padx=10, pady=6)
+                                  bg=c["surface_alt"], fg=c["text"], width=11, padx=10, pady=8,
+                                  cursor="hand2")
         self._page_lbl.pack(side="left", padx=2)
-        self._nav_btn(nf, "›" if not ICONS.get("next") else "", self._next,
-                      icon=ICONS.get("next"), size=52).pack(side="left", padx=(8, 0))
+        self._page_lbl.bind("<Button-1>", lambda _e: self._show_page_picker())
+        self._nav_btn(nf, "", self._next,
+                      icon=lucide_icon("chevron-right", size=22, state="normal", dark=IS_DARK), size=48).pack(side="left", padx=(7, 0))
 
-        zf = tk.Frame(ib, bg=c["surface"]); zf.pack(side="left", padx=18)
-        self._nav_btn(zf, "−" if not ICONS.get("zoom_out") else "", self._zoom_out,
-                      icon=ICONS.get("zoom_out")).pack(side="left", padx=3)
+        zf = tk.Frame(controls, bg=c["surface"]); zf.pack(side="left", padx=16)
+        self._nav_btn(zf, "", self._zoom_out,
+                      icon=lucide_icon("zoom-out", size=19, state="normal", dark=IS_DARK)).pack(side="left", padx=3)
         self._zoom_lbl = tk.Label(zf, text="45%", font=("Segoe UI", 9, "bold"),
                                   bg=c["surface"], fg=c["text_dim"], width=5)
         self._zoom_lbl.pack(side="left", padx=4)
-        self._nav_btn(zf, "+" if not ICONS.get("zoom_in") else "", self._zoom_in,
-                      icon=ICONS.get("zoom_in")).pack(side="left", padx=3)
+        self._nav_btn(zf, "", self._zoom_in,
+                      icon=lucide_icon("zoom-in", size=19, state="normal", dark=IS_DARK)).pack(side="left", padx=3)
 
         self._zvar = tk.DoubleVar(value=self._zoom)
-        sl = tk.Scale(ib, from_=self.ZMIN, to=self.ZMAX, resolution=0.05,
-                      orient="horizontal", variable=self._zvar, command=self._slider_zoom,
-                      bg=c["surface"], fg=c["text_dim"], troughcolor=c["progress_bg"],
-                      activebackground=c["accent2"], highlightthickness=0,
-                      sliderrelief="flat", length=130, showvalue=False, bd=0)
-        sl.pack(side="left", padx=(8, 0))
+        sl = ReaderSlider(controls, self._zoom, self.ZMIN, self.ZMAX,
+                          self._slider_zoom, width=126)
+        sl.pack(side="left", padx=(2, 10))
         self._slider = sl
 
-        self._thumb_btn = self._pill(ib, ui('⊟  Miniaturas', '⊟  Thumbnails'), self._toggle_thumbnails, variant="soft")
-        self._thumb_btn.pack(side="right", padx=6)
-        self._double_btn = self._pill(ib, ui('▭▭ Dupla', '▭▭ Double page'), self._toggle_double, variant="soft")
+        self._thumb_btn = self._pill(controls, ui('Páginas', 'Pages'), self._show_page_picker,
+                                     icon_name="layout-grid", variant="soft")
+        self._thumb_btn.pack(side="right", padx=4)
+        self._double_btn = self._pill(controls, ui('Dupla', 'Double page'), self._toggle_double,
+                                      icon_name="book-open", variant="soft")
         self._double_btn.pack(side="right", padx=3)
-        self._nav_btn(ib, "↻", self._rotate).pack(side="right", padx=3)
-        self._nav_btn(ib, "?", self._show_shortcuts).pack(side="right", padx=3)
+        self._pill(controls, ui('Marcadores', 'Bookmarks'), self._show_bookmarks,
+                   icon_name="bookmark", variant="soft").pack(side="right", padx=3)
+        self._nav_btn(controls, "", self._rotate,
+                      icon=lucide_icon("rotate-cw", size=19, state="normal", dark=IS_DARK)).pack(side="right", padx=3)
+        self._nav_btn(controls, "", self._show_shortcuts,
+                      icon=lucide_icon("circle-help", size=19, state="normal", dark=IS_DARK)).pack(side="right", padx=3)
 
-        bf = tk.Frame(ib, bg=c["surface"]); bf.pack(side="right", padx=(0, 8))
-        tk.Label(bf, text="☀", font=(_SANS, 9), bg=c["surface"], fg=c["text_dim"]).pack(side="left", padx=(0, 2))
+        bf = tk.Frame(controls, bg=c["surface"]); bf.pack(side="right", padx=(0, 7))
+        bright_icon = lucide_icon("sun", size=17, state="normal", dark=IS_DARK)
+        bright_label = tk.Label(bf, image=bright_icon, bg=c["surface"])
+        bright_label.image = bright_icon
+        bright_label.pack(side="left", padx=(0, 2))
         self._bright_var = tk.DoubleVar(value=self._brightness)
-        bright_sl = tk.Scale(bf, from_=0.3, to=2.0, resolution=0.05,
-                             orient="horizontal", variable=self._bright_var,
-                             command=self._slider_brightness,
-                             bg=c["surface"], fg=c["text_dim"], troughcolor=c["progress_bg"],
-                             activebackground=c["accent2"], highlightthickness=0,
-                             sliderrelief="flat", length=90, showvalue=False, bd=0)
+        bright_sl = ReaderSlider(bf, self._brightness, 0.3, 2.0,
+                                 self._slider_brightness, width=88)
         bright_sl.pack(side="left")
+        self._brightness_slider = bright_sl
+
+        self._guided_btn = self._pill(controls, ui('Guiada', 'Guided'), self._toggle_guided,
+                                      icon_name="focus", variant="soft")
+        self._guided_btn.pill_set_active(self._guided)
+        self._guided_btn.pack(side="right", padx=3)
+
+        txt = ui('Mangá', 'Manga')
+        self._manga_btn = self._pill(controls, txt, self._toggle_manga,
+                                     icon_name="book-open-check", variant="soft")
+        self._manga_btn.pill_set_active(self._manga)
+        self._manga_btn.pack(side="right", padx=3)
 
         self._thumb_frame = tk.Frame(self, bg=c["surface"], height=120)
         self._thumb_frame.pack_propagate(False)
@@ -361,16 +465,23 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<b>",      lambda e: self._toggle_bookmark())
         self.bind("<r>",      lambda e: self._rotate())
         self.bind("<question>", lambda e: self._show_shortcuts())
+        self.bind("<F1>", lambda e: self._show_shortcuts())
+        self.bind("<Home>", lambda e: self._fade_to(0))
+        self.bind("<End>", lambda e: self._fade_to(max(0, self._count - 1)))
+        self.bind("<Control-g>", lambda e: self._show_page_picker())
+        self.bind("<Control-e>", lambda e: self._edit_panels())
+        self.bind("<Control-comma>", lambda e: self._reader_preferences())
+        self.bind("<space>", lambda e: self._next())
         self.bind("<bracketleft>",  lambda e: self._set_brightness(self._brightness - 0.1))
         self.bind("<bracketright>", lambda e: self._set_brightness(self._brightness + 0.1))
 
-    def _pill(self, parent, text, cmd, *, icon=None, variant="ghost",
+    def _pill(self, parent, text, cmd, *, icon=None, icon_name=None, variant="ghost",
               font=FSMALL, pad_x=14, pad_y=8, min_w=0):
-        return make_pill(parent, text, cmd, icon=icon, variant=variant,
+        return make_pill(parent, text, cmd, icon=icon, icon_name=icon_name, variant=variant,
                          font=font, pad_x=pad_x, pad_y=pad_y, min_w=min_w)
 
-    def _mkbtn(self, parent, text, cmd, accent=False, icon=None):
-        return self._pill(parent, text, cmd, icon=icon,
+    def _mkbtn(self, parent, text, cmd, accent=False, icon=None, icon_name=None):
+        return self._pill(parent, text, cmd, icon=icon, icon_name=icon_name,
                           variant="accent" if accent else "ghost")
 
     def _nav_btn(self, parent, text, cmd, icon=None, size=40):
@@ -428,7 +539,10 @@ class ReaderWindow(tk.Toplevel):
         ch = self._cv.winfo_height() or 600
         img = self._compose_pages()
         iw, ih = img.size
-        record_page_read(self._content_key, self._idx, self._count)
+        record_page_read(
+            self._content_key, self._idx, self._count,
+            path=self._path, metadata=self._statistics_metadata,
+        )
 
         if self._guided:
             key = (self._idx, self._rotation, self._double, self._manga)
@@ -557,7 +671,11 @@ class ReaderWindow(tk.Toplevel):
 
     def _hud(self):
         if hasattr(self, "_overview_btn"):
-            self._overview_btn.pill_set_text((ui('Voltar ao quadro · V', 'Return to panel · V') if self._guide_overview else ui('Página inteira · V', 'Full page · V')) if self._guided else TEXTS[LANG]["fit"])
+            self._overview_btn.pill_set_text(
+                (ui('Voltar ao quadro', 'Return to panel') if self._guide_overview
+                 else ui('Página inteira', 'Full page'))
+                if self._guided else ui('Encaixar', 'Fit')
+            )
         n = self._count
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
@@ -570,6 +688,8 @@ class ReaderWindow(tk.Toplevel):
         if hasattr(self, "_bm_btn") and self._bm_btn.winfo_exists():
             self._bm_btn.pill_set_text(self._bm_label())
             self._bm_btn.pill_set_active(self._idx in get_bookmarks(self._path))
+        if hasattr(self, "_guided_btn") and self._guided_btn.winfo_exists():
+            self._guided_btn.pill_set_active(self._guided)
         self.update_idletasks()
         self._update_progress_bar()
         if self._thumb_visible and self._thumb_strip:
@@ -577,7 +697,7 @@ class ReaderWindow(tk.Toplevel):
         self._update_done_btn()
 
     def _bm_label(self):
-        return "★" if self._idx in get_bookmarks(self._path) else "☆"
+        return ui("Marcador", "Bookmark")
 
     def _update_done_btn(self):
         pass
@@ -587,17 +707,17 @@ class ReaderWindow(tk.Toplevel):
         if on_last:
             if not hasattr(self, "_done_overlay") or not self._done_overlay.winfo_exists():
                 self._done_overlay = tk.Frame(self._cv, bg=c["canvas_bg"], highlightthickness=0)
-                lbl_txt = ui('✓  Concluído!', '✓  Completed!') if is_done else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
+                lbl_txt = ui('Concluído', 'Completed') if is_done else ui('Marcar como concluído', 'Mark as completed')
                 fill = c["read_badge"] if is_done else c["accent"]
                 fg   = c["read_badge_text"] if is_done else "#ffffff"
                 self._done_pill = make_pill(self._done_overlay, lbl_txt,
                                            self._toggle_done_from_reader,
-                                           variant="accent", font=FBTN, pad_x=22, pad_y=11)
+                                           icon_name="check", variant="accent", font=FBTN, pad_x=22, pad_y=11)
                 self._done_pill.pack()
                 self._done_overlay.place(relx=0.5, rely=0.92, anchor="center")
             else:
                 is_done = get_manual_status(self._path) == "done"
-                lbl_txt = ui('✓  Concluído!', '✓  Completed!') if is_done else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
+                lbl_txt = ui('Concluído', 'Completed') if is_done else ui('Marcar como concluído', 'Mark as completed')
                 if hasattr(getattr(self, "_done_pill", None), "pill_set_text"):
                     self._done_pill.pill_set_text(lbl_txt)
         else:
@@ -722,6 +842,8 @@ class ReaderWindow(tk.Toplevel):
 
     def _set_zoom(self, z):
         self._zoom = max(self.ZMIN, min(self.ZMAX, z))
+        if hasattr(self, "_slider") and self._slider:
+            self._slider.set(self._zoom)
         self._show(reset=False)
     def _zoom_in(self):  self._set_zoom(self._zoom + self.ZSTEP)
     def _zoom_out(self): self._set_zoom(self._zoom - self.ZSTEP)
@@ -740,32 +862,72 @@ class ReaderWindow(tk.Toplevel):
         dialog.title(ui('Preferências do leitor', 'Reader preferences'))
         dialog.configure(bg=THEME["bg"])
         dialog.resizable(False, False)
-        dialog.geometry("560x560")
+        W, H = 720, 650
+        dialog.geometry(f"{W}x{H}+{max(0, self.winfo_rootx() + (self.winfo_width()-W)//2)}+{max(0, self.winfo_rooty() + (self.winfo_height()-H)//2)}")
         dialog.transient(self); grab_when_visible(dialog)
-        header=tk.Frame(dialog,bg=THEME["surface"],height=72);header.pack(fill="x");header.pack_propagate(False)
-        tk.Label(header,text=ui('⚙  Preferências do leitor', '⚙  Reader preferences'),font=FTITLE,
-                 bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(header,text=ui('Personalize como cada página será aberta', 'Choose how each page opens'),font=FSMALL,
-                 bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
-        body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=20,pady=16)
+        header=tk.Frame(dialog,bg=THEME["surface"],height=88);header.pack(fill="x");header.pack_propagate(False)
+        heading_box = tk.Frame(header, bg=THEME["surface"]); heading_box.pack(side="left", padx=28, pady=17)
+        tk.Label(heading_box,text=ui('Preferências do leitor', 'Reader preferences'),font=("Segoe UI", 20, "bold"),
+                 bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w")
+        tk.Label(heading_box,text=ui('Personalize a leitura e a navegação', 'Customize reading and navigation'),font=FSMALL,
+                 bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w", pady=(3,0))
+        KomicoveButton(header, ui('Fechar', 'Close'), dialog.destroy, THEME, kind="secondary",
+                       compact=True, icon_name="x").pack(side="right", padx=24)
+        body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=24,pady=18)
         persist = tk.BooleanVar(value=self._persist_zoom)
         autofit = tk.BooleanVar(value=self._auto_fit)
         guided = tk.BooleanVar(value=self._guided)
         animated = tk.BooleanVar(value=self._animate_guided)
-        for var, title, detail in ((persist, ui('Persistir zoom e deslocamento', 'Keep zoom and position'), ui('Mantém escala e posição ao trocar de página.', 'Keeps scale and position when changing pages.')),
-                                   (autofit, ui('Ajustar à tela automaticamente', 'Automatically fit to screen'), ui('Abre cada HQ no melhor encaixe disponível.', 'Opens each comic using the best available fit.')),
-                                   (guided, ui('Leitura guiada (experimental) · L', 'Guided reading (experimental) · L'), ui('Setas percorrem quadros; sem detecção, usa trechos aproximados.', 'Arrow keys move through panels; when detection fails, approximate sections are used.')),
-                                   (animated, ui('Transições suaves entre quadros', 'Smooth transitions between panels'), ui('Desative para mover imediatamente, sem animação.', 'Disable to move immediately without animation.'))):
-            card=tk.Frame(body,bg=THEME["surface_alt"],highlightthickness=1,highlightbackground=THEME["border"])
-            card.pack(fill="x",pady=5)
-            check=tk.Checkbutton(card,text=title,variable=var,anchor="w",font=FBTN,
-                bg=THEME["surface_alt"],fg=THEME["text"],selectcolor=THEME["accent"],
-                activebackground=THEME["surface_alt"],activeforeground=THEME["text"],
-                highlightthickness=0,bd=0)
-            check.pack(fill="x",padx=12,pady=(9,0))
-            tk.Label(card,text=detail,font=FSMALL,bg=THEME["surface_alt"],fg=THEME["text_dim"]).pack(anchor="w",padx=40,pady=(0,9))
-        tk.Label(body,text=ui('E: encaixar página · V: página inteira / voltar ao quadro', 'E: fit page · V: full page / return to panel'),font=FSMALL,
-                 bg=THEME["bg"],fg=THEME["text_dim"]).pack(anchor="w",pady=(8,0))
+        manga = tk.BooleanVar(value=self._manga)
+        double = tk.BooleanVar(value=self._double)
+        columns = tk.Frame(body, bg=THEME["bg"]); columns.pack(fill="both", expand=True)
+        columns.grid_columnconfigure(0, weight=1, uniform="reader-preferences")
+        columns.grid_columnconfigure(1, weight=1, uniform="reader-preferences")
+        columns.grid_rowconfigure(0, weight=1)
+        left = tk.Frame(columns, bg=THEME["bg"]); left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        right = tk.Frame(columns, bg=THEME["bg"]); right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+
+        def section(parent, label, icon_name):
+            row = tk.Frame(parent, bg=THEME["bg"]); row.pack(fill="x", pady=(2, 8))
+            icon = lucide_icon(icon_name, size=19, state="active", dark=IS_DARK)
+            icon_label = tk.Label(row, image=icon, bg=THEME["bg"]); icon_label.image = icon
+            icon_label.pack(side="left", padx=(2, 8))
+            tk.Label(row, text=label, font=("Segoe UI", 11, "bold"), bg=THEME["bg"],
+                     fg=THEME["text"]).pack(side="left")
+
+        def option(parent, var, title, detail):
+            shell = KomicoveCard(parent, THEME, height=78, radius=RADIUS_MEDIUM, padding=10)
+            shell.pack(fill="x", pady=5)
+            ReaderSwitch(shell.content, var).pack(side="right", padx=(8, 2))
+            labels = tk.Frame(shell.content, bg=THEME["surface"]); labels.pack(side="left", fill="both", expand=True)
+            tk.Label(labels, text=title, font=FBTN, bg=THEME["surface"], fg=THEME["text"]).pack(anchor="w")
+            tk.Label(labels, text=detail, font=("Segoe UI", 8), bg=THEME["surface"],
+                     fg=THEME["text_dim"], wraplength=230, justify="left").pack(anchor="w", pady=(3, 0))
+
+        section(left, ui('Visualização', 'Viewing'), "scan")
+        option(left, autofit, ui('Encaixe automático', 'Automatic fit'),
+               ui('Ajusta cada página à área disponível.', 'Fits every page to the available area.'))
+        option(left, persist, ui('Persistir zoom e posição', 'Keep zoom and position'),
+               ui('Mantém o enquadramento ao trocar de página.', 'Keeps framing while changing pages.'))
+        option(left, double, ui('Página dupla', 'Double page'),
+               ui('Exibe duas páginas lado a lado.', 'Shows two pages side by side.'))
+        option(left, manga, ui('Ordem mangá', 'Manga order'),
+               ui('Inverte a direção de navegação.', 'Reverses the navigation direction.'))
+        section(right, ui('Leitura guiada', 'Guided reading'), "focus")
+        option(right, guided, ui('Ativar leitura guiada', 'Enable guided reading'),
+               ui('Avança pelos quadros detectados da página.', 'Moves through detected panels on the page.'))
+        option(right, animated, ui('Transições suaves', 'Smooth transitions'),
+               ui('Anima a passagem entre quadros.', 'Animates movement between panels.'))
+
+        tip = KomicoveCard(right, THEME, height=96, radius=RADIUS_MEDIUM, padding=12)
+        tip.pack(fill="x", pady=(12, 0))
+        tk.Label(tip.content, text=ui('Atalhos rápidos', 'Quick shortcuts'), font=FBTN,
+                 bg=THEME["surface"], fg=THEME["text"]).pack(anchor="w")
+        tk.Label(tip.content,
+                 text=ui('E: encaixar  |  V: página inteira  |  L: leitura guiada',
+                         'E: fit  |  V: full page  |  L: guided reading'),
+                 font=FSMALL, bg=THEME["surface"], fg=THEME["text_dim"],
+                 wraplength=270, justify="left").pack(anchor="w", pady=(7, 0))
         def apply():
             if self._guide_animation:
                 self.after_cancel(self._guide_animation)
@@ -777,6 +939,9 @@ class ReaderWindow(tk.Toplevel):
             save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
             self._guided = bool(guided.get())
             save_prefs(reader_guided=self._guided)
+            self._manga = bool(manga.get())
+            self._double = bool(double.get()) and not self._guided
+            save_prefs(manga=self._manga)
             self._guide_overview = False
             if self._guided:
                 self._double = False
@@ -784,8 +949,10 @@ class ReaderWindow(tk.Toplevel):
                 self._zoom = self.Z0; self._offset = [0, 0]; self._show(reset=False)
             dialog.destroy()
             self._show(reset=False)
-        self._pill(dialog, ui('Salvar preferências', 'Save preferences'), apply, variant="accent", font=FBTN,
-                   pad_x=24, pad_y=10).pack(pady=(4, 18))
+        footer = tk.Frame(dialog, bg=THEME["surface"]); footer.pack(fill="x", side="bottom")
+        KomicoveButton(footer, ui('Salvar preferências', 'Save preferences'), apply, THEME,
+                       kind="primary", min_width=210, fixed_height=46,
+                       icon_name="check").pack(side="right", padx=24, pady=14)
 
     def _fit(self):
         cw = self._cv.winfo_width() or 800
@@ -835,51 +1002,247 @@ class ReaderWindow(tk.Toplevel):
         self._brightness = max(0.1, min(3.0, round(val, 2)))
         if hasattr(self, "_bright_var"):
             self._bright_var.set(self._brightness)
+        if hasattr(self, "_brightness_slider"):
+            self._brightness_slider.set(self._brightness)
         self._show(reset=False)
 
     def _slider_brightness(self, v):
         self._brightness = float(v)
         self._show(reset=False)
 
+    def _dialog_geometry(self, window, width, height):
+        x = max(0, self.winfo_rootx() + (self.winfo_width() - width) // 2)
+        y = max(0, self.winfo_rooty() + (self.winfo_height() - height) // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _show_page_picker(self):
+        import queue
+
+        c = THEME
+        win = tk.Toplevel(self)
+        win.title(ui('Selecionar página', 'Select page'))
+        win.configure(bg=c["bg"])
+        win.minsize(720, 520)
+        self._dialog_geometry(win, 980, 700)
+        win.transient(self); grab_when_visible(win)
+        alive = {"value": True}
+        photos = []
+
+        def close():
+            alive["value"] = False
+            if win.winfo_exists():
+                win.destroy()
+
+        header = tk.Frame(win, bg=c["surface"], height=82)
+        header.pack(fill="x"); header.pack_propagate(False)
+        title_box = tk.Frame(header, bg=c["surface"]); title_box.pack(side="left", padx=28, pady=14)
+        tk.Label(title_box, text=ui('Selecionar página', 'Select page'), font=("Segoe UI", 20, "bold"),
+                 bg=c["surface"], fg=c["text"]).pack(anchor="w")
+        tk.Label(title_box, text=ui(f'{self._count} páginas', f'{self._count} pages'), font=FSMALL,
+                 bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(2, 0))
+        KomicoveButton(header, ui('Fechar', 'Close'), close, c, kind="secondary",
+                       compact=True, icon_name="x").pack(side="right", padx=24)
+
+        canvas = tk.Canvas(win, bg=c["bg"], highlightthickness=0)
+        scroll = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        grid = tk.Frame(canvas, bg=c["bg"])
+        window_id = canvas.create_window((0, 0), window=grid, anchor="nw")
+        grid.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window_id, width=e.width))
+        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+        def go(index):
+            self._fade_to(index)
+            if win.winfo_exists():
+                win.destroy()
+
+        cards = []
+        columns = 7
+        for i in range(self._count):
+            holder = tk.Frame(grid, bg=c["bg"])
+            holder.grid(row=i // columns, column=i % columns, padx=9, pady=10, sticky="n")
+            card = tk.Canvas(holder, width=112, height=154, bg=c["bg"],
+                             highlightthickness=0, cursor="hand2")
+            card.pack()
+            selected = i == self._idx
+            if selected:
+                _rrect(card, 0, 0, 112, 154, RADIUS_MEDIUM,
+                       fill=c["border_glow"], outline=c["accent2"], width=2)
+            _rrect(card, 3, 3, 109, 151, RADIUS_SMALL,
+                   fill=c["surface_alt"], outline=c["accent"] if selected else c["border"], width=2 if selected else 1)
+            card.create_text(56, 76, text=ui('Carregando', 'Loading'), font=("Segoe UI", 8),
+                             fill=c["text_dim"], tags="loading")
+            card.bind("<Button-1>", lambda _e, idx=i: go(idx))
+            tk.Label(holder, text=ui(f'Página {i+1}', f'Page {i+1}'), font=FSMALL,
+                     bg=c["bg"], fg=c["accent2"] if selected else c["text_dim"]).pack(pady=(4, 0))
+            cards.append(card)
+
+        pending = queue.Queue()
+
+        def apply_pending():
+            if not alive["value"]:
+                return
+            while True:
+                try:
+                    index, pil = pending.get_nowait()
+                except queue.Empty:
+                    break
+                target = cards[index]
+                try:
+                    visible = win.winfo_exists() and target.winfo_exists()
+                except tk.TclError:
+                    visible = False
+                if not visible:
+                    continue
+                photo = ImageTk.PhotoImage(pil)
+                photos.append(photo)
+                target.delete("loading")
+                target.create_image(56, 77, image=photo)
+            if alive["value"]:
+                win.after(45, apply_pending)
+
+        def load_thumbnails():
+            for index, card in enumerate(cards):
+                if not alive["value"]:
+                    return
+                try:
+                    pil = self._loader.get_thumbnail_pil(index, 96, 136).convert("RGB")
+                except Exception:
+                    continue
+                pending.put((index, pil))
+        threading.Thread(target=load_thumbnails, daemon=True).start()
+        win.after(45, apply_pending)
+
+        win.protocol("WM_DELETE_WINDOW", close)
+
+    def _show_bookmarks(self):
+        c = THEME
+        win = tk.Toplevel(self)
+        win.title(ui('Marcadores', 'Bookmarks'))
+        win.configure(bg=c["bg"])
+        self._dialog_geometry(win, 620, 560)
+        win.transient(self); grab_when_visible(win)
+
+        header = tk.Frame(win, bg=c["surface"], height=86)
+        header.pack(fill="x"); header.pack_propagate(False)
+        title_box = tk.Frame(header, bg=c["surface"]); title_box.pack(side="left", padx=26, pady=15)
+        tk.Label(title_box, text=ui('Marcadores', 'Bookmarks'), font=("Segoe UI", 20, "bold"),
+                 bg=c["surface"], fg=c["text"]).pack(anchor="w")
+        tk.Label(title_box, text=ui('Acesse rapidamente suas páginas salvas', 'Quickly open your saved pages'),
+                 font=FSMALL, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w")
+        KomicoveButton(header, ui('Fechar', 'Close'), win.destroy, c, kind="secondary",
+                       compact=True, icon_name="x").pack(side="right", padx=22)
+        body = tk.Frame(win, bg=c["bg"]); body.pack(fill="both", expand=True, padx=24, pady=20)
+
+        def render():
+            for child in body.winfo_children(): child.destroy()
+            pages = sorted(get_bookmarks(self._path))
+            if not pages:
+                icon = lucide_icon("bookmark", size=38, state="active", dark=IS_DARK)
+                label = tk.Label(body, image=icon, bg=c["bg"]); label.image = icon
+                label.pack(pady=(72, 12))
+                tk.Label(body, text=ui('Nenhum marcador ainda', 'No bookmarks yet'),
+                         font=("Segoe UI", 16, "bold"), bg=c["bg"], fg=c["text"]).pack()
+                tk.Label(body, text=ui('Use o botão Marcador enquanto estiver lendo.',
+                                       'Use the Bookmark button while reading.'),
+                         font=FSMALL, bg=c["bg"], fg=c["text_dim"]).pack(pady=(6, 0))
+                return
+            for page in pages:
+                card = KomicoveCard(body, c, height=72, radius=RADIUS_MEDIUM, padding=9)
+                card.pack(fill="x", pady=5)
+                icon = lucide_icon("bookmark-check", size=22, state="active", dark=IS_DARK)
+                il = tk.Label(card.content, image=icon, bg=c["surface"]); il.image = icon
+                il.pack(side="left", padx=(4, 12))
+                labels = tk.Frame(card.content, bg=c["surface"]); labels.pack(side="left", fill="both", expand=True)
+                tk.Label(labels, text=ui(f'Página {page+1}', f'Page {page+1}'), font=FBTN,
+                         bg=c["surface"], fg=c["text"]).pack(anchor="w")
+                tk.Label(labels, text=f'{page+1} / {self._count}', font=FSMALL,
+                         bg=c["surface"], fg=c["text_dim"]).pack(anchor="w")
+                def remove(p=page):
+                    toggle_bookmark(self._path, p); self._hud(); render()
+                KomicoveButton(card.content, ui('Remover', 'Remove'), remove, c,
+                               kind="secondary", compact=True, icon_name="trash-2").pack(side="right", padx=4)
+                def visit(p=page):
+                    self._fade_to(p); win.destroy()
+                KomicoveButton(card.content, ui('Ir para', 'Go to'), visit, c,
+                               kind="primary", compact=True, icon_name="arrow-right").pack(side="right", padx=4)
+        render()
+
     def _show_shortcuts(self):
         c = THEME
         win = tk.Toplevel(self)
         win.title(ui('Atalhos de teclado', 'Keyboard shortcuts'))
-        win.configure(bg=c["surface"])
+        win.configure(bg=c["bg"])
         win.resizable(False, False)
         grab_when_visible(win)
-        W, H = 420, 480
-        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        win.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
-        tk.Canvas(win, width=W, height=3, bg=c["accent"], highlightthickness=0).place(x=0, y=0)
-        tk.Label(win, text=ui('Atalhos de Teclado', 'Keyboard Shortcuts'), font=FBTN, bg=c["surface"],
-                 fg=c["text"], pady=14).pack()
-        tk.Frame(win, bg=c["border"], height=1).pack(fill="x", padx=16, pady=(0, 8))
-        shortcuts = [
-            ("← / →", ui('Página anterior / próxima', 'Previous / next page')),
-            ("+ / -", "Zoom in / out"),
-            ("Ctrl + scroll", ui('Zoom no cursor', 'Zoom at pointer')),
-            ("F / F11", ui('Tela cheia', 'Fullscreen')),
-            ("I", ui('Modo imersivo', 'Immersive mode')),
-            ("R", ui('Girar página', 'Rotate page')),
-            ("B", ui('Marcar bookmark', 'Toggle bookmark')),
-            ("G", ui('Mostrar miniaturas', 'Show thumbnails')),
-            ("L", ui('Ativar / desativar leitura guiada', 'Enable / disable guided reading')),
-            ("V", ui('Página inteira / voltar ao quadro', 'Full page / return to panel')),
-            ("T", ui('Alternar tema', 'Toggle theme')),
-            ("[ / ]", ui('Reduzir / aumentar brilho', 'Decrease / increase brightness')),
-            ("?", ui('Esta janela', 'This window')),
-            ("Esc", ui('Sair da tela cheia', 'Exit fullscreen')),
+        W, H = 1080, 650
+        self._dialog_geometry(win, W, H)
+        shell = KomicoveCard(win, c, height=610, radius=RADIUS_LARGE, padding=22)
+        shell.pack(fill="both", expand=True, padx=22, pady=20)
+        header = tk.Frame(shell.content, bg=c["surface"]); header.pack(fill="x")
+        accent = tk.Frame(header, width=5, height=58, bg=c["accent"]); accent.pack(side="left", fill="y", padx=(0, 16))
+        accent.pack_propagate(False)
+        labels = tk.Frame(header, bg=c["surface"]); labels.pack(side="left", fill="x", expand=True)
+        tk.Label(labels, text=ui('Atalhos de teclado', 'Keyboard shortcuts'), font=("Segoe UI", 21, "bold"),
+                 bg=c["surface"], fg=c["text"]).pack(anchor="w")
+        tk.Label(labels, text=ui('Acesse as principais funções do Komicove com atalhos rápidos.',
+                                 'Access the main Komicove features with quick shortcuts.'),
+                 font=FSMALL, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(3,0))
+        KomicoveButton(header, "", win.destroy, c, kind="secondary", compact=True,
+                       min_width=46, icon_name="x").pack(side="right")
+
+        categories = [
+            (ui('Navegação', 'Navigation'), 'book-open', [
+                (ui('Página anterior', 'Previous page'), 'Left'),
+                (ui('Próxima página', 'Next page'), 'Right'),
+                (ui('Primeira página', 'First page'), 'Home'),
+                (ui('Última página', 'Last page'), 'End'),
+            ]),
+            (ui('Visualização', 'Viewing'), 'search', [
+                (ui('Aumentar zoom', 'Zoom in'), '+'),
+                (ui('Diminuir zoom', 'Zoom out'), '-'),
+                (ui('Zoom no cursor', 'Zoom at pointer'), 'Ctrl + scroll'),
+                (ui('Tela cheia', 'Fullscreen'), 'F11'),
+            ]),
+            (ui('Leitura', 'Reading'), 'scan', [
+                (ui('Modo imersivo', 'Immersive mode'), 'I'),
+                (ui('Miniaturas', 'Thumbnails'), 'G'),
+                (ui('Leitura guiada', 'Guided reading'), 'L'),
+                (ui('Adicionar marcador', 'Add bookmark'), 'B'),
+            ]),
+            (ui('Página', 'Page'), 'rotate-cw', [
+                (ui('Girar página', 'Rotate page'), 'R'),
+                (ui('Reduzir brilho', 'Decrease brightness'), '['),
+                (ui('Aumentar brilho', 'Increase brightness'), ']'),
+                (ui('Editar quadros', 'Edit panels'), 'Ctrl + E'),
+            ]),
+            (ui('Geral', 'General'), 'settings', [
+                (ui('Alternar tema', 'Toggle theme'), 'T'),
+                (ui('Abrir ajuda', 'Open help'), 'F1'),
+                (ui('Abrir preferências', 'Open preferences'), 'Ctrl + ,'),
+                (ui('Sair da tela cheia', 'Exit fullscreen'), 'Esc'),
+            ]),
         ]
-        frame = tk.Frame(win, bg=c["surface"]); frame.pack(padx=24, pady=4, fill="x")
-        for key, desc in shortcuts:
-            row = tk.Frame(frame, bg=c["surface"]); row.pack(fill="x", pady=3)
-            tk.Label(row, text=key, font=(_MONO, 9, "bold"), bg=c["surface_alt"],
-                     fg=c["accent"], padx=8, pady=3, relief="flat").pack(side="left")
-            tk.Label(row, text=desc, font=FSMALL, bg=c["surface"],
-                     fg=c["text_dim"], anchor="w").pack(side="left", padx=10)
-        make_pill(win, ui('Fechar', 'Close'), win.destroy, variant="soft", font=FBTN,
-                  pad_x=24, pad_y=10).pack(pady=14)
+        grid = tk.Frame(shell.content, bg=c["surface"]); grid.pack(fill="both", expand=True, pady=(18, 8))
+        for index, (title, icon_name, shortcuts) in enumerate(categories):
+            column = index % 3; row_index = index // 3
+            card = KomicoveCard(grid, c, height=204, radius=RADIUS_MEDIUM, padding=12)
+            card.grid(row=row_index, column=column, sticky="nsew", padx=7, pady=7)
+            grid.grid_columnconfigure(column, weight=1, uniform="shortcuts")
+            icon = lucide_icon(icon_name, size=22, state="active", dark=IS_DARK)
+            head = tk.Frame(card.content, bg=c["surface"]); head.pack(fill="x", pady=(0, 7))
+            il = tk.Label(head, image=icon, bg=c["surface"]); il.image = icon; il.pack(side="left", padx=(0, 9))
+            tk.Label(head, text=title, font=("Segoe UI", 12, "bold"), bg=c["surface"], fg=c["text"]).pack(side="left")
+            for description, key in shortcuts:
+                line = tk.Frame(card.content, bg=c["surface"]); line.pack(fill="x", pady=4)
+                tk.Label(line, text=description, font=FSMALL, bg=c["surface"], fg=c["text_dim"]).pack(side="left")
+                tk.Label(line, text=key, font=(_MONO, 8, "bold"), bg=c["surface_alt"],
+                         fg=c["text"], padx=8, pady=3).pack(side="right")
+        KomicoveButton(shell.content, ui('Entendi', 'Got it'), win.destroy, c, kind="primary",
+                       min_width=220, fixed_height=46, icon_name="check").pack(pady=(4, 0))
 
     def _toggle_double(self):
         if self._guided:
@@ -917,9 +1280,8 @@ class ReaderWindow(tk.Toplevel):
     def _toggle_manga(self, e=None):
         self._manga = not self._manga
         save_prefs(manga=self._manga)
-        txt = TEXTS[LANG]["manga_on"] if self._manga else TEXTS[LANG]["manga_off"]
         if hasattr(self, "_manga_btn") and self._manga_btn.winfo_exists():
-            self._manga_btn.pill_set_text(txt)
+            self._manga_btn.pill_set_text(ui('Mangá', 'Manga'))
             self._manga_btn.pill_set_active(self._manga)
 
     def _toggle_theme(self):
@@ -943,7 +1305,7 @@ class ReaderWindow(tk.Toplevel):
     def _toggle_thumbnails(self):
         if self._thumb_visible:
             self._thumb_visible = False
-            self._thumb_btn.pill_set_text(ui('⊟  Miniaturas', '⊟  Thumbnails'))
+            self._thumb_btn.pill_set_text(ui('Páginas', 'Pages'))
             self._thumb_btn.pill_set_active(False)
             self._thumb_frame.pack_forget()
             for w in self._thumb_frame.winfo_children():
@@ -955,7 +1317,7 @@ class ReaderWindow(tk.Toplevel):
 
     def _open_thumbnails(self):
         self._thumb_visible = True
-        self._thumb_btn.pill_set_text(ui('⊠  Miniaturas', '⊠  Thumbnails'))
+        self._thumb_btn.pill_set_text(ui('Páginas', 'Pages'))
         self._thumb_btn.pill_set_active(True)
         for w in self._thumb_frame.winfo_children():
             try: w.destroy()
@@ -987,7 +1349,10 @@ class ReaderWindow(tk.Toplevel):
         save_reader_state(self._content_key, page=self._idx,
                           zoom=self._zoom if self._persist_zoom else self.Z0,
                           offset=self._offset, double=self._double, manga=self._manga)
-        record_reading_time(self._content_key,time.monotonic()-self._read_started)
+        record_reading_time(
+            self._content_key, time.monotonic()-self._read_started,
+            path=self._path, metadata=self._statistics_metadata,
+        )
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()

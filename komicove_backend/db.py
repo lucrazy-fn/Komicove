@@ -44,6 +44,9 @@ def _migrate_legacy_schema() -> None:
     if "users" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("users")}
+    if "bio" not in columns:
+        with _engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN bio VARCHAR(160)"))
     if "last_seen_at" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP"))
@@ -89,6 +92,13 @@ def _migrate_legacy_schema() -> None:
                 connection.execute(text(
                     "ALTER TABLE library_states ADD COLUMN client_updated_at REAL NOT NULL DEFAULT 0"
                 ))
+    if "session_tokens" in inspector.get_table_names():
+        session_columns = {column["name"] for column in inspector.get_columns("session_tokens")}
+        with _engine.begin() as connection:
+            if "device_name" not in session_columns:
+                connection.execute(text("ALTER TABLE session_tokens ADD COLUMN device_name VARCHAR(80)"))
+            if "last_seen_at" not in session_columns:
+                connection.execute(text("ALTER TABLE session_tokens ADD COLUMN last_seen_at TIMESTAMP"))
     if "comics" in inspector.get_table_names():
         comic_columns = {column["name"] for column in inspector.get_columns("comics")}
         with _engine.begin() as connection:

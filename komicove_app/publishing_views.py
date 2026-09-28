@@ -1,5 +1,24 @@
 from komicove_app.runtime import *
 
+
+def _publication_cover_preview(path: str) -> bytes | None:
+    """Build a small cover while the local archive tools are available.
+
+    The server can then show CBR/RAR covers even when its host does not have an
+    external RAR extractor installed.
+    """
+    try:
+        data = extract_cover_only(path)
+        with Image.open(io.BytesIO(data)) as source:
+            image = source.convert("RGB")
+            image.thumbnail((720, 1040), Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            image.save(output, "JPEG", quality=88, optimize=True)
+            return output.getvalue()
+    except Exception:
+        log.exception(ui('Falha ao preparar a capa do envio', 'Could not prepare submission cover'))
+        return None
+
 class PublishDialog(tk.Toplevel):
     pass
     W, H = 440, 650
@@ -133,6 +152,7 @@ class PublishDialog(tk.Toplevel):
         self._status.config(text=ui('Enviando para moderação…', 'Submitting for moderation…'), fg=THEME["text_dim"])
 
         def worker():
+            response = None
             try:
                 response = api_client.submit_publication(
                     self._user.token, title=title, author=author, description=description,
@@ -142,7 +162,8 @@ class PublishDialog(tk.Toplevel):
                     series_title=series_title, chapter_number=chapter_number,
                 )
                 api_client.upload_publication_file(
-                    self._user.token, response.publication_id, self._path
+                    self._user.token, response.publication_id, self._path,
+                    cover_bytes=_publication_cover_preview(self._path),
                 )
                 outcome = (response, None)
             except api_client.ApiAuthError as exc:
@@ -154,6 +175,14 @@ class PublishDialog(tk.Toplevel):
             except Exception:
                 log.exception(ui('Falha inesperada durante publicação', 'Unexpected publishing error'))
                 outcome = (None, ui('Não foi possível enviar a publicação agora.', 'Could not submit the publication now.'))
+            if outcome[1] and response is not None:
+                # Metadata and file are sent in two compatible API calls. If the
+                # file fails, remove the incomplete draft so it never becomes a
+                # permanent card with no cover or downloadable content.
+                try:
+                    api_client.remove_publication(self._user.token, response.publication_id)
+                except Exception:
+                    log.exception(ui('Falha ao remover envio incompleto', 'Could not remove incomplete submission'))
             try:
                 self.after(0, lambda: self._finish_submit(*outcome))
             except tk.TclError:

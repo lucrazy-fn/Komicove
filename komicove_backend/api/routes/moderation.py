@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 from komicove_backend.accounts.models import Notification, User
 from komicove_backend.api.deps import get_db, require_moderator
 from komicove_backend.api.schemas import ModerationDecisionRequest, ModerationQueueItem
-from komicove_backend.catalog.assets import UnsafeAssetError, cover_jpeg, resolve_asset
+from komicove_backend.catalog.assets import (
+    RemoteStorageError, UnsafeAssetError, asset_exists, cover_jpeg, resolve_asset,
+    resolve_cover,
+)
 from komicove_backend.catalog.models import Comic, Publication, PublicationAsset
 from komicove_backend.moderation.db_models import ModerationRecordRow
 
@@ -40,12 +43,16 @@ def queue(
             publication_id=publication.id,
             title=comic.title,
             author=comic.author,
+            description=comic.description,
+            tags=comic.tag_list(),
+            series_title=comic.series_title,
+            chapter_number=comic.chapter_number,
             uploader_username=uploader.username,
             risk_level=publication.risk_level,
             confidence=record.confidence,
             justification=record.internal_justification,
             created_at=record.created_at,
-            has_file=asset is not None,
+            has_file=bool(asset is not None and asset_exists(asset.stored_name)),
             original_filename=asset.original_filename if asset else None,
             status=(record.manual_override_status or "pending_review"),
             decision_reason=record.manual_override_reason,
@@ -76,6 +83,8 @@ def download_file(
         path = resolve_asset(asset.stored_name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no armazenamento.") from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(path, filename=asset.original_filename, media_type="application/octet-stream")
 
 
@@ -87,7 +96,10 @@ def cover(
 ):
     asset = _moderation_asset(db, record_id)
     try:
-        content = cover_jpeg(resolve_asset(asset.stored_name))
+        preview = resolve_cover(asset.stored_name)
+        content = preview.read_bytes() if preview is not None else cover_jpeg(resolve_asset(asset.stored_name))
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (FileNotFoundError, UnsafeAssetError, OSError) as exc:
         raise HTTPException(status_code=422, detail=f"Não foi possível gerar a capa: {exc}") from exc
     return Response(content=content, media_type="image/jpeg")
@@ -119,7 +131,7 @@ def decide(
             raise HTTPException(409,"Envie o arquivo antes da aprovação.")
         try:
             resolve_asset(asset.stored_name)
-        except (FileNotFoundError, UnsafeAssetError) as exc:
+        except (FileNotFoundError, RemoteStorageError, UnsafeAssetError) as exc:
             raise HTTPException(409,"O arquivo precisa estar disponível para aprovação.") from exc
 
     record.manual_override_status = payload.decision
@@ -143,6 +155,10 @@ def decide(
         publication_id=publication.id,
         title=comic.title,
         author=comic.author,
+        description=comic.description,
+        tags=comic.tag_list(),
+        series_title=comic.series_title,
+        chapter_number=comic.chapter_number,
         uploader_username=uploader.username,
         risk_level=publication.risk_level,
         confidence=record.confidence,

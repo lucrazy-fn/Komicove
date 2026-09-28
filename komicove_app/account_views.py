@@ -1,7 +1,15 @@
 import threading
 import tkinter as tk
 import re
-from tkinter import messagebox, simpledialog
+import os
+import queue
+from pathlib import Path
+from tkinter import filedialog, messagebox, simpledialog
+from PIL import Image, ImageDraw, ImageOps, ImageTk
+from komicove_app.design.styles import KomicoveButton, KomicoveCard
+from komicove_app.design.icons import lucide_icon
+from komicove_app.design.spacing import RADIUS_LARGE
+from komicove_app.storage import APPDATA_DIR, load_prefs, save_prefs
 from komicove_app.translations import ui
 
 
@@ -39,6 +47,35 @@ def _clear(container):
     for child in container.winfo_children(): child.destroy()
 
 
+def _run_async(root, work, done):
+    """Run network work without calling Tk from the worker thread."""
+    results = queue.Queue(maxsize=1)
+
+    def worker():
+        try:
+            results.put((work(), None))
+        except Exception as exc:
+            results.put((None, str(exc)))
+
+    def poll():
+        try:
+            result, error = results.get_nowait()
+        except queue.Empty:
+            try:
+                root.after(45, poll)
+            except tk.TclError:
+                pass
+            return
+        try:
+            if root.winfo_exists():
+                done(result, error)
+        except tk.TclError:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+    root.after(45, poll)
+
+
 def _rrect(cv, x1, y1, x2, y2, r, fill="", outline="", width=1):
     r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
     pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
@@ -51,33 +88,9 @@ def _rrect(cv, x1, y1, x2, y2, r, fill="", outline="", width=1):
 
 
 def _pill_button(parent, text, cmd, theme, *, font, variant="accent", pad_x=18, pad_y=9):
-    pass
-    c = theme
-    host_bg = parent.cget("bg")
-    if variant == "accent":
-        base, hover, fg = c["accent"], c["accent2"], "#ffffff"
-    elif variant == "soft":
-        base, hover, fg = c["surface_alt"], c["surface_hover"], c["text"]
-    else:
-        base, hover, fg = host_bg, c["surface_hover"], c["text_dim"]
-
-    tmp = tk.Label(parent, text=text, font=font)
-    tw, th = tmp.winfo_reqwidth(), tmp.winfo_reqheight()
-    tmp.destroy()
-    w, h = tw + pad_x * 2, th + pad_y * 2
-    r = h // 2
-    cv = tk.Canvas(parent, width=w, height=h, bg=host_bg, highlightthickness=0, cursor="hand2")
-
-    def render(fill):
-        cv.delete("all")
-        _rrect(cv, 1, 1, w - 1, h - 1, r, fill=fill)
-        cv.create_text(w // 2, h // 2, text=text, font=font, fill=fg)
-
-    render(base)
-    cv.bind("<Enter>", lambda e: render(hover))
-    cv.bind("<Leave>", lambda e: render(base))
-    cv.bind("<Button-1>", lambda e: cmd())
-    return cv
+    return KomicoveButton(parent, text, cmd, theme,
+                          kind="primary" if variant == "accent" else "secondary",
+                          compact=font[1] <= 9)
 
 
 def _card(parent, theme):
@@ -109,11 +122,19 @@ def _labeled_entry(parent, theme, label, *, font_label, font_entry, secret=False
 _ROLE_COLORS = {"owner": "#f5c842", "admin": "#ff7a4d", "moderator": "#5aabff"}
 
 
+def _role_label(role):
+    return {
+        "owner": ui("Dono", "Owner"),
+        "admin": ui("Admin", "Admin"),
+        "moderator": ui("Moderador", "Moderator"),
+        "user": ui("Usuário", "User"),
+    }.get(role or "user", role or ui("Usuário", "User"))
+
+
 def _role_badge(parent, theme, role):
-    pass
     c = theme
     color = _ROLE_COLORS.get(role, c["text_dim"])
-    label = (role or "user").title()
+    label = _role_label(role)
     font = ("Segoe UI", 8, "bold")
     tmp = tk.Label(parent, text=label, font=font)
     tw = tmp.winfo_reqwidth()
@@ -134,25 +155,79 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
     _clear(container); title, body, small = fonts
     c = theme
 
-    header = tk.Frame(container, bg=c["bg"])
-    header.pack(fill="x", padx=30, pady=(28, 16))
+    tk.Label(container, text=ui('Perfil / Conta', 'Profile / Account'), font=title,
+             bg=c["bg"], fg=c["text"]).pack(anchor="w", padx=30, pady=(24, 12))
+    header_shell = KomicoveCard(container, c, height=130, radius=RADIUS_LARGE, padding=18,
+                                outline=c["border_glow"])
+    header_shell.pack(fill="x", padx=30, pady=(0, 16))
+    header = header_shell.content
+    tk.Frame(header, bg=c["accent"], width=4).pack(side="left", fill="y", padx=(0, 18))
 
-    av_size = 60
-    av = tk.Canvas(header, width=av_size, height=av_size, bg=c["bg"], highlightthickness=0)
+    av_size = 84
+    av = tk.Canvas(header, width=av_size, height=av_size, bg=c["surface"], highlightthickness=0)
     av.pack(side="left")
     nome_atual = getattr(user, "display_name", None) or getattr(user, "username", "") or "?"
     initial = (nome_atual.strip()[:1] or "?").upper()
     av.create_oval(2, 2, av_size - 2, av_size - 2, fill=c["surface_alt"], outline=c["border"], width=2)
     av.create_text(av_size // 2, av_size // 2, text=initial, font=(title[0], 20, "bold"), fill=c["accent2"])
 
-    name_box = tk.Frame(header, bg=c["bg"])
+    avatar_key = f"profile_avatar_{getattr(user, 'username', 'local')}"
+
+    def paint_avatar(path):
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            source = Image.open(path).convert("RGBA")
+            source = ImageOps.fit(source, (av_size - 8, av_size - 8), Image.LANCZOS)
+            mask = Image.new("L", source.size, 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, source.width - 1, source.height - 1), fill=255)
+            source.putalpha(mask)
+            av._avatar_photo = ImageTk.PhotoImage(source)
+            av.delete("avatar-image")
+            av.create_image(av_size // 2, av_size // 2, image=av._avatar_photo,
+                            tags="avatar-image")
+        except Exception:
+            return
+
+    def choose_avatar():
+        source = filedialog.askopenfilename(
+            parent=root, title=ui("Escolher avatar", "Choose avatar"),
+            filetypes=[(ui("Imagens", "Images"), "*.png *.jpg *.jpeg *.webp")],
+        )
+        if not source:
+            return
+        avatar_dir = Path(APPDATA_DIR, "profile")
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        destination = avatar_dir / f"{getattr(user, 'username', 'local')}_avatar.png"
+        try:
+            image = Image.open(source).convert("RGBA")
+            image.thumbnail((768, 768), Image.LANCZOS)
+            image.save(destination, "PNG", optimize=True)
+            save_prefs(**{avatar_key: str(destination)})
+            paint_avatar(str(destination))
+        except Exception as exc:
+            messagebox.showerror(ui("Avatar", "Avatar"), str(exc), parent=root)
+
+    paint_avatar(load_prefs().get(avatar_key))
+    camera_icon = lucide_icon("pencil", size=17, state="hover",
+                              dark=c["bg"].lower() == "#090b0f")
+    camera = tk.Label(header, image=camera_icon, bg=c["surface_alt"],
+                      fg=c["text"], cursor="hand2", padx=7, pady=5)
+    camera._icon = camera_icon
+    camera.place(x=av_size - 4, y=av_size - 28)
+    camera.bind("<Button-1>", lambda _event: choose_avatar())
+
+    name_box = tk.Frame(header, bg=c["surface"])
     name_box.pack(side="left", padx=(14, 0), anchor="w")
-    tk.Label(name_box, text=nome_atual, font=title, bg=c["bg"], fg=c["text"]).pack(anchor="w")
-    sub = tk.Frame(name_box, bg=c["bg"]); sub.pack(anchor="w", pady=(2, 0))
+    tk.Label(name_box, text=nome_atual, font=title, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    sub = tk.Frame(name_box, bg=c["surface"]); sub.pack(anchor="w", pady=(2, 0))
     tk.Label(sub, text=f"@{getattr(user, 'username', '')}", font=small,
-              bg=c["bg"], fg=c["text_dim"]).pack(side="left")
-    role_holder = tk.Frame(sub, bg=c["bg"]); role_holder.pack(side="left", padx=(8, 0))
+              bg=c["surface"], fg=c["text_dim"]).pack(side="left")
+    role_holder = tk.Frame(sub, bg=c["surface"]); role_holder.pack(side="left", padx=(8, 0))
     _role_badge(role_holder, theme, getattr(user, "role", "user")).pack()
+    email_in_hero = tk.Label(name_box, text=getattr(user, "email", "") or "", font=small,
+                             bg=c["surface"], fg=c["text_dim"])
+    email_in_hero.pack(anchor="w", pady=(5, 0))
 
     status = tk.Label(container, text=ui('Carregando…', 'Loading…'), font=small, bg=c["bg"], fg=c["text_dim"])
     status.pack(anchor="w", padx=30)
@@ -175,14 +250,34 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
                 messagebox.showerror(ui('Ativar cargo', 'Enable role'), str(exc), parent=root)
         _pill_button(container, ui('Tenho um token de cargo', 'I have a role token'), use_setup_token, theme, font=small, variant="ghost").pack(anchor="w", padx=30, pady=(8, 0))
 
-    form = _card(container, theme)
-    form.pack(fill="x", padx=30, pady=(14, 18))
-    tk.Label(form, text=ui('Informações', 'Information'), font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    columns = tk.Frame(container, bg=c["bg"])
+    columns.pack(fill="both", expand=True, padx=30, pady=(14, 18))
+    left = tk.Frame(columns, bg=c["bg"])
+    left.pack(side="left", fill="both", expand=True, padx=(0, 9))
+    right = tk.Frame(columns, bg=c["bg"])
+    right.pack(side="left", fill="both", expand=True, padx=(9, 0))
+
+    form_card = KomicoveCard(left, c, height=510, radius=RADIUS_LARGE, padding=20)
+    form_card.pack(fill="x")
+    form = form_card.content
+    tk.Label(form, text=ui('Informações do perfil', 'Profile information'), font=body,
+             bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    tk.Label(form, text=ui('Seus dados públicos e de conta.', 'Your public and account details.'),
+             font=small, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(3, 6))
 
     fields = {}
     for key, label in [("username", ui('Usuário', 'Username')), ("display_name", ui('Nome de exibição', 'Display name')), ("email", ui('E-mail', 'Email'))]:
         fields[key] = _labeled_entry(form, theme, label, font_label=small, font_entry=body)
     fields["username"].config(state="disabled")
+    tk.Label(form, text=ui('Bio (opcional)', 'Bio (optional)'), font=small,
+             bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(10, 4))
+    bio_box = tk.Frame(form, bg=c["surface_alt"], highlightbackground=c["border"],
+                       highlightthickness=1)
+    bio_box.pack(fill="x")
+    bio = tk.Text(bio_box, height=3, font=small, bd=0, highlightthickness=0,
+                  bg=c["surface_alt"], fg=c["text"], insertbackground=c["text"],
+                  wrap="word")
+    bio.pack(fill="x", padx=12, pady=8)
 
     def loaded(data, error=None):
         if error: status.config(text=error, fg=c["accent2"]); return
@@ -191,8 +286,11 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
             fields[key].delete(0, "end")
             fields[key].insert(0, data.get(key) or "")
         fields["username"].config(state="disabled")
+        bio.delete("1.0", "end")
+        bio.insert("1.0", data.get("bio") or "")
         for w in role_holder.winfo_children(): w.destroy()
         _role_badge(role_holder, theme, data.get("role", "user")).pack()
+        email_in_hero.config(text=data.get("email") or "")
         status.config(text="")
         email_verified["value"]=bool(data.get("email_verified"))
         totp_enabled["value"]=bool(data.get("totp_enabled"))
@@ -200,34 +298,105 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
 
     email_verified={"value":False}; totp_enabled={"value":False}
 
-    def fetch():
-        try: result = (api.get_profile(user.token), None)
-        except Exception as exc: result = (None, str(exc))
-        root.after(0, lambda: loaded(*result))
-    threading.Thread(target=fetch, daemon=True).start()
+    _run_async(root, lambda: api.get_profile(user.token), loaded)
 
     def save():
         status.config(text=ui("Salvando…", "Saving…"), fg=c["text_dim"])
-        def work():
-            try:
-                result = (api.update_profile(
-                    user.token, fields["display_name"].get().strip(),
-                    fields["email"].get().strip() or None), None)
-            except Exception as exc:
-                result = (None, str(exc))
-            def done(data, error):
-                if error: status.config(text=error, fg=c["accent2"]); return
-                status.config(text=ui('Perfil atualizado.', 'Profile updated.'), fg=c["read_badge_text"])
-                on_updated(data)
-            root.after(0, lambda: done(*result))
-        threading.Thread(target=work, daemon=True).start()
+        display_name = fields["display_name"].get().strip()
+        email = fields["email"].get().strip() or None
+        biography = bio.get("1.0", "end-1c").strip() or None
+
+        def done(data, error):
+            if error:
+                status.config(text=error, fg=c["accent2"])
+                return
+            status.config(text=ui('Perfil atualizado.', 'Profile updated.'), fg=c["read_badge_text"])
+            bio.delete("1.0", "end")
+            bio.insert("1.0", data.get("bio") or "")
+            email_in_hero.config(text=data.get("email") or email or "")
+            on_updated(data)
+
+        _run_async(
+            root,
+            lambda: api.update_profile(user.token, display_name, email, biography),
+            done,
+        )
 
     btn_row = tk.Frame(form, bg=c["surface"]); btn_row.pack(fill="x", pady=(18, 0))
     _pill_button(btn_row, ui('Salvar alterações', 'Save changes'), save, theme, font=body, variant="accent").pack(side="right")
 
-    security = _card(container, theme)
-    security.pack(fill="x", padx=30, pady=(0, 18))
-    tk.Label(security, text=ui('Segurança', 'Security'), font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    sessions_card = KomicoveCard(left, c, height=300, radius=RADIUS_LARGE, padding=18)
+    sessions_card.pack(fill="x", pady=(14, 0))
+    sessions_body = sessions_card.content
+    tk.Label(sessions_body, text=ui('Dispositivos conectados', 'Connected devices'),
+             font=body, bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    tk.Label(sessions_body,
+             text=ui('Veja e gerencie as sessões conectadas à sua conta.',
+                     'View and manage sessions connected to your account.'),
+             font=small, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(3, 8))
+    sessions_list = tk.Frame(sessions_body, bg=c["surface"])
+    sessions_list.pack(fill="x")
+    tk.Label(sessions_list, text=ui('Carregando sessões…', 'Loading sessions…'),
+             font=small, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=8)
+
+    def show_sessions(result, error):
+        if not sessions_list.winfo_exists():
+            return
+        _clear(sessions_list)
+        if error:
+            tk.Label(sessions_list, text=error, font=small, bg=c["surface"],
+                     fg=c["accent2"], wraplength=430, justify="left").pack(anchor="w")
+            return
+        if not result:
+            tk.Label(sessions_list, text=ui('Nenhuma sessão ativa encontrada.',
+                                            'No active sessions found.'),
+                     font=small, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w")
+            return
+        for item in result[:3]:
+            row = tk.Frame(sessions_list, bg=c["surface_alt"], padx=10, pady=7)
+            row.pack(fill="x", pady=3)
+            device_name = item.get("device_name", "")
+            icon = lucide_icon(
+                "monitor" if "Windows" in device_name or "Linux" in device_name else "smartphone",
+                size=19, state="normal", dark=c["bg"].lower() == "#090b0f",
+            )
+            icon_label = tk.Label(row, image=icon, bg=c["surface_alt"])
+            icon_label.image = icon
+            icon_label.pack(side="left", padx=(0, 9))
+            labels = tk.Frame(row, bg=c["surface_alt"]); labels.pack(side="left", fill="x", expand=True)
+            tk.Label(labels, text=device_name or "Komicove", font=small,
+                     bg=c["surface_alt"], fg=c["text"]).pack(anchor="w")
+            state = ui('Este dispositivo', 'This device') if item.get("current") else ui('Sessão ativa', 'Active session')
+            tk.Label(labels, text=state, font=(small[0], max(7, small[1] - 1)),
+                     bg=c["surface_alt"], fg=c["read_badge_text"] if item.get("current") else c["text_dim"]).pack(anchor="w")
+            if not item.get("current"):
+                def revoke(session_id=item.get("id")):
+                    def revoked(_result, revoke_error):
+                        if revoke_error:
+                            messagebox.showerror(ui('Sessões', 'Sessions'), revoke_error, parent=root)
+                            return
+                        load_sessions()
+                    _run_async(
+                        root,
+                        lambda: api.revoke_session(user.token, session_id),
+                        revoked,
+                    )
+                _pill_button(row, ui('Encerrar', 'End'), revoke, theme,
+                             font=small, variant='ghost').pack(side="right")
+
+    def load_sessions():
+        _run_async(root, lambda: api.active_sessions(user.token), show_sessions)
+
+    load_sessions()
+
+    security_card = KomicoveCard(right, c, height=540, radius=RADIUS_LARGE, padding=20)
+    security_card.pack(fill="x")
+    security = security_card.content
+    tk.Label(security, text=ui('Segurança da conta', 'Account security'), font=body,
+             bg=c["surface"], fg=c["text"]).pack(anchor="w")
+    tk.Label(security, text=ui('Proteja sua conta e mantenha seus dados seguros.',
+                              'Protect your account and keep your data safe.'),
+             font=small, bg=c["surface"], fg=c["text_dim"]).pack(anchor="w", pady=(3, 4))
     email_status=tk.Label(security,text='',font=small,bg=c['surface'],fg=c['text_dim']); email_status.pack(anchor='w',pady=(8,0))
     twofa_status=tk.Label(security,text='',font=small,bg=c['surface'],fg=c['text_dim']); twofa_status.pack(anchor='w',pady=(4,8))
     def refresh_security_labels():
@@ -237,10 +406,16 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
             '2FA enabled' if totp_enabled['value'] else '2FA disabled'))
     old = _labeled_entry(security, theme, ui('Senha atual', 'Current password'), font_label=small, font_entry=body, secret=True)
     new = _labeled_entry(security, theme, ui('Nova senha', 'New password'), font_label=small, font_entry=body, secret=True)
+    confirm = _labeled_entry(security, theme, ui('Confirmar nova senha', 'Confirm new password'), font_label=small, font_entry=body, secret=True)
 
     def change_password():
         if len(new.get()) < 8:
             messagebox.showerror(ui('Segurança', 'Security'), ui('A nova senha precisa ter ao menos 8 caracteres.', 'The new password must contain at least 8 characters.'), parent=root)
+            return
+        if new.get() != confirm.get():
+            messagebox.showerror(ui('Segurança', 'Security'),
+                                 ui('As novas senhas não coincidem.',
+                                    'The new passwords do not match.'), parent=root)
             return
         def work():
             try:
@@ -301,8 +476,12 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
             api.disable_2fa(user.token,password,code); totp_enabled['value']=False; refresh_security_labels()
             messagebox.showinfo('2FA',ui('2FA desativado. Entre novamente.','2FA disabled. Sign in again.'),parent=root)
         except Exception as exc: messagebox.showerror('2FA',str(exc),parent=root)
-    _pill_button(sec_btn_row, ui('Configurar 2FA', 'Set up 2FA'), enable_2fa, theme, font=small, variant="soft").pack(side="right", padx=(0, 10))
-    _pill_button(sec_btn_row, ui('Desativar 2FA', 'Disable 2FA'), disable_2fa, theme, font=small, variant="ghost").pack(side="right", padx=(0, 10))
+    twofa_row = tk.Frame(security, bg=c["surface"])
+    twofa_row.pack(fill="x", pady=(10, 0))
+    _pill_button(twofa_row, ui('Configurar 2FA', 'Set up 2FA'), enable_2fa, theme,
+                 font=small, variant="soft").pack(side="right")
+    _pill_button(twofa_row, ui('Desativar 2FA', 'Disable 2FA'), disable_2fa, theme,
+                 font=small, variant="ghost").pack(side="right", padx=(0, 10))
 
 
 def render_notifications(container, root, user, api, theme, fonts, on_count):

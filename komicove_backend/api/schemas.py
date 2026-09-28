@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_.-]+$")
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
     email: str | None = Field(default=None, max_length=255)
 
@@ -18,6 +19,11 @@ class RegisterRequest(BaseModel):
     @classmethod
     def normalize_username(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
 
     @field_validator("email")
     @classmethod
@@ -46,10 +52,12 @@ class UserPublic(BaseModel):
     id: str
     username: str
     display_name: str
+    email: str | None = None
     is_moderator: bool = False
     role: str = "user"
     email_verified: bool = False
     totp_enabled: bool = False
+    bio: str | None = None
 
 
 class AuthResponse(BaseModel):
@@ -59,6 +67,12 @@ class AuthResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     display_name: str = Field(min_length=1, max_length=64)
     email: str | None = Field(default=None, max_length=255)
+    bio: str | None = Field(default=None, max_length=160)
+
+    @field_validator("bio")
+    @classmethod
+    def normalize_bio(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
 
     @field_validator("email")
     @classmethod
@@ -285,6 +299,10 @@ class ModerationQueueItem(BaseModel):
     publication_id: str
     title: str
     author: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    series_title: str | None = None
+    chapter_number: int | None = None
     uploader_username: str
     risk_level: str
     confidence: float

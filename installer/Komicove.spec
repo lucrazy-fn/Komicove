@@ -4,6 +4,7 @@ import sys
 root = Path(SPECPATH).parent
 a = Analysis([str(root / "installer" / "desktop_entry.py")], pathex=[str(root)],
     binaries=[], datas=[(str(root / "Icons"), "Icons"),
+    (str(root / "assets_redesign"), "assets_redesign"),
     (str(root / "komicovelogo.png"), "."), (str(root / "Komicove.ico"), "."),
     (str(root / "LICENSE"), ".")], hiddenimports=["PIL._tkinter_finder"],
     excludes=["pytest", "komicove_backend"], noarchive=False)

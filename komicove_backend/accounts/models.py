@@ -27,6 +27,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bio: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     password_hash: Mapped[str] = mapped_column(String(255))
     password_salt: Mapped[str] = mapped_column(String(64))
@@ -61,6 +62,8 @@ class SessionToken(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(), default=lambda: _now() + timedelta(days=30)
     )
+    device_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
 

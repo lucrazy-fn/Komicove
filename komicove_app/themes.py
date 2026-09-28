@@ -7,5 +7,4 @@ TEXTS = {
 
 
 
-DARK={"bg":"#0a0a10","surface":"#15151f","surface_alt":"#1c1c29","surface_hover":"#26263a","border":"#2e2e46","border_glow":"#e2733f","accent":"#df3b3b","accent2":"#ff7a4d","text":"#f2ede4","text_dim":"#9089a8","text_muted":"#403e5c","canvas_bg":"#05050a","btn_hover":"#2e2e46","progress_bg":"#22222f","shadow":"#000000","shadow_light":"#1c1c2c","read_badge":"#234a30","read_badge_text":"#6ee69a","search_bg":"#1c1c2c"}
-LIGHT={"bg":"#faf8f5","surface":"#ffffff","surface_alt":"#f4f1eb","surface_hover":"#ece7de","border":"#e2dbd0","border_glow":"#e2733f","accent":"#d6362f","accent2":"#ff7a4d","text":"#211f1a","text_dim":"#7d7566","text_muted":"#d8d2c6","canvas_bg":"#efece5","btn_hover":"#ece7de","progress_bg":"#e6e0d5","shadow":"#c4bdae","shadow_light":"#e2dbd0","read_badge":"#dcf3e2","read_badge_text":"#1c7a3e","search_bg":"#f4f1eb"}
+from komicove_app.design.colors import DARK, LIGHT

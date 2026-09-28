@@ -1,9 +1,10 @@
 from komicove_app.runtime import *
+from PIL import ImageOps
+from komicove_app.design.fonts import heading as design_heading
 
 class AuthWindow(tk.Toplevel):
-    pass
-    W, H = 400, 660
-    CARD_W = 320
+    W, H = 1280, 760
+    CARD_W = 500
 
     def __init__(self, master, cb):
         super().__init__(master)
@@ -12,10 +13,11 @@ class AuthWindow(tk.Toplevel):
         self.title("Komicove")
         self.configure(bg=THEME["bg"])
         self.resizable(True, True)
-        self.minsize(self.W, self.H)
+        self.minsize(920, 620)
         grab_when_visible(self)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{self.W}x{self.H}+{(sw-self.W)//2}+{(sh-self.H)//2}")
+        width, height = min(sw, self.W), min(sh, self.H)
+        self.geometry(f"{width}x{height}+{(sw-width)//2}+{(sh-height)//2}")
 
         self._mode = "login"
         self._status_text = ""
@@ -23,6 +25,11 @@ class AuthWindow(tk.Toplevel):
         self._entries = {}
         self._fullscreen = False
         self._auth_in_progress = False
+        self._needs_totp = False
+        self._background_source = None
+        self._background_photo = None
+        self._logo_photo = None
+        self._field_icons = []
         self._last_size = None
         self._resize_job = None
 
@@ -31,6 +38,10 @@ class AuthWindow(tk.Toplevel):
         self.bind("<Configure>", self._on_configure)
 
         self._build()
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            pass
 
 
 
@@ -65,9 +76,8 @@ class AuthWindow(tk.Toplevel):
 
 
     def _scale_factor(self, W, H):
-        pass
         factor = min(W / self.W, H / self.H)
-        return max(1.0, min(factor, 1.6))
+        return max(0.82, min(factor, 1.32))
 
     @staticmethod
     def _sf(font, scale):
@@ -83,70 +93,83 @@ class AuthWindow(tk.Toplevel):
         W, H = self._current_size()
         scale = self._scale_factor(W, H)
 
-        f_logo  = self._sf(FLOGO, scale)
-        f_btn   = self._sf(FBTN, scale)
+        f_logo = self._sf(FLOGO, scale)
+        f_btn = self._sf(FBTN, scale)
         f_label = self._sf(FLABEL, scale)
-        f_tiny  = self._sf(FTINY, scale)
+        f_tiny = self._sf(FTINY, scale)
         f_entry = self._sf(FSMALL, scale)
 
+        registering = self._mode == "register"
         card_w = round(self.CARD_W * scale)
-        card_x = (W - card_w) // 2
-        card_y = round(92 * scale)
-
-
-        tab_pad = round(16 * scale)
-        tab_h = round(38 * scale)
-        tab_y0, tab_y1 = card_y + round(16 * scale), card_y + round(54 * scale)
-        ax, ay, ar = W // 2, tab_y1 + round(44 * scale), round(30 * scale)
-        field_y = ay + ar + round(24 * scale)
-        field_h = round(42 * scale)
-        field_spacing = round(12 * scale)
-
-
-
-        n_fields = 3
-        field_y_end = field_y + n_fields * field_h + (n_fields - 1) * field_spacing
-        status_y = field_y_end + round(20 * scale)
-        btn_y = status_y + round(32 * scale)
-        switch_y = btn_y + round(30 * scale)
-        forgot_y = switch_y + round(24 * scale)
-        card_bottom = forgot_y + round(22 * scale) if self._mode == "login" else switch_y + round(20 * scale)
-        card_h = card_bottom - card_y
-        guest_y = card_y + card_h + round(34 * scale)
+        card_y = (max(round(12 * scale), round(H * .035)) if registering
+                  else max(round(18 * scale), round(H * .095)))
+        base_card_h = round((690 if registering else 650 + 58 * int(self._needs_totp)) * scale)
+        card_h = min(base_card_h, H - card_y - round(14 * scale))
+        card_x = max(round(W * .552), W - card_w - round(150 * scale))
+        center_x = card_x + card_w / 2
+        field_h = round((42 if registering else 48) * scale)
+        field_spacing = round((8 if registering else 11) * scale)
+        field_y = card_y + round((245 if registering else 263) * scale)
+        field_count = 5 if registering else 2 + int(self._needs_totp)
+        field_y_end = field_y + field_count * field_h + (field_count - 1) * field_spacing
+        status_y = field_y_end + round((11 if registering else 16) * scale)
+        if registering:
+            forgot_y = status_y
+            btn_y = status_y + round(31 * scale)
+            switch_y = btn_y + round(47 * scale)
+        else:
+            forgot_y = field_y_end + round(20 * scale)
+            btn_y = forgot_y + round(54 * scale)
+            switch_y = btn_y + round(59 * scale)
+        divider_y = switch_y + round(52 * scale)
+        guest_y = (switch_y + round(45 * scale) if registering
+                   else divider_y + round(45 * scale))
 
         cv = tk.Canvas(self, width=W, height=H, bg=c["bg"], highlightthickness=0)
         cv.pack(fill="both", expand=True)
         self._cv = cv
 
 
-        cv.create_text(W//2, round(40*scale), text="◈ Komicove", font=f_logo, fill=c["text"])
-        cv.create_text(W//2, round(64*scale), text=ui('Sua biblioteca de quadrinhos', 'Your comic library'), font=f_tiny, fill=c["text_dim"])
-        cv.create_text(W - 14, H - 14, text=ui('F11 tela cheia', 'F11 fullscreen'), font=FTINY, fill=c["text_dim"], anchor="se")
+        try:
+            if self._background_source is None:
+                self._background_source = Image.open(
+                    resource_path("assets_redesign/backgrounds/auth_reference_background.png")
+                ).convert("RGB")
+            background = ImageOps.fit(self._background_source, (W, H), Image.LANCZOS)
+            background = ImageEnhance.Brightness(background).enhance(.90)
+            self._background_photo = ImageTk.PhotoImage(background)
+            cv.create_image(0, 0, image=self._background_photo, anchor="nw")
+        except Exception:
+            log.debug("Auth background unavailable", exc_info=True)
+        cv.create_rectangle(0, 0, W, H, fill="#05080c", stipple="gray25", outline="")
 
-        card_radius = round(22 * scale)
-        _rrect(cv, card_x+4, card_y+6, card_x+card_w+4, card_y+card_h+6, card_radius, fill=c["shadow_light"])
-        _rrect(cv, card_x, card_y, card_x+card_w, card_y+card_h, card_radius, fill=c["surface"])
+        card_radius = round(18 * scale)
+        _rrect(cv, card_x + 7, card_y + 9, card_x + card_w + 7, card_y + card_h + 9,
+               card_radius, fill=c["shadow"])
+        _rrect(cv, card_x, card_y, card_x + card_w, card_y + card_h,
+               card_radius, fill=c["surface"], outline=c["border"])
 
-
-        tab_x0, tab_x1 = card_x + tab_pad, card_x + card_w - tab_pad
-        _rrect(cv, tab_x0, tab_y0, tab_x1, tab_y1, (tab_y1-tab_y0)//2, fill=c["surface_alt"])
-        half_w = (tab_x1 - tab_x0) / 2
-        active_x0 = tab_x0 if self._mode == "login" else tab_x0 + half_w
-        _rrect(cv, active_x0 + 2, tab_y0 + 2, active_x0 + half_w - 2, tab_y1 - 2,
-               (tab_y1-tab_y0)//2 - 2, fill=c["accent"])
-
-        login_tag = cv.create_rectangle(tab_x0, tab_y0, tab_x0+half_w, tab_y1, outline="", fill="")
-        register_tag = cv.create_rectangle(tab_x0+half_w, tab_y0, tab_x1, tab_y1, outline="", fill="")
-        cv.create_text(tab_x0 + half_w/2, (tab_y0+tab_y1)/2, text=ui('Entrar', 'Sign in'), font=f_btn,
-                        fill="#ffffff" if self._mode == "login" else c["text_dim"])
-        cv.create_text(tab_x0 + half_w*1.5, (tab_y0+tab_y1)/2, text=ui('Cadastrar', 'Sign up'), font=f_btn,
-                        fill="#ffffff" if self._mode == "register" else c["text_dim"])
-        cv.tag_bind(login_tag, "<Button-1>", lambda e: self._switch_mode("login"))
-        cv.tag_bind(register_tag, "<Button-1>", lambda e: self._switch_mode("register"))
-
-
-        cv.create_oval(ax-ar, ay-ar, ax+ar, ay+ar, fill=c["surface_alt"], outline=c["border"])
-        _draw_field_icon(cv, "user", ax, ay+3, ar*1.3, c["text_dim"])
+        try:
+            logo = Image.open(resource_path("komicovelogo.png")).convert("RGBA")
+            if logo.getbbox():
+                logo = logo.crop(logo.getbbox())
+            logo.thumbnail((round((155 if registering else 185) * scale),
+                            round((94 if registering else 120) * scale)), Image.LANCZOS)
+            self._logo_photo = ImageTk.PhotoImage(logo)
+            cv.create_image(center_x, card_y + round((85 if registering else 90) * scale),
+                            image=self._logo_photo)
+        except Exception:
+            cv.create_text(center_x, card_y + round(67 * scale), text="Komicove",
+                           font=f_logo, fill=c["text"])
+        heading_text = (ui('Bem-vindo ao Komicove', 'Welcome to Komicove')
+                        if self._mode == "login" else ui('Crie sua conta', 'Create your account'))
+        cv.create_text(center_x, card_y + round((175 if registering else 195) * scale),
+                       text=heading_text,
+                       font=design_heading(max(22, round(24 * scale))), fill=c["text"])
+        cv.create_text(center_x, card_y + round((207 if registering else 226) * scale),
+                       text=ui('Sua biblioteca de quadrinhos, sempre com você.',
+                               'Your comic library, always with you.'),
+                       font=f_label, fill=c["text_dim"])
 
 
         field_pad = round(24 * scale)
@@ -154,19 +177,24 @@ class AuthWindow(tk.Toplevel):
         field_w = card_w - field_pad * 2
         y = field_y
         self._entries.clear()
+        self._field_icons.clear()
         if self._mode == "register":
             y = self._add_field(cv, "username", "user", ui('Usuário', 'Username'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "email", "mail", ui('E-mail (opcional)', 'Email (optional)'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "password", "lock", ui('Senha (mín. 8 caracteres)', 'Password (8 characters minimum)'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
+            y = self._add_field(cv, "display_name", "user", ui('Nome de exibição', 'Display name'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "email", "mail", ui('E-mail', 'Email'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", ui('Senha (mín. 8 caracteres)', 'Password (8 characters minimum)'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "confirm_password", "lock", ui('Confirmar senha', 'Confirm password'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
         else:
-            y = self._add_field(cv, "username", "user", ui('Usuário', 'Username'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "password", "lock", ui('Senha', 'Password'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry) + field_spacing
-            y = self._add_field(cv, "totp", "lock", ui('Código 2FA (se ativado)', '2FA code (if enabled)'), field_x0, y, field_w, field_h, scale=scale, font=f_entry)
+            y = self._add_field(cv, "username", "user", ui('Usuário ou e-mail', 'Username or email'), field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", ui('Senha', 'Password'), field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
+            if self._needs_totp:
+                y += field_spacing
+                y = self._add_field(cv, "totp", "lock", ui('Código 2FA', '2FA code'), field_x0, y, field_w, field_h, scale=scale, font=f_entry)
         self._restore_values(saved_values)
 
 
         self._status_item = cv.create_text(
-            W//2, status_y, text=self._status_text, font=f_tiny,
+            center_x, status_y, text=self._status_text, font=f_tiny,
             fill=(c["accent2"] if self._status_error else c["text_dim"]),
             width=card_w - round(40*scale), justify="center",
         )
@@ -176,36 +204,45 @@ class AuthWindow(tk.Toplevel):
         btn = make_pill(cv, btn_label,
                          self._do_login if self._mode == "login" else self._do_register,
                          variant="accent", font=f_btn,
-                         pad_x=round(20*scale), pad_y=round(9*scale), min_w=field_w)
-        cv.create_window(W//2, btn_y, window=btn)
+                         pad_x=round(20*scale), pad_y=round(11*scale), min_w=field_w,
+                         icon_name="log-out" if self._mode == "login" else "user")
+        cv.create_window(center_x, btn_y, window=btn)
 
+
+        switch_text = (ui('Criar conta', 'Create account') if self._mode == "login"
+                       else ui('Já tenho conta', 'I already have an account'))
+        switch_button = make_pill(
+            cv, switch_text,
+            lambda: self._switch_mode("register" if self._mode == "login" else "login"),
+            variant="ghost", font=f_btn, pad_x=round(20 * scale),
+            pad_y=round(10 * scale), min_w=field_w, icon_name="user",
+        )
+        cv.create_window(center_x, switch_y, window=switch_button)
 
         if self._mode == "login":
-            cv.create_text(W//2, switch_y, text=ui('Não tem conta?  Cadastre-se', 'No account yet?  Sign up'),
-                            font=f_tiny, fill=c["text_dim"])
-        else:
-            cv.create_text(W//2, switch_y, text=ui('Já tem conta?  Entrar', 'Already have an account?  Sign in'),
-                            font=f_tiny, fill=c["text_dim"])
-        link_tag = cv.create_rectangle(card_x, switch_y-10, card_x+card_w, switch_y+10, outline="", fill="")
-        cv.tag_bind(link_tag, "<Button-1>",
-                    lambda e: self._switch_mode("register" if self._mode == "login" else "login"))
-
-        if self._mode == "login":
-            forgot=cv.create_text(W//2,forgot_y,text=ui('Esqueci minha senha','Forgot my password'),
+            forgot=cv.create_text(field_x0 + field_w,forgot_y,text=ui('Esqueci minha senha','Forgot my password'),
+                                  anchor="e",
                                   font=f_tiny,fill=c['accent2'])
             cv.tag_bind(forgot,"<Button-1>",lambda e:self._recover_password())
             cv.tag_bind(forgot,"<Enter>",lambda e:cv.config(cursor='hand2'))
             cv.tag_bind(forgot,"<Leave>",lambda e:cv.config(cursor=''))
 
 
-        guest = cv.create_text(W//2, guest_y, text=ui('Continuar como convidado', 'Continue as guest'),
-                                font=f_label, fill=c["text_dim"])
-        cv.tag_bind(guest, "<Button-1>", lambda e: self._continue_guest())
-        cv.tag_bind(guest, "<Enter>", lambda e: cv.itemconfig(guest, fill=c["text"]))
-        cv.tag_bind(guest, "<Leave>", lambda e: cv.itemconfig(guest, fill=c["text_dim"]))
-        for tag in (guest, login_tag, register_tag, link_tag):
-            cv.tag_bind(tag, "<Enter>", lambda e, t=tag: cv.config(cursor="hand2"))
-            cv.tag_bind(tag, "<Leave>", lambda e: cv.config(cursor=""))
+        if self._mode == "login":
+            line_pad = round(26 * scale)
+            cv.create_line(field_x0, divider_y, center_x - line_pad, divider_y,
+                           fill=c["border"])
+            cv.create_line(center_x + line_pad, divider_y, field_x0 + field_w, divider_y,
+                           fill=c["border"])
+            cv.create_text(center_x, divider_y, text=ui('ou', 'or'), font=f_tiny,
+                           fill=c["text_dim"])
+
+        guest_button = make_pill(
+            cv, ui('Entrar como convidado', 'Continue as guest'), self._continue_guest,
+            variant="ghost", font=f_label, pad_x=round(17 * scale),
+            pad_y=round(8 * scale), icon_name="user",
+        )
+        cv.create_window(center_x, guest_y, window=guest_button)
 
         if not _ACCOUNTS_AVAILABLE:
             self._set_status(ui('Contas indisponíveis no momento: use o modo convidado.', 'Accounts are currently unavailable: use guest mode.'), error=True)
@@ -230,7 +267,7 @@ class AuthWindow(tk.Toplevel):
             entry.delete(0, "end")
             entry.insert(0, val)
             entry.config(fg=THEME["text"])
-            if name == "password":
+            if name in ("password", "confirm_password"):
                 entry.config(show="•")
 
     def _add_field(self, cv, name, icon_kind, placeholder, x, y, w, h, secret=False, scale=1.0, font=None):
@@ -239,20 +276,39 @@ class AuthWindow(tk.Toplevel):
         icon_off = round(22 * scale)
         icon_size = round(18 * scale)
         entry_x = round(40 * scale)
-        radius = round(12 * scale)
+        radius = round(16 * scale)
 
-        _rrect(cv, x, y, x+w, y+h, radius, fill=c["surface_alt"])
+        field_shape = _rrect(cv, x, y, x+w, y+h, radius,
+                             fill=c["surface_alt"], outline=c["border"], width=1)
         _draw_field_icon(cv, icon_kind, x + icon_off, y + h/2, icon_size, c["text_dim"])
 
         entry = tk.Entry(cv, font=font, bd=0, highlightthickness=0,
                           bg=c["surface_alt"], fg=c["text_dim"],
                           insertbackground=c["text"])
         entry.insert(0, placeholder)
-        entry_w = w - entry_x - round(6 * scale)
+        entry_w = w - entry_x - round((36 if secret else 6) * scale)
         cv.create_window(x + entry_x, y + h/2, window=entry, anchor="w",
                           width=entry_w, height=max(1, h - round(14 * scale)))
+        if secret:
+            eye = lucide_icon("eye", size=max(16, round(18 * scale)), state="normal",
+                              dark=IS_DARK)
+            eye_off = lucide_icon("eye-off", size=max(16, round(18 * scale)),
+                                  state="normal", dark=IS_DARK)
+            self._field_icons.extend(image for image in (eye, eye_off) if image is not None)
+            reveal = cv.create_image(x + w - round(20 * scale), y + h / 2,
+                                     image=eye_off)
+
+            def toggle_secret(_event, ent=entry, marker=reveal):
+                visible = bool(ent.cget("show"))
+                ent.config(show="" if visible else "•")
+                cv.itemconfig(marker, image=eye if visible else eye_off)
+
+            cv.tag_bind(reveal, "<Button-1>", toggle_secret)
+            cv.tag_bind(reveal, "<Enter>", lambda _event: cv.config(cursor="hand2"))
+            cv.tag_bind(reveal, "<Leave>", lambda _event: cv.config(cursor=""))
 
         def on_focus_in(_e, ent=entry, ph=placeholder, sec=secret):
+            cv.itemconfig(field_shape, outline=c["accent"])
             if ent.get() == ph:
                 ent.delete(0, "end")
                 ent.config(fg=c["text"])
@@ -260,6 +316,7 @@ class AuthWindow(tk.Toplevel):
                     ent.config(show="•")
 
         def on_focus_out(_e, ent=entry, ph=placeholder):
+            cv.itemconfig(field_shape, outline=c["border"])
             if not ent.get():
                 ent.config(fg=c["text_dim"], show="")
                 ent.insert(0, ph)
@@ -299,6 +356,9 @@ class AuthWindow(tk.Toplevel):
         if not _ACCOUNTS_AVAILABLE:
             self._set_status(ui('Contas indisponíveis no momento.', 'Accounts are currently unavailable.'), error=True)
             return
+        if self._field_value("password") != self._field_value("confirm_password"):
+            self._set_status(ui('As senhas não coincidem.', 'Passwords do not match.'), error=True)
+            return
         self._authenticate(api_client.register, with_email=True)
 
     def _authenticate(self, api_fn, with_email=False):
@@ -310,12 +370,21 @@ class AuthWindow(tk.Toplevel):
             self._set_status(ui('Preencha usuário e senha.', 'Enter your username and password.'), error=True)
             return
         email = (self._field_value("email") or None) if with_email else None
+        display_name = self._field_value("display_name") if with_email else None
+        if with_email and (not email or not display_name):
+            self._set_status(ui('Preencha nome de exibição e e-mail.',
+                                'Enter a display name and email.'), error=True)
+            return
         self._auth_in_progress = True
         self._set_status(ui('Conectando…', 'Connecting…'))
 
         def worker():
             try:
-                auth = api_fn(username, password, email) if with_email else api_fn(username, password,self._field_value("totp") or None)
+                if with_email:
+                    auth = api_fn(username, password, email, display_name)
+                else:
+                    totp = self._field_value("totp") if "totp" in self._entries else None
+                    auth = api_fn(username, password, totp or None)
                 result = (auth, None)
             except api_client.ApiAuthError as exc:
                 result = (None, str(exc))
@@ -336,6 +405,13 @@ class AuthWindow(tk.Toplevel):
     def _finish_auth(self, auth, error):
         self._auth_in_progress = False
         if error:
+            if self._mode == "login" and "2FA" in error.upper() and not self._needs_totp:
+                self._needs_totp = True
+                self._status_text = ui('Digite o código do autenticador para continuar.',
+                                       'Enter your authenticator code to continue.')
+                self._status_error = False
+                self._build()
+                return
             self._set_status(error, error=True)
             return
         session_store.save_session(session_store.LocalSession(

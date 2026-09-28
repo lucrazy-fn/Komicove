@@ -31,6 +31,7 @@ _attempt_lock = threading.Lock()
 def _public(user: User) -> UserPublic:
     return UserPublic(id=user.id, username=user.username,
         display_name=user.display_name or user.username,
+        email=user.email, bio=user.bio,
         is_moderator=user.is_moderator, role=user.role,
         email_verified=bool(user.email_verified), totp_enabled=bool(user.totp_enabled))
 
@@ -57,6 +58,22 @@ def _check_login_limit(key: str):
         _attempts[key]=recent
         if len(recent)>=5: raise HTTPException(429,"Muitas tentativas. Aguarde alguns minutos.")
         recent.append(now)
+
+
+def _remember_device(db: Session, token: str, request: Request) -> None:
+    session = db.get(SessionToken, token)
+    if session is None:
+        return
+    supplied = (request.headers.get("x-komicove-device") or "").strip()[:80]
+    agent = (request.headers.get("user-agent") or "").lower()
+    if supplied:
+        session.device_name = supplied
+    elif "android" in agent or "okhttp" in agent:
+        session.device_name = "Android"
+    else:
+        session.device_name = "Komicove"
+    from komicove_backend.accounts.models import _now
+    session.last_seen_at = _now()
 
 
 @router.get("/me", response_model=UserPublic)
@@ -88,15 +105,17 @@ def claim_moderator(
 
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     try:
         result = accounts.register_user(
-            db, username=payload.username, password=payload.password, email=payload.email
+            db, username=payload.username, password=payload.password, email=payload.email,
+            display_name=payload.display_name,
         )
     except (accounts.UsernameTakenError, accounts.EmailTakenError) as e:
         raise HTTPException(status_code=409, detail=str(e))
 
     accounts.record_access(result.user)
+    _remember_device(db, result.token, request)
     if result.user.email:
         try:
             account_actions.send_verification(db, result.user)
@@ -124,6 +143,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     with _attempt_lock: _attempts.pop(key,None)
     accounts.record_access(result.user)
+    _remember_device(db, result.token, request)
     return AuthResponse(
         token=result.token,
         user=_public(result.user),

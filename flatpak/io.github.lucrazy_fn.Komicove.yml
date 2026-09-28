@@ -147,6 +147,7 @@ modules:
       - pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation .
       - mkdir -p ${FLATPAK_DEST}/Icons
       - cp -r Icons/* ${FLATPAK_DEST}/Icons/
+      - cp -r assets_redesign ${FLATPAK_DEST}/assets_redesign
       - install -Dm644 komicovelogo.png ${FLATPAK_DEST}/komicovelogo.png
       - install -Dm644 flatpak/io.github.lucrazy_fn.Komicove.desktop
         ${FLATPAK_DEST}/share/applications/io.github.lucrazy_fn.Komicove.desktop

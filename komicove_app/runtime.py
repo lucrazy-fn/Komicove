@@ -1,11 +1,14 @@
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 import zipfile
 import os, sys, io, json, time, threading, hashlib, re, shutil, logging
 from pathlib import Path
 from collections import deque
 from komicove_app.translations import ui
+from komicove_app.design.icons import lucide_icon
+from komicove_app.design.spacing import RADIUS_LARGE, RADIUS_MEDIUM
 
 
 def set_app_icon(window):
@@ -231,9 +234,12 @@ def _generated_icon(kind, size):
     image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     line = max(5, scale * 2)
-    ink = (195, 187, 255, 255)
-    accent = (124, 92, 255, 255)
-    soft = (104, 211, 170, 255)
+    def rgba(value):
+        value = value.lstrip("#")
+        return tuple(int(value[index:index + 2], 16) for index in (0, 2, 4)) + (255,)
+    ink = rgba(THEME["text_dim"])
+    accent = rgba(THEME["accent"])
+    soft = rgba(THEME["read_badge_text"])
     def xy(values): return tuple(int(value * scale) for value in values)
     if kind == "discover":
         draw.ellipse(xy((2, 2, 16, 16)), outline=ink, width=line)
@@ -297,7 +303,10 @@ _SANS = "Segoe UI" if _OS == "Windows" else ("SF Pro Text" if _OS == "Darwin" el
 _MONO = "Consolas" if _OS == "Windows" else ("Menlo" if _OS == "Darwin" else "DejaVu Sans Mono")
 
 FLOGO  = ("Georgia", 19, "bold")
-FTITLE = ("Georgia", 21, "bold")
+# The redesign references use one modern sans-serif family throughout the
+# product. Keeping the legacy serif title here made otherwise matching screens
+# look like a different application.
+FTITLE = (_SANS, 21, "bold")
 FBTN   = (_SANS, 10, "bold")
 FLABEL = (_SANS, 10)
 FSMALL = (_SANS, 9)
@@ -305,7 +314,7 @@ FTINY  = (_SANS, 8)
 FPAGE  = (_MONO, 11, "bold")
 
 CAPA_W, CAPA_H = 160, 220
-CARD_R  = 14
+CARD_R  = 18
 GPAD    = 16
 
 FADE_SPEED   = 0.18
@@ -561,7 +570,7 @@ def _cover_cache_path(comic_path: str) -> str:
     return os.path.join(COVER_CACHE_DIR, f"{h}.webp")
 
 
-def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
+def make_pill(parent, text, cmd, *, icon=None, icon_name=None, variant="ghost",
               font=FSMALL, pad_x=14, pad_y=8, min_w=0, active=False):
     c = THEME
     host_bg = parent.cget("bg")
@@ -581,10 +590,14 @@ def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
     tmp = tk.Label(parent, text=text, font=font)
     tmp_w = tmp.winfo_reqwidth(); tmp_h = tmp.winfo_reqheight()
     tmp.destroy()
-    icon_w = (icon.width() + 8) if icon else 0
+    font_measure = tkfont.Font(font=font)
+    dynamic_icon = {"image": icon}
+    preview_icon = icon or (lucide_icon(icon_name, size=17, state="normal", dark=IS_DARK)
+                            if icon_name else None)
+    icon_w = (preview_icon.width() + 8) if preview_icon else 0
     w = max(min_w, tmp_w + icon_w + pad_x * 2)
     h = tmp_h + pad_y * 2
-    r = h // 2
+    r = min(RADIUS_LARGE, max(1, h // 2 - 2))
 
     cv = tk.Canvas(parent, width=w, height=h, bg=host_bg,
                    highlightthickness=0, cursor="hand2", takefocus=0)
@@ -607,15 +620,30 @@ def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
             cv._motion_job = cv.after(16, lambda: step(frame+1)) if frame < 8 else None
         step()
 
-    def render(fill, fg, outline):
+    def render(fill, fg, outline, state="normal"):
         cv.delete("all")
-        _rrect(cv, 1, 1, w - 1, h - 1, r, fill=fill)
+        if variant == "accent":
+            glow = c["accent2"] if state != "normal" else c["border_glow"]
+            _rrect(cv, 0, 0, w, h, r + 2, fill=glow)
+            _rrect(cv, 2, 2, w - 2, h - 2, r + 1, fill=c["shadow_light"])
+            _rrect(cv, 4, 4, w - 4, h - 4, r, fill=fill)
+        else:
+            _rrect(cv, 1, 1, w - 1, h - 1, r, fill=fill)
         if outline:
             _rrect(cv, 1, 1, w - 2, h - 2, r, outline=outline, width=1)
-        if icon:
-            ix = pad_x + icon.width() // 2
-            cv.create_image(ix, h // 2, image=icon)
-            cv.create_text(ix + icon.width() // 2 + 6, h // 2,
+        current_icon = icon
+        if icon_name:
+            icon_state = "white" if variant == "accent" or cv._pill_active else state
+            current_icon = lucide_icon(icon_name, size=17, state=icon_state, dark=IS_DARK)
+            dynamic_icon["image"] = current_icon
+        if current_icon:
+            text_width = font_measure.measure(cv._pill_text)
+            gap = 8
+            group_width = current_icon.width() + gap + text_width
+            group_left = (w - group_width) / 2
+            ix = group_left + current_icon.width() / 2
+            cv.create_image(ix, h // 2, image=current_icon)
+            cv.create_text(group_left + current_icon.width() + gap, h // 2,
                            text=cv._pill_text, font=font, fill=fg, anchor="w")
         else:
             cv.create_text(w // 2, h // 2, text=cv._pill_text, font=font, fill=fg)
@@ -626,7 +654,7 @@ def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
             cv._motion_job = None
         if cv._pill_active and variant != "accent":
             cv._motion_fill = c["accent"]
-            render(c["accent"], "#ffffff", c["accent"])
+            render(c["accent"], "#ffffff", c["accent"], "active")
         else:
             cv._motion_fill = base_fill
             render(base_fill, base_fg, base_outline)
@@ -686,6 +714,7 @@ class CoverLoader:
         self._root = root
         self._cache = cache
         self._queue = deque()
+        self._pending = {}
         self._lock = threading.Lock()
         self._running = True
         self._thread = threading.Thread(target=self._worker, daemon=True)
@@ -696,12 +725,15 @@ class CoverLoader:
             self._root.after(0, lambda: callback(path, self._cache[path]))
             return
         with self._lock:
-            if not any(p == path for p, _ in self._queue):
-                self._queue.append((path, callback))
+            callbacks = self._pending.setdefault(path, [])
+            callbacks.append(callback)
+            if len(callbacks) == 1:
+                self._queue.append(path)
 
     def clear_queue(self):
         with self._lock:
             self._queue.clear()
+            self._pending.clear()
 
     def stop(self):
         self._running = False
@@ -713,11 +745,14 @@ class CoverLoader:
                 if self._queue:
                     item = self._queue.popleft()
             if item:
-                path, callback = item
+                path = item
                 pil = self._load(path)
                 self._cache[path] = pil
+                with self._lock:
+                    callbacks = self._pending.pop(path, [])
                 if self._root.winfo_exists():
-                    self._root.after(0, lambda p=path, i=pil, cb=callback: cb(p, i))
+                    for callback in callbacks:
+                        self._root.after(0, lambda p=path, i=pil, cb=callback: cb(p, i))
             else:
                 time.sleep(0.02)
 

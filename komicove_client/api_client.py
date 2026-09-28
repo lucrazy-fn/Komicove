@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,11 @@ BASE_URL = (os.environ.get("KOMICOVE_API_BASE_URL")
 _TIMEOUT_SECONDS = (10, 60)
 
 
+def _device_name() -> str:
+    system = platform.system() or "Desktop"
+    return f"Komicove Desktop ({system})"
+
+
 class ApiUnavailableError(Exception):
     pass
 
@@ -22,6 +28,10 @@ class ApiAuthError(Exception):
 
 
 class ApiServerError(Exception):
+    pass
+
+
+class ApiFeatureUnavailableError(ApiServerError):
     pass
 
 
@@ -44,8 +54,12 @@ class PublicationResult:
     public_message: str
 
 
-def register(username: str, password: str, email: str | None = None) -> AuthResponse:
-    return _post_auth("/auth/register", {"username": username, "password": password, "email": email})
+def register(username: str, password: str, email: str | None = None,
+             display_name: str | None = None) -> AuthResponse:
+    return _post_auth("/auth/register", {
+        "username": username, "password": password, "email": email,
+        "display_name": display_name,
+    })
 
 
 def login(username: str, password: str, totp_code: str | None=None) -> AuthResponse:
@@ -109,12 +123,30 @@ def claim_moderator(token: str, setup_token: str) -> AuthResponse:
 
 claim_admin = claim_moderator
 
-def update_profile(token: str, display_name: str, email: str | None) -> dict:
-    return _request_json("PATCH", "/account/profile", token=token,
-        payload={"display_name": display_name, "email": email})
+def update_profile(token: str, display_name: str, email: str | None,
+                   bio: str | None = None) -> dict:
+    data = _request_json("PATCH", "/account/profile", token=token,
+        payload={"display_name": display_name, "email": email, "bio": bio})
+    if "bio" not in data:
+        raise ApiFeatureUnavailableError(
+            "A API publicada ainda não oferece Bio. Atualize o backend no Render. / "
+            "The published API does not support Bio yet. Update the backend on Render."
+        )
+    return data
 
 def get_profile(token: str) -> dict:
     return _request_json("GET", "/account/profile", token=token)
+
+def active_sessions(token: str) -> list[dict]:
+    data = _request_json(
+        "GET", "/account/sessions", token=token, feature_name="account_sessions",
+    )
+    if not isinstance(data, list):
+        raise ApiServerError("O servidor retornou uma lista de sessões inválida.")
+    return data
+
+def revoke_session(token: str, session_id: str) -> None:
+    _request_json("DELETE", f"/account/sessions/{session_id}", token=token)
 
 def notifications(token: str) -> list[dict]:
     return _request_json("GET", "/account/notifications", token=token)
@@ -123,7 +155,10 @@ def mark_notification_read(token: str, notification_id: str) -> None:
     _request_json("POST", f"/account/notifications/{notification_id}/read", token=token)
 
 def sync_library_state(token: str, items: list[dict]) -> list[dict]:
-    return _request_json("PUT", "/account/library-state", token=token, payload={"items": items})
+    return _request_json(
+        "PUT", "/account/library-state", token=token, payload={"items": items},
+        auth_statuses=(400, 401, 403, 409, 422),
+    )
 
 
 def moderation_queue(token: str, include_decided: bool = False) -> list[dict]:
@@ -202,19 +237,39 @@ def submit_publication(
         raise ApiServerError("O servidor retornou uma resposta inválida.") from exc
 
 
-def upload_publication_file(token: str, publication_id: str, file_path: str) -> dict:
+def upload_publication_file(
+    token: str, publication_id: str, file_path: str, cover_bytes: bytes | None = None,
+) -> dict:
     try:
         with open(file_path, "rb") as source:
+            files = {
+                "file": (os.path.basename(file_path), source, "application/octet-stream"),
+            }
             resp = requests.put(
                 f"{BASE_URL}/publications/{publication_id}/file",
-                files={"file": (os.path.basename(file_path), source, "application/octet-stream")},
+                files=files,
                 headers={"Authorization": f"Bearer {token}"}, timeout=300,
             )
     except OSError as exc:
         raise ApiServerError(f"Não foi possível abrir o arquivo: {exc}") from exc
     except requests.exceptions.RequestException as exc:
         raise ApiUnavailableError(str(exc)) from exc
-    return _response_json(resp, "Não foi possível enviar o arquivo.")
+    result = _response_json(resp, "Não foi possível enviar o arquivo.")
+    if cover_bytes:
+        upload_publication_cover(token, publication_id, cover_bytes)
+    return result
+
+
+def upload_publication_cover(token: str, publication_id: str, cover_bytes: bytes) -> dict:
+    try:
+        resp = requests.put(
+            f"{BASE_URL}/publications/{publication_id}/cover",
+            files={"cover": ("cover.jpg", cover_bytes, "image/jpeg")},
+            headers={"Authorization": f"Bearer {token}"}, timeout=60,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise ApiUnavailableError(str(exc)) from exc
+    return _response_json(resp, "Não foi possível atualizar a capa.")
 
 
 def moderation_cover(token: str, record_id: str) -> bytes:
@@ -295,8 +350,12 @@ def _post_auth(path: str, payload: dict) -> AuthResponse:
 def _request_json(
     method: str, path: str, *, payload: dict | None = None,
     token: str | None = None, auth_error: str = "Credenciais inválidas.",
+    auth_statuses: tuple[int, ...] = (400, 401, 409, 422),
+    feature_name: str | None = None,
 ) -> Any:
-    headers = {"Authorization": f"Bearer {token}"} if token else None
+    headers = {"X-Komicove-Device": _device_name()}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         resp = requests.request(
             method, f"{BASE_URL}{path}", json=payload,
@@ -306,7 +365,10 @@ def _request_json(
         raise ApiUnavailableError(str(exc)) from exc
 
     if not resp.ok:
-        _raise_response_error(resp, auth_error)
+        _raise_response_error(
+            resp, auth_error, auth_statuses=auth_statuses,
+            feature_name=feature_name,
+        )
     if resp.status_code == 204:
         return None
     return _response_json(resp, "O servidor retornou uma resposta inválida.")
@@ -320,9 +382,18 @@ def _response_json(resp: requests.Response, fallback: str) -> Any:
     return data
 
 
-def _raise_response_error(resp: requests.Response, fallback: str) -> None:
+def _raise_response_error(
+    resp: requests.Response, fallback: str,
+    *, auth_statuses: tuple[int, ...] = (400, 401, 409, 422),
+    feature_name: str | None = None,
+) -> None:
     detail = _error_detail(resp, fallback)
-    if resp.status_code in (400, 401, 409, 422):
+    if resp.status_code == 404 and feature_name:
+        raise ApiFeatureUnavailableError(
+            "A API publicada precisa ser atualizada para usar este recurso. / "
+            "The published API must be updated to use this feature."
+        )
+    if resp.status_code in auth_statuses:
         raise ApiAuthError(detail)
     raise ApiServerError(detail)
 

@@ -7,7 +7,8 @@ class ComicCard:
     HOVER_MS    = 14
     SCALE_MAX   = 1.12
 
-    def __init__(self, parent, path, img_pil, open_cb, root, label_override=None):
+    def __init__(self, parent, path, img_pil, open_cb, root, label_override=None,
+                 compact=False, background=None, cover_size=None, hero=False):
         self._path    = path
         self._open_cb = open_cb
         self._root    = root
@@ -15,24 +16,46 @@ class ComicCard:
         self._anim_id = None
         self._img_pil = img_pil
         self._tk_img  = None
+        self._cover_w = cover_size[0] if cover_size else (136 if compact else CAPA_W)
+        self._cover_h = cover_size[1] if cover_size else (188 if compact else CAPA_H)
+        self._hero = hero
 
         c    = THEME
+        card_bg = background or c["bg"]
         nome = label_override if label_override else Path(path).stem
         if len(nome) > 22: nome = nome[:20] + "…"
         self._nome = nome
 
-        self._cw = CAPA_W + 40
-        self._ch = CAPA_H + 40
+        self._cw = self._cover_w + (12 if hero else 20 if compact else 40)
+        self._ch = self._cover_h + (12 if hero else 20 if compact else 40)
 
-        self.frame = tk.Frame(parent, bg=c["bg"])
+        self.frame = tk.Frame(parent, bg=card_bg)
         self.cv = tk.Canvas(self.frame, width=self._cw, height=self._ch,
-                            bg=c["bg"], highlightthickness=0)
+                            bg=card_bg, highlightthickness=0)
         self.cv.pack()
-        self.lbl = tk.Label(self.frame, text=nome, font=FSMALL,
-                            bg=c["bg"], fg=c["text_dim"], wraplength=self._cw)
-        self.lbl.pack(pady=(0, 3))
+        self.lbl = tk.Label(self.frame, text=nome,
+                            font=(_SANS, 10, "bold") if hero else FSMALL,
+                            bg=card_bg, fg=c["text"] if hero else c["text_dim"],
+                            wraplength=self._cw, anchor="w")
+        self.lbl.pack(pady=(0, 2))
+        progress_row = tk.Frame(self.frame, bg=card_bg)
+        progress_row.pack(fill="x", pady=(2 if hero else 4, 2 if hero else 3))
+        self.progress_cv = tk.Canvas(progress_row,
+                                    width=self._cw - (52 if hero else 20), height=5 if hero else 4,
+                                    bg=card_bg, highlightthickness=0)
+        self.progress_cv.pack(side="left", padx=(10, 0))
+        self.progress_pct = None
+        if hero:
+            self.progress_pct = tk.Label(progress_row, font=FTINY, bg=card_bg,
+                                          fg=c["text_dim"], anchor="e")
+            self.progress_pct.pack(side="right", padx=(4, 8))
+        self.status_lbl = tk.Label(self.frame, font=FTINY, bg=card_bg,
+                                   fg=c["text_dim"], anchor="w")
+        if not hero:
+            self.status_lbl.pack(fill="x", padx=10, pady=(0, 3))
 
         self._draw(0.0)
+        self._update_progress()
         for w in (self.cv, self.lbl):
             w.bind("<Enter>",           self._on_enter)
             w.bind("<Leave>",           self._on_leave)
@@ -44,13 +67,44 @@ class ComicCard:
         self._img_pil = pil_image
         self._draw(self._alpha)
 
+    def _update_progress(self):
+        c = THEME
+        status = get_manual_status(self._path)
+        page = get_progress_page(self._path)
+        # ComicInfo is cached when titles are prepared. Do not reopen archives
+        # merely to draw a tiny progress indicator for every cover card.
+        metadata = _COMIC_INFO_CACHE.get(self._path, {})
+        try:
+            total = max(0, int(metadata.get("page_count") or 0))
+        except (TypeError, ValueError):
+            total = 0
+        if status == "done":
+            label, fraction = ui("Concluída", "Completed"), 1.0
+        elif status == "reading" and page is None:
+            label, fraction = ui("Em leitura", "Reading"), 0.0
+        elif page is not None:
+            label = ui(f"Página {page + 1}", f"Page {page + 1}")
+            fraction = min(1.0, (page + 1) / total) if total else 0.0
+        else:
+            label, fraction = ui("Não lida", "Unread"), 0.0
+        self.status_lbl.configure(text=label)
+        if self.progress_pct is not None:
+            self.progress_pct.configure(text=f"{round(fraction * 100)}%" if total or status == "done" else label)
+        self.progress_cv.delete("all")
+        width = self._cw - (52 if self._hero else 20)
+        bar_height = 5 if self._hero else 4
+        self.progress_cv.create_rectangle(0, 0, width, bar_height, fill=c["progress_bg"], outline="")
+        if fraction:
+            self.progress_cv.create_rectangle(0, 0, round(width * fraction), bar_height,
+                                              fill=c["accent"], outline="")
+
     def _draw(self, alpha: float):
         c  = THEME
         cw, ch = self._cw, self._ch
         cv = self.cv
         cv.delete("all")
         scale  = 1.0 + (self.SCALE_MAX - 1.0) * ease_out(alpha)
-        iw, ih = int(CAPA_W * scale), int(CAPA_H * scale)
+        iw, ih = int(self._cover_w * scale), int(self._cover_h * scale)
         px, py = (cw - iw) // 2, (ch - ih) // 2
 
         s_off = int(4 + alpha * 4)
@@ -125,7 +179,9 @@ class ComicCard:
             else:
                 set_manual_status(path, "reading")
             self._draw(self._alpha)
-        reading_label = "▶  Lendo  ✓" if cur == "reading" else "▶  Marcar como Lendo"
+            self._update_progress()
+        reading_label = (ui('▶  Lendo  ✓', '▶  Reading  ✓') if cur == "reading"
+                         else ui('▶  Marcar como Lendo', '▶  Mark as Reading'))
         menu.add_command(label=reading_label, command=set_reading)
 
         def set_done():
@@ -134,6 +190,7 @@ class ComicCard:
             else:
                 set_manual_status(path, "done")
             self._draw(self._alpha)
+            self._update_progress()
         done_label = ui('✓  Concluído  ✓', '✓  Completed  ✓') if cur == "done" else ui('✓  Marcar como Concluído', '✓  Mark as Completed')
         menu.add_command(label=done_label, command=set_done)
 
@@ -167,6 +224,9 @@ class ComicCard:
             self._root.after_cancel(self._anim_id); self._anim_id = None
         step = (1.0 / self.HOVER_STEPS) * (1 if target > self._alpha else -1)
         def tick():
+            if not self.cv.winfo_exists():
+                self._anim_id = None
+                return
             self._alpha += step
             if (step > 0 and self._alpha >= target) or (step < 0 and self._alpha <= target):
                 self._alpha = target
@@ -222,22 +282,25 @@ class CollectionCard:
             except:
                 self._capas_pil.append(None)
 
-        self._cw = CAPA_W + 60
-        self._ch = CAPA_H + 60
+        self._cw = 320
+        self._ch = 210
 
-        self.frame = tk.Frame(parent, bg=c["bg"])
+        self.frame = tk.Frame(parent, bg=c["surface"], highlightthickness=1,
+                              highlightbackground=c["border_glow"])
         self.cv = tk.Canvas(self.frame, width=self._cw, height=self._ch,
-                            bg=c["bg"], highlightthickness=0)
+                            bg=c["surface"], highlightthickness=0)
         self.cv.pack()
-        self.lbl = tk.Label(self.frame, text=self._name, font=FSMALL,
-                            bg=c["bg"], fg=c["text_dim"], wraplength=self._cw)
-        self.lbl.pack(pady=(0, 1))
-        self._prog_frame = tk.Frame(self.frame, bg=c["bg"])
-        self._prog_frame.pack(pady=(0, 3))
+        self.lbl = tk.Label(self.frame, text=self._name, font=FBTN,
+                            bg=c["surface"], fg=c["text"], wraplength=self._cw - 24,
+                            anchor="w")
+        self.lbl.pack(fill="x", padx=14, pady=(5, 4))
+        self._prog_frame = tk.Frame(self.frame, bg=c["surface"])
+        self._prog_frame.pack(fill="x", padx=14, pady=(0, 5))
         self._draw_progress_bar()
-        make_pill(self.frame, ui("Renomear", "Rename"),
+        make_pill(self.frame, ui("✎  Renomear", "✎  Rename"),
                   lambda: self._rename_cb(self._collection),
-                  variant="soft", font=FTINY, pad_x=10, pad_y=4).pack(pady=(2, 8))
+                  variant="soft", font=FTINY, pad_x=10, pad_y=5,
+                  min_w=self._cw - 28).pack(pady=(2, 10))
         self._draw(0.0)
         for w in (self.cv, self.lbl):
             w.bind("<Enter>",           self._on_enter)
@@ -263,27 +326,27 @@ class CollectionCard:
         c = THEME
         if self._total == 0: return
         pct = self._lidas / self._total
-        bar_w, bar_h = CAPA_W, 4
-        cv = tk.Canvas(self._prog_frame, width=bar_w, height=bar_h, bg=c["bg"], highlightthickness=0)
-        cv.pack(side="left", padx=(10, 4))
+        bar_w, bar_h = self._cw - 115, 7
+        cv = tk.Canvas(self._prog_frame, width=bar_w, height=bar_h, bg=c["surface"], highlightthickness=0)
+        cv.pack(side="left", padx=(2, 5))
         cv.create_rectangle(0, 0, bar_w, bar_h, fill=c["progress_bg"], outline="")
         filled = int(bar_w * pct)
         if filled > 0:
             cv.create_rectangle(0, 0, filled, bar_h, fill=c["accent"], outline="")
         tk.Label(self._prog_frame, text=f"{self._lidas}/{self._total} {TEXTS[LANG]['read']}",
-                 font=FTINY, bg=c["bg"], fg=c["text_dim"]).pack(side="left")
+                  font=FTINY, bg=c["surface"], fg=c["text_dim"]).pack(side="left")
 
     def _make_stack_image(self, alpha):
         c = THEME
         cw, ch = self._cw, self._ch
         scale = 1.0 + (self.SCALE_MAX - 1.0) * ease_out(alpha)
-        iw, ih = int(CAPA_W * scale), int(CAPA_H * scale)
-        bg_hex = c["bg"].lstrip("#")
+        iw, ih = int(170 * scale), int(176 * scale)
+        bg_hex = c["surface"].lstrip("#")
         bg_rgb = tuple(int(bg_hex[i:i+2], 16) for i in (0, 2, 4))
         canvas_img = Image.new("RGBA", (cw, ch), (*bg_rgb, 255))
-        rotations  = [6, -4, 0]
-        offsets_x  = [-8, 6, 0]
-        offsets_y  = [4, -4, 0]
+        rotations  = [0, -7, 7]
+        offsets_x  = [-8, 51, -51]
+        offsets_y  = [2, -2, -2]
         shadow_cols = [(0,0,0,80),(0,0,0,60),(0,0,0,120)]
         cx, cy = cw // 2, ch // 2 - 4
         n_capas = len(self._capas_pil)
@@ -329,7 +392,8 @@ class CollectionCard:
         cv.create_image(0, 0, anchor="nw", image=tk_img)
         n = self._total
         bx, by = cw - 22, 18
-        cv.create_oval(bx-12, by-10, bx+12, by+10, fill=c["accent"], outline="")
+        cv.create_oval(bx-16, by-14, bx+16, by+14,
+                       fill=c["surface_alt"], outline=c["border"])
         cv.create_text(bx, by, text=f"{n}", font=("Segoe UI", 8, "bold"), fill="#fff", anchor="center")
         if self._lidas > 0:
             cv.create_rectangle(18, by-10, 18+52, by+10, fill=c["read_badge"], outline="")
@@ -348,6 +412,9 @@ class CollectionCard:
             self._root.after_cancel(self._anim_id); self._anim_id = None
         step = (1.0 / self.HOVER_STEPS) * (1 if target > self._alpha else -1)
         def tick():
+            if not self.cv.winfo_exists():
+                self._anim_id = None
+                return
             self._alpha += step
             if (step > 0 and self._alpha >= target) or (step < 0 and self._alpha <= target):
                 self._alpha = target

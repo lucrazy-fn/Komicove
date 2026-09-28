@@ -1,4 +1,4 @@
-# EPUB de quadrinhos — em desenvolvimento
+# EPUB de quadrinhos - em desenvolvimento
 
 Disponível no código-fonte Windows, Linux e Android, ainda não publicado em instaladores.
 

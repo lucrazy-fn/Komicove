@@ -1,5 +1,5 @@
 from komicove_app.runtime import *
-from komicove_app.archive import SUPPORTED_EXTENSIONS, find_7zip
+from komicove_app.archive import ArchiveBackend, SUPPORTED_EXTENSIONS, find_7zip
 import komicove_app.runtime as _runtime
 import komicove_app.auth_views as _auth_views
 import komicove_app.reader_views as _reader_views
@@ -14,8 +14,18 @@ from komicove_app.community_views import CommunityTab, CommunityWindow
 from komicove_app.moderation_views import ModerationWindow
 from komicove_app.library_widgets import *
 from komicove_app import updater
+from komicove_app.statistics_views import render_statistics
+from komicove_app.notifications_views import render_notifications
+from komicove_app.design.fonts import body as design_body, caption as design_caption, heading as design_heading
+from komicove_app.design.spacing import CONTENT_PADDING, SIDEBAR_WIDTH
+from komicove_app.design.icons import lucide_icon
+from komicove_app.design.styles import (
+    KomicoveButton, KomicoveCard, KomicoveEmptyState, KomicoveInput,
+    KomicoveSidebarItem, _rounded_rect,
+)
 import webbrowser
-import platform, sys
+import platform, sys, threading
+from PIL import ImageOps, ImageEnhance, ImageDraw
 from urllib.parse import urlparse
 
 class LibraryWindow(tk.Tk):
@@ -32,6 +42,7 @@ class LibraryWindow(tk.Tk):
         self._last_ncols   = 0
         self._col_filter   = "all"
         self._col_sort     = "name"
+        self._collection_query = ""
         self._book_sort    = load_prefs().get("book_sort", "title")
         if self._book_sort not in ("recent", "title", "title_desc", "series"):
             self._book_sort = "title"
@@ -42,6 +53,7 @@ class LibraryWindow(tk.Tk):
         self._search_bubble= None
         self._meta_tooltip = None
         self._sync_job = None
+        self._session_expiry_handled = False
         register_change_listener(self._schedule_sync)
         self._notification_count = 0
 
@@ -68,9 +80,11 @@ class LibraryWindow(tk.Tk):
                 "collections": self._show_collections,
                 "discovery": self._open_discovery,
                 "downloads": self._open_downloads,
+                "statistics": self._open_statistics,
                 "submissions": self._open_my_publications,
                 "notifications": self._open_notifications,
                 "moderation": self._open_moderation,
+                "profile": self._open_profile,
             }.get(active, self._refresh_library)
             action()
         LangWindow(self, changed)
@@ -121,6 +135,7 @@ class LibraryWindow(tk.Tk):
 
 
         self.current_user = auth
+        self._session_expiry_handled = False
         if auth is not None:
             self._sync_library_state(auth)
         self._start()
@@ -146,9 +161,38 @@ class LibraryWindow(tk.Tk):
                         changed = True
                 if changed:
                     _json_save(PROGRESS_FILE, progress); _json_save(FAVORITES_FILE, sorted(favorites))
+            except api_client.ApiAuthError:
+                session_store.clear_session()
+                self.after(0, lambda: self._finish_expired_session(auth.token))
+            except api_client.ApiUnavailableError as exc:
+                log.debug("%s: %s", ui('Sincronização da biblioteca indisponível', 'Library sync unavailable'), exc)
+            except api_client.ApiServerError as exc:
+                log.warning("%s: %s", ui('Falha ao sincronizar a biblioteca', 'Library sync failed'), exc)
             except Exception:
                 log.debug(ui('Sincronização da biblioteca indisponível', 'Library sync unavailable'), exc_info=True)
         threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_expired_session(self, token):
+        current = self.current_user
+        if current is None or getattr(current, "token", None) != token:
+            return
+        if self._session_expiry_handled:
+            return
+        self._session_expiry_handled = True
+        self.current_user = None
+        self._sync_job = None
+        if hasattr(self, "_main") and self._main.winfo_exists():
+            self._active_tab = "library"
+            self._build_shell()
+            self._refresh_library()
+        messagebox.showwarning(
+            ui('Sessão expirada', 'Session expired'),
+            ui(
+                'Sua sessão expirou. A biblioteca local continua disponível. Entre novamente para sincronizar.',
+                'Your session expired. Your local library remains available. Sign in again to sync.',
+            ),
+            parent=self,
+        )
 
     def _schedule_sync(self, _kind=None, _path=None):
         if self.current_user is None:return
@@ -176,10 +220,15 @@ class LibraryWindow(tk.Tk):
         render_notifications(
             self._main, self, self.current_user, api_client, THEME,
             (FTITLE, FLABEL, FSMALL), self._set_notification_count,
+            self._open_discovery,
         )
 
     def _set_notification_count(self, count):
         self._notification_count = max(0, int(count or 0))
+        item = getattr(self, "_notifications_nav_item", None)
+        if item is not None and item.winfo_exists():
+            item.badge = self._notification_count or None
+            item._draw(False)
 
     def _refresh_notification_count(self):
         if self.current_user is None:
@@ -196,7 +245,21 @@ class LibraryWindow(tk.Tk):
     def _open_downloads(self):
         self._active_tab = "downloads"
         self._build_shell()
-        render_downloads(self._main, THEME, (FTITLE, FLABEL, FSMALL))
+        render_downloads(
+            self._main, THEME, (FTITLE, FLABEL, FSMALL),
+            resource_path=resource_path, on_discover=self._open_discovery,
+            on_choose_folder=self._choose_library_folder_from_downloads,
+            on_metadata_filters=self._open_library_metadata_filters,
+            make_filter=make_pill,
+        )
+
+    def _choose_library_folder_from_downloads(self):
+        self._go_library()
+        self._choose_folder()
+
+    def _open_library_metadata_filters(self):
+        self._go_library()
+        self._metadata_filters()
 
     def _logout(self):
         if _ACCOUNTS_AVAILABLE and self.current_user is not None:
@@ -280,37 +343,101 @@ class LibraryWindow(tk.Tk):
         self._render_moderation_tab()
 
     def _render_moderation_tab(self):
+        self._moderation_generation = getattr(self, "_moderation_generation", 0) + 1
+        generation = self._moderation_generation
         for child in self._main.winfo_children():
             child.destroy()
         self._moderation_images = []
+        self._moderation_filter = getattr(self, "_moderation_filter", "pending_review")
+        self._moderation_query = ""
+        self._moderation_items = []
         header = tk.Frame(self._main, bg=THEME["bg"])
-        header.pack(fill="x", padx=28, pady=(24, 12))
-        tk.Label(header, text=ui('Moderação', 'Moderation'), font=FTITLE, bg=THEME["bg"],
+        header.pack(fill="x", padx=28, pady=(20, 10))
+        tk.Label(header, text=ui('Moderação', 'Moderation'), font=design_heading(29), bg=THEME["bg"],
                  fg=THEME["text"]).pack(side="left")
-        make_pill(header, ui('Atualizar', 'Refresh'), self._render_moderation_tab,
-                  variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right")
-        make_pill(header, ui('Denúncias', 'Reports'), self._render_reports_tab,
-                  variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right", padx=8)
+        search = KomicoveInput(header, THEME,
+                               placeholder=ui('Buscar obras, autores…', 'Search titles, authors…'),
+                               width=520, on_change=self._moderation_search_changed)
+        search.pack(side="left", fill="x", expand=True, padx=(26, 18))
+        KomicoveButton(header, ui('Denúncias', 'Reports'), self._render_reports_tab,
+                       THEME, kind="secondary", compact=True).pack(side="right")
+        KomicoveButton(header, ui('Atualizar', 'Refresh'), self._render_moderation_tab,
+                       THEME, kind="secondary", compact=True).pack(side="right", padx=(0, 8))
         if getattr(self.current_user, "role", "user") == "moderator":
             make_pill(header, ui('Usar token de administrador', 'Use administrator token'), self._claim_admin_token,
                       variant="accent", font=FSMALL, pad_x=12, pad_y=7).pack(side="right", padx=8)
+        filters = tk.Frame(self._main, bg=THEME["bg"])
+        filters.pack(fill="x", padx=28, pady=(2, 10))
+        self._moderation_filter_buttons = {}
+        counts = {
+            "pending_review": sum(item.get("status") == "pending_review" for item in self._moderation_items),
+            "approved": sum(item.get("status") == "approved" for item in self._moderation_items),
+            "rejected": sum(item.get("status") == "rejected" for item in self._moderation_items),
+            "all": len(self._moderation_items),
+        }
+        for value, pt, en in (
+            ("pending_review", "Pendentes", "Pending"),
+            ("approved", "Aprovados", "Approved"),
+            ("rejected", "Rejeitados", "Rejected"),
+            ("all", "Todos", "All"),
+        ):
+            button = KomicoveButton(
+                filters, f"{ui(pt, en)} ({counts[value]})",
+                lambda chosen=value: self._set_moderation_filter(chosen),
+                THEME, kind="primary" if value == self._moderation_filter else "secondary",
+                compact=False, min_width=150,
+                icon_name={"pending_review": "refresh-cw", "approved": "check",
+                           "rejected": "x", "all": "grid-2x2"}[value],
+            )
+            button.pack(side="left", padx=(0, 8))
+            self._moderation_filter_buttons[value] = button
+
         self._moderation_status = tk.Label(
-            self._main, text=ui('Carregando pedidos…', 'Loading requests…'), font=FSMALL,
+            filters, text=ui('Carregando pedidos…', 'Loading requests…'), font=FSMALL,
             bg=THEME["bg"], fg=THEME["text_dim"],
         )
-        self._moderation_status.pack(anchor="w", padx=28)
+        self._moderation_status.pack(side="right")
+
+        self._moderation_hero = tk.Canvas(self._main, height=216, bg=THEME["bg"],
+                                          highlightthickness=0, bd=0)
+        self._moderation_hero.pack(fill="x", padx=28, pady=(0, 10))
+        self._moderation_hero.bind("<Configure>", lambda _event: self._paint_moderation_hero())
 
         canvas = tk.Canvas(self._main, bg=THEME["bg"], highlightthickness=0)
+        self._moderation_canvas = canvas
         scrollbar = ttk.Scrollbar(self._main, orient="vertical", command=canvas.yview)
         self._moderation_grid = tk.Frame(canvas, bg=THEME["bg"])
-        self._moderation_grid.bind(
-            "<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        grid_window = canvas.create_window(
+            (0, 0), window=self._moderation_grid, anchor="nw"
         )
-        canvas.create_window((0, 0), window=self._moderation_grid, anchor="nw")
+
+        def sync_moderation_view(_event=None):
+            if not canvas.winfo_exists() or not self._moderation_grid.winfo_exists():
+                return
+            width = max(1, canvas.winfo_width())
+            canvas.itemconfigure(grid_window, width=width)
+            self._moderation_grid.update_idletasks()
+            content_height = self._moderation_grid.winfo_reqheight()
+            viewport_height = max(1, canvas.winfo_height())
+            canvas.configure(scrollregion=(0, 0, width, max(content_height, viewport_height)))
+            if content_height <= viewport_height:
+                canvas.yview_moveto(0)
+
+        self._moderation_grid.bind("<Configure>", sync_moderation_view)
+        canvas.bind("<Configure>", sync_moderation_view)
         canvas.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
-        canvas.pack(fill="both", expand=True, padx=(20, 0), pady=12)
-        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        canvas.pack(fill="both", expand=True, padx=(20, 0), pady=(0, 12))
+        def moderation_wheel(event):
+            try:
+                if (self._active_tab != "moderation" or not canvas.winfo_exists()
+                        or self._moderation_grid.winfo_reqheight() <= canvas.winfo_height()):
+                    return
+                canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+                return "break"
+            except tk.TclError:
+                return
+        canvas.bind_all("<MouseWheel>", moderation_wheel)
 
         def worker():
             try:
@@ -319,11 +446,105 @@ class LibraryWindow(tk.Tk):
                 ), None)
             except Exception as exc:
                 outcome = (None, str(exc))
-            self.after(0, lambda: self._moderation_loaded(*outcome))
+            try:
+                self.after(0, lambda: self._moderation_loaded(*outcome, generation=generation))
+            except (RuntimeError, tk.TclError):
+                pass
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _moderation_search_changed(self, value):
+        self._moderation_query = (value or "").strip().casefold()
+        self._render_moderation_results()
+
+    def _set_moderation_filter(self, value):
+        self._moderation_filter = value
+        self._render_moderation_tab()
+
+    def _paint_moderation_hero(self):
+        hero = getattr(self, "_moderation_hero", None)
+        if hero is None or not hero.winfo_exists():
+            return
+        width = max(600, hero.winfo_width())
+        hero.delete("all")
+        try:
+            source = Image.open(resource_path("assets_redesign/banners/library_noir.png")).convert("RGB")
+            art = ImageOps.fit(source, (width - 4, 208), Image.LANCZOS).convert("RGBA")
+            art = ImageEnhance.Brightness(art).enhance(.46)
+            mask = Image.new("L", art.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                (0, 0, art.width - 1, art.height - 1), radius=18, fill=255,
+            )
+            art.putalpha(mask)
+            self._moderation_hero_photo = ImageTk.PhotoImage(art)
+            hero.create_image(2, 2, image=self._moderation_hero_photo, anchor="nw")
+        except Exception:
+            _rounded_rect(hero, 2, 2, width - 2, 210, 18,
+                          fill=THEME["surface"], outline="")
+        _rounded_rect(hero, 2, 2, width - 2, 210, 18,
+                      fill="", outline=THEME["accent"])
+        hero.create_text(27, 37, text="›", anchor="w", font=design_heading(31),
+                         fill=THEME["accent"])
+        hero.create_text(52, 39, text=ui('Revisão de Conteúdo', 'Content Review'),
+                         anchor="w", font=design_heading(22), fill=THEME["text"])
+        hero.create_text(52, 72,
+                         text=ui('Analise as obras enviadas pela comunidade e mantenha\no Komicove seguro e incrível para todos.',
+                                 'Review community submissions and keep\nKomicove safe and welcoming for everyone.'),
+                         anchor="w", font=design_body(11), fill=THEME["text_dim"])
+        items = getattr(self, "_moderation_items", [])
+        counts = {
+            "pending_review": sum(item.get("status") == "pending_review" for item in items),
+            "approved": sum(item.get("status") == "approved" for item in items),
+            "rejected": sum(item.get("status") == "rejected" for item in items),
+        }
+        for index, (status, pt, en) in enumerate((
+            ("pending_review", "Pendentes", "Pending"),
+            ("approved", "Aprovados", "Approved"),
+            ("rejected", "Rejeitados", "Rejected"),
+        )):
+            x = 48 + index * 145
+            hero.create_text(x, 151, text=str(counts[status]), anchor="w",
+                             font=design_heading(25),
+                             fill=THEME["accent2"] if status != "approved" else "#44d483")
+            hero.create_text(x, 181, text=ui(pt, en), anchor="w", font=design_body(10),
+                             fill=THEME["text_dim"])
+            if index < 2:
+                hero.create_line(x + 104, 139, x + 104, 188, fill=THEME["border"])
+
+    def _render_moderation_results(self):
+        grid = getattr(self, "_moderation_grid", None)
+        if grid is None or not grid.winfo_exists():
+            return
+        for child in grid.winfo_children():
+            child.destroy()
+        items = list(getattr(self, "_moderation_items", []))
+        selected = getattr(self, "_moderation_filter", "pending_review")
+        if selected != "all":
+            items = [item for item in items if item.get("status") == selected]
+        query = getattr(self, "_moderation_query", "")
+        if query:
+            items = [item for item in items if query in
+                     f"{item.get('title', '')} {item.get('author', '')}".casefold()]
+        if not items:
+            tk.Label(grid, text=ui('Nenhum pedido neste filtro.', 'No requests in this filter.'),
+                     font=FTITLE, bg=THEME["bg"], fg=THEME["text_dim"]).grid(
+                         row=0, column=0, padx=40, pady=70)
+            return
+        for column in range(4):
+            grid.grid_columnconfigure(column, weight=1, uniform="moderation")
+        for index, item in enumerate(items):
+            self._create_moderation_card(item, index // 4, index % 4)
+        canvas = getattr(self, "_moderation_canvas", None)
+        if canvas is not None and canvas.winfo_exists():
+            grid.update_idletasks()
+            width = max(1, canvas.winfo_width())
+            content_height = grid.winfo_reqheight()
+            viewport_height = max(1, canvas.winfo_height())
+            canvas.configure(scrollregion=(0, 0, width, max(content_height, viewport_height)))
+            canvas.yview_moveto(0)
+
     def _render_reports_tab(self):
+        self._moderation_generation = getattr(self, "_moderation_generation", 0) + 1
         for child in self._main.winfo_children(): child.destroy()
         tk.Label(self._main,text=ui('Denúncias', 'Reports'),font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(anchor="w",padx=28,pady=(24,8))
         status=tk.Label(self._main,text=ui('Carregando…', 'Loading…'),font=FSMALL,bg=THEME["bg"],fg=THEME["text_dim"]);status.pack(anchor="w",padx=28)
@@ -332,76 +553,198 @@ class LibraryWindow(tk.Tk):
             try: result,error=api_client.admin_reports(self.current_user.token),None
             except Exception as exc: result,error=None,str(exc)
             def done(items,error):
+                if not status.winfo_exists() or not area.winfo_exists():
+                    return
                 status.config(text=error or ui(f"{len(items)} denúncia(s)", f"{len(items)} report(s)"),fg=THEME["accent2"] if error else THEME["text_dim"])
                 if error:return
                 for item in items:
                     card=tk.Frame(area,bg=THEME["surface"],padx=14,pady=10);card.pack(fill="x",pady=5)
                     tk.Label(card,text=f"{item['target_type']} · {item['reason']} · {item['status']}",font=FLABEL,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w")
                     tk.Label(card,text=item.get("description") or ui('Sem descrição', 'No description'),font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=850,justify="left").pack(anchor="w")
-            self.after(0,lambda:done(result,error))
+            try:
+                self.after(0,lambda:done(result,error))
+            except (RuntimeError, tk.TclError):
+                pass
         threading.Thread(target=worker,daemon=True).start()
 
-    def _moderation_loaded(self, items, error):
+    def _moderation_loaded(self, items, error, generation=None):
+        if (generation is not None and generation != self._moderation_generation) or self._active_tab != "moderation":
+            return
+        try:
+            if not self._moderation_status.winfo_exists() or not self._moderation_grid.winfo_exists():
+                return
+        except tk.TclError:
+            return
         if error:
             self._moderation_status.config(text=error, fg=THEME["accent2"])
             return
         pending = sum(item.get("status") == "pending_review" for item in items)
+        self._moderation_items = list(items)
         self._moderation_status.config(
             text=ui(f"{len(items)} pedido(s) no histórico · {pending} pendente(s)",
                     f"{len(items)} request(s) in history · {pending} pending")
         )
-        if not items:
-            tk.Label(self._moderation_grid, text=ui('Nenhum pedido pendente.', 'No pending requests.'), font=FTITLE,
-                     bg=THEME["bg"], fg=THEME["text_dim"]).grid(row=0, column=0, padx=40, pady=70)
-            return
-        for index, item in enumerate(items):
-            self._create_moderation_card(item, index // 4, index % 4)
+        counts = {
+            "pending_review": pending,
+            "approved": sum(item.get("status") == "approved" for item in items),
+            "rejected": sum(item.get("status") == "rejected" for item in items),
+            "all": len(items),
+        }
+        labels = {
+            "pending_review": ui("Pendentes", "Pending"),
+            "approved": ui("Aprovados", "Approved"),
+            "rejected": ui("Rejeitados", "Rejected"),
+            "all": ui("Todos", "All"),
+        }
+        for key, button in getattr(self, "_moderation_filter_buttons", {}).items():
+            button.text = f"{labels[key]} ({counts[key]})"
+            button._draw(False)
+        self._paint_moderation_hero()
+        self._render_moderation_results()
 
     def _create_moderation_card(self, item, row, column):
-        card = tk.Frame(self._moderation_grid, bg=THEME["surface"], width=220, height=390)
-        card.grid(row=row, column=column, padx=9, pady=9, sticky="n")
-        card.grid_propagate(False)
-        cover_box = tk.Frame(card, width=190, height=220, bg=THEME["surface_alt"])
-        cover_box.pack(padx=10, pady=(10, 7))
+        card_shell = KomicoveCard(self._moderation_grid, THEME, height=292,
+                                  radius=22, padding=10,
+                                  outline=THEME["border"])
+        card_shell.configure(width=326)
+        card_shell.grid(row=row, column=column, padx=7, pady=7, sticky="nsew")
+        card = card_shell.content
+        top = tk.Frame(card, bg=THEME["surface"])
+        top.pack(fill="both", expand=True)
+        cover_box = tk.Frame(top, width=112, height=174, bg=THEME["surface_alt"])
+        cover_box.pack(side="left", anchor="n", padx=(0, 12))
         cover_box.pack_propagate(False)
         cover = tk.Label(cover_box,
                          text=ui('Carregando capa…', 'Loading cover…') if item.get("has_file") else ui('Sem arquivo', 'No file'),
-                         bg=THEME["surface_alt"], fg=THEME["text_dim"], font=FTINY)
+                         bg=THEME["surface_alt"], fg=THEME["text_dim"], font=design_caption(8))
         cover.pack(fill="both", expand=True)
-        tk.Label(card, text=item["title"], font=FBTN, bg=THEME["surface"],
-                 fg=THEME["text"], wraplength=195).pack(padx=10)
-        status_labels = {"pending_review": ui('Pendente', 'Pending'), "approved": ui('Aprovado', 'Approved'), "rejected": ui('Rejeitado', 'Rejected')}
-        tk.Label(card, text=f"{item['author']} · {status_labels.get(item.get('status'), item.get('status'))}", font=FTINY,
-                 bg=THEME["surface"], fg=THEME["text_dim"], wraplength=195).pack(padx=10, pady=3)
+        if not item.get("has_file"):
+            try:
+                placeholder = getattr(self, "_moderation_placeholder_photo", None)
+                if placeholder is None:
+                    source = Image.open(resource_path(
+                        "assets_redesign/placeholders/comic_cover.png")).convert("RGB")
+                    source = ImageOps.fit(source, (112, 174), Image.LANCZOS)
+                    source = ImageEnhance.Brightness(source).enhance(.38)
+                    placeholder = ImageTk.PhotoImage(source)
+                    self._moderation_placeholder_photo = placeholder
+                cover.configure(image=placeholder, text=ui("ARQUIVO AUSENTE", "FILE MISSING"),
+                                compound="center", fg="#ffffff",
+                                font=design_caption(8, bold=True))
+            except Exception:
+                pass
+        badge_colors = {
+            "pending_review": ("#ffba08", ui("PENDENTE", "PENDING")),
+            "approved": ("#20d887", ui("APROVADO", "APPROVED")),
+            "rejected": ("#ff3045", ui("REJEITADO", "REJECTED")),
+        }
+        badge_color, badge_text = badge_colors.get(
+            item.get("status"), (THEME["text_dim"], str(item.get("status", ""))))
+        badge = tk.Canvas(cover_box, width=88, height=27, bg=THEME["surface_alt"],
+                          highlightthickness=0, bd=0)
+        _rounded_rect(badge, 1, 1, 87, 26, 9, fill="#10151d", outline=badge_color)
+        badge.create_text(44, 14, text=badge_text, font=design_caption(8, bold=True),
+                          fill=badge_color)
+        badge.place(x=4, y=4)
+        details = tk.Frame(top, bg=THEME["surface"])
+        details.pack(side="left", fill="both", expand=True)
+        menu_icon = lucide_icon("ellipsis-vertical", size=18, state="normal",
+                                dark=THEME["bg"].lower() == "#090b0f")
+        menu_button = tk.Label(details, image=menu_icon, bg=THEME["surface_alt"],
+                               cursor="hand2", padx=5, pady=5)
+        menu_button._image = menu_icon
+        menu_button.place(relx=1.0, x=-2, y=0, anchor="ne")
+        menu_button.bind("<Button-1>", lambda _e, i=item, w=menu_button:
+                         self._show_moderation_item_menu(i, w))
+        tk.Label(details, text=item.get("title") or ui("Sem título", "Untitled"),
+                 font=design_body(11, bold=True), bg=THEME["surface"],
+                 fg=THEME["text"], wraplength=155, justify="left").pack(
+                     anchor="w", padx=(0, 25), pady=(27, 0))
+        tk.Label(details, text=ui(f"Por {item.get('author', '')}", f"By {item.get('author', '')}"),
+                 font=design_body(9), bg=THEME["surface"], fg=THEME["text_dim"],
+                 wraplength=155, justify="left").pack(anchor="w", pady=(4, 5))
+        tags = list(item.get("tags") or [])[:3]
+        if tags:
+            tag_row = tk.Frame(details, bg=THEME["surface"])
+            tag_row.pack(anchor="w", pady=(2, 5))
+            for tag in tags:
+                tk.Label(tag_row, text=tag, font=design_caption(7), bg=THEME["surface_alt"],
+                         fg=THEME["text"], padx=6, pady=3,
+                         highlightthickness=1, highlightbackground=THEME["border"]).pack(
+                             side="left", padx=(0, 4))
+        description = (item.get("description") or item.get("justification") or "").strip()
+        if description:
+            tk.Label(details, text=description, font=design_caption(8), bg=THEME["surface"],
+                     fg=THEME["text_dim"], wraplength=155, justify="left",
+                     anchor="nw").pack(fill="x", pady=(5, 0))
         buttons = tk.Frame(card, bg=THEME["surface"])
-        buttons.pack(side="bottom", fill="x", padx=8, pady=8)
+        buttons.pack(side="bottom", fill="x", pady=(7, 0))
+        review = KomicoveButton(
+            buttons, ui('Revisar', 'Review'),
+            (lambda i=item: self._read_moderation_file(i)) if item.get("has_file") else None,
+            THEME, kind="secondary", compact=True, min_width=92, icon_name="eye",
+            enabled=bool(item.get("has_file")),
+        )
+        review.pack(side="left")
         if item.get("has_file"):
-            make_pill(buttons, ui('Ler', 'Read'), lambda i=item: self._read_moderation_file(i),
-                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left")
-            make_pill(buttons, ui('Baixar', 'Download'), lambda i=item: self._download_moderation_file(i),
-                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left", padx=3)
             self._load_moderation_cover(item, cover)
         if item.get("status") == "pending_review":
-            make_pill(buttons, "✓", lambda i=item: self._moderate_from_tab(i, "approved"),
-                      variant="accent", font=FTINY, pad_x=8, pad_y=5).pack(side="right")
-            make_pill(buttons, "✕", lambda i=item: self._moderate_from_tab(i, "rejected"),
-                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="right", padx=3)
+            KomicoveButton(buttons, ui('Aprovar', 'Approve'),
+                           lambda i=item: self._moderate_from_tab(i, "approved"),
+                           THEME, kind="success", compact=True, min_width=96,
+                           icon_name="check", enabled=bool(item.get("has_file"))).pack(
+                               side="left", padx=5)
+            KomicoveButton(buttons, ui('Rejeitar', 'Reject'),
+                           lambda i=item: self._moderate_from_tab(i, "rejected"),
+                           THEME, kind="danger", compact=True, min_width=96,
+                           icon_name="x").pack(side="left")
+
+    def _show_moderation_item_menu(self, item, widget):
+        menu = tk.Menu(self, tearoff=False, bg=THEME["surface_alt"], fg=THEME["text"],
+                       activebackground=THEME["surface_hover"], activeforeground=THEME["text"],
+                       bd=0, relief="flat")
+        if item.get("has_file"):
+            menu.add_command(label=ui("Baixar arquivo", "Download file"),
+                             command=lambda: self._download_moderation_file(item))
+        if item.get("decision_reason"):
+            menu.add_command(label=ui("Ver motivo da decisão", "View decision reason"),
+                             command=lambda: messagebox.showinfo(
+                                 ui("Decisão", "Decision"), item["decision_reason"], parent=self))
+        if menu.index("end") is None:
+            menu.add_command(label=ui("Sem ações disponíveis", "No actions available"), state="disabled")
+        menu.tk_popup(widget.winfo_rootx(), widget.winfo_rooty() + widget.winfo_height())
 
     def _load_moderation_cover(self, item, label):
+        generation = self._moderation_generation
+        token = self.current_user.token
         def worker():
             try:
-                data = api_client.moderation_cover(self.current_user.token, item["record_id"])
+                data = api_client.moderation_cover(token, item["record_id"])
                 image = Image.open(io.BytesIO(data)).convert("RGB")
-                image.thumbnail((190, 220), Image.LANCZOS)
-                self.after(0, lambda: self._set_moderation_cover(label, image))
+                image = ImageOps.fit(image, (112, 174), Image.LANCZOS)
             except Exception:
-                self.after(0, lambda: label.config(text=ui('Capa indisponível', 'Cover unavailable')))
+                image = None
+            try:
+                self.after(0, lambda: self._set_moderation_cover(label, image, generation))
+            except (RuntimeError, tk.TclError):
+                pass
         threading.Thread(target=worker, daemon=True).start()
 
-    def _set_moderation_cover(self, label, image):
-        tk_image = ImageTk.PhotoImage(image)
-        self._moderation_images.append(tk_image)
-        label.config(image=tk_image, text="")
+    def _set_moderation_cover(self, label, image, generation=None):
+        if (generation is not None and generation != self._moderation_generation) or self._active_tab != "moderation":
+            return
+        try:
+            if not label.winfo_exists():
+                return
+            if image is None:
+                label.config(text=ui('Capa indisponível', 'Cover unavailable'))
+                return
+            tk_image = ImageTk.PhotoImage(image)
+            label.config(image=tk_image, text="")
+            self._moderation_images.append(tk_image)
+        except tk.TclError:
+            # A navegação pode destruir o rótulo entre a verificação e a atualização.
+            return
 
     def _moderation_cache_path(self, item):
         folder = os.path.join(_APPDATA, "moderation_cache")
@@ -517,65 +860,68 @@ class LibraryWindow(tk.Tk):
     def _build_shell(self):
         for w in self.winfo_children():
             w.destroy()
+        self._notifications_nav_item = None
         c = THEME
-        sidebar_width = 232
+        sidebar_width = SIDEBAR_WIDTH
         self._sb = tk.Frame(self, bg=c["surface"], width=sidebar_width)
         self._sb.pack(side="left", fill="y")
         self._sb.pack_propagate(False)
-        lc = tk.Canvas(self._sb, width=sidebar_width, height=92, bg=c["surface"], highlightthickness=0)
-        lc.pack(pady=(8, 0))
+        lc = tk.Canvas(self._sb, width=sidebar_width, height=116, bg=c["surface"], highlightthickness=0)
+        lc.pack(pady=(9, 0))
         try:
             logo_img = Image.open(resource_path("komicovelogo.png")).convert("RGBA")
-            logo_img.thumbnail((168, 76), Image.LANCZOS)
+            logo_img.thumbnail((172, 81), Image.LANCZOS)
             self.logo_tk = ImageTk.PhotoImage(logo_img)
-            lc.create_image(sidebar_width // 2, 42, image=self.logo_tk)
+            lc.create_image(sidebar_width // 2, 50, image=self.logo_tk)
         except Exception:
             lc.create_text(sidebar_width // 2, 38, text="◈ Komicove", font=FLOGO, fill=c["text"])
-        lc.create_line(20, 88, sidebar_width - 20, 88, fill=c["border"], width=1)
+        lc.create_line(17, 112, sidebar_width - 17, 112, fill=c["border"], width=1)
 
         self._active_tab = getattr(self, "_active_tab", "library")
         self._sidebar_section(ui('NAVEGAÇÃO', 'NAVIGATION'))
         for label, cmd, tab, icon in [
-            (TEXTS[LANG]['library'], self._refresh_library, "library", ICONS.get("library")),
-            (TEXTS[LANG]['collections'], self._show_collections, "collections", ICONS.get("collections")),
+            (TEXTS[LANG]['library'], self._refresh_library, "library", "book-open"),
+            (TEXTS[LANG]['collections'], self._show_collections, "collections", "folders"),
         ]:
             active = (self._active_tab == tab)
             self._sidebar_item(label, icon,
                 lambda f=cmd, t=tab: (setattr(self, "_active_tab", t), self._build_shell(), f())[-1],
                 active=active, font=FBTN, pady=8)
-        self._sidebar_item(ui('Descobrir', 'Discover'), ICONS.get("discover"),
+        self._sidebar_item(ui('Descobrir', 'Discover'), "compass",
                            self._open_discovery, active=(self._active_tab == "discovery"), font=FBTN, pady=8)
 
         self._sidebar_section(ui('ATIVIDADE', 'ACTIVITY'))
-        self._sidebar_item("Downloads", ICONS.get("downloads"), self._open_downloads,
+        self._sidebar_item("Downloads", "download", self._open_downloads,
                            active=(self._active_tab == "downloads"), font=FLABEL, pady=7)
-        self._sidebar_item(ui('Estatísticas', 'Statistics'), ICONS.get("library"), self._open_statistics,
+        self._sidebar_item(ui('Estatísticas', 'Statistics'), "chart-no-axes-column-increasing", self._open_statistics,
                            active=(self._active_tab == "statistics"), font=FLABEL, pady=7)
 
         if self.current_user is not None:
-            self._sidebar_item(ui('Meus envios', 'My submissions'), ICONS.get("submissions"), self._open_my_publications,
+            self._sidebar_item(ui('Meus envios', 'My submissions'), "upload", self._open_my_publications,
                                 active=(self._active_tab == "submissions"), font=FLABEL, pady=7)
-            self._sidebar_item(ui('Notificações', 'Notifications'), ICONS.get("notifications"), self._open_notifications,
-                                active=(self._active_tab == "notifications"), font=FLABEL, pady=7,
-                                badge=self._notification_count or None)
+            self._notifications_nav_item = self._sidebar_item(
+                ui('Notificações', 'Notifications'), "bell",
+                self._open_notifications, active=(self._active_tab == "notifications"),
+                font=FLABEL, pady=7, badge=self._notification_count or None)
             role = getattr(self.current_user, "role", "user")
             has_moderation_access = can_moderate(self.current_user)
             if has_moderation_access:
                 self._sidebar_section(ui('EQUIPE', 'TEAM'))
-                self._sidebar_item(ui('Moderação', 'Moderation'), ICONS.get("moderation"),
+                self._sidebar_item(ui('Moderação', 'Moderation'), "shield",
                                     self._open_moderation,
                                     active=(self._active_tab == "moderation"), font=FLABEL, pady=7)
 
         tk.Frame(self._sb, bg=c["surface"]).pack(fill="both", expand=True)
+        tk.Frame(self._sb, bg=c["border"], height=1).pack(fill="x", padx=16, pady=(2, 5))
         self._sidebar_section(ui('PREFERÊNCIAS', 'PREFERENCES'))
         for txt, cmd, icon in [
-            (ui('Idioma', 'Language'), self._change_language, ICONS.get("language")),
-            (current_theme_label().strip(), self._toggle_theme, ICONS.get("theme")),
-            (TEXTS[LANG]['folder'], self._choose_folder, ICONS.get("folder")),
-            ("Backup", self._do_backup, ICONS.get("backup")),
-            (ui('Restaurar', 'Restore'), self._do_restore, ICONS.get("restore")),
-            (ui('Atualizações', 'Updates'), self._check_updates, ICONS.get("downloads")),
-            (ui('Diagnóstico seguro', 'Safe diagnostics'), self._copy_diagnostics, ICONS.get("notifications")),
+            (ui('Idioma', 'Language'), self._change_language, "settings"),
+            (current_theme_label().strip(), self._toggle_theme, "moon" if IS_DARK else "sun"),
+            (TEXTS[LANG]['folder'], self._choose_folder, "folder"),
+            ("Backup", self._do_backup, "database-backup"),
+            (ui('Restaurar', 'Restore'), self._do_restore, "refresh-cw"),
+            (ui('Atualizações', 'Updates'), self._check_updates, "download"),
+            (ui('Diagnóstico seguro', 'Safe diagnostics'), self._copy_diagnostics, "shield"),
         ]:
             self._sidebar_item(txt, icon, cmd, font=FSMALL, pady=6)
 
@@ -642,14 +988,15 @@ class LibraryWindow(tk.Tk):
         messagebox.showinfo(ui('Diagnóstico seguro', 'Safe diagnostics'), ui('Relatório copiado para a área de transferência.\n\nCole-o na issue sem adicionar tokens ou senhas.', 'Report copied to the clipboard.\n\nPaste it into the issue without adding tokens or passwords.'), parent=self)
 
     def _sidebar_section(self, text):
-        tk.Label(self._sb, text=text, font=(_SANS, 8, "bold"), bg=THEME["surface"],
-                 fg=THEME["text_dim"], anchor="w").pack(fill="x", padx=20, pady=(9, 3))
+        tk.Label(self._sb, text=text, font=design_caption(8, bold=True), bg=THEME["surface"],
+                 fg=THEME["text_muted"], anchor="w").pack(fill="x", padx=19, pady=(12, 4))
 
     def _sidebar_account_card(self):
         c = THEME
         card = tk.Frame(self._sb, bg=c["surface_alt"], cursor="hand2")
         card.pack(fill="x", padx=10, pady=(8, 12))
-        avatar = tk.Label(card, image=ICONS.get("profile"),
+        self._profile_icon = lucide_icon("circle-user-round", size=20, state="active", dark=IS_DARK)
+        avatar = tk.Label(card, image=self._profile_icon,
                           bg=c["accent"], fg="#ffffff", width=30, height=30)
         avatar.pack(side="left", padx=(10, 8), pady=10)
         info = tk.Frame(card, bg=c["surface_alt"]); info.pack(side="left", fill="x", expand=True)
@@ -659,7 +1006,8 @@ class LibraryWindow(tk.Tk):
         role_text = tk.Label(info, text=role_label(self.current_user), font=FTINY,
                              bg=c["surface_alt"], fg=c["text_dim"], anchor="w")
         role_text.pack(fill="x")
-        logout = tk.Label(card, image=ICONS.get("logout"), bg=c["surface_alt"],
+        self._logout_icon = lucide_icon("log-out", size=18, state="normal", dark=IS_DARK)
+        logout = tk.Label(card, image=self._logout_icon, bg=c["surface_alt"],
                           cursor="hand2", padx=9)
         logout.pack(side="right", fill="y")
         logout.bind("<Button-1>", lambda _e: self._logout())
@@ -667,45 +1015,15 @@ class LibraryWindow(tk.Tk):
             widget.bind("<Button-1>", lambda _e: self._open_profile())
 
     def _sidebar_item(self, text, icon, cmd, *, active=False, font=FBTN, pady=11, badge=None):
-        c = THEME
-        W = 216
-        tmp = tk.Label(self._sb, text=text, font=font)
-        th = tmp.winfo_reqheight(); tmp.destroy()
-        ih = icon.height() if icon else 0
-        H = max(th, ih) + pady * 2
-        r = 11
-        cv = tk.Canvas(self._sb, width=W, height=H, bg=c["surface"],
-                       highlightthickness=0, cursor="hand2", takefocus=0)
-        cv.pack(padx=6, pady=2)
-        def render(hover):
-            cv.delete("all")
-            if active:
-                _rrect(cv, 1, 2, W - 1, H - 2, r, fill=c["surface_alt"])
-                _rrect(cv, 2, H // 2 - 10, 5, H // 2 + 10, 2, fill=c["accent"])
-                fg = c["text"]
-            elif hover:
-                _rrect(cv, 1, 2, W - 1, H - 2, r, fill=c["surface_hover"]); fg = c["text"]
-            else:
-                fg = c["text_dim"]
-            x = 16
-            if icon:
-                cv.create_image(x, H // 2, image=icon, anchor="w"); x += icon.width() + 8
-            cv.create_text(x, H // 2, text=text.strip(), font=font, fill=fg, anchor="w")
-            if badge:
-                badge_text = "99+" if int(badge) > 99 else str(badge)
-                bx = W - 20
-                _rrect(cv, bx - 14, H // 2 - 10, bx + 14, H // 2 + 10, 10,
-                       fill=c["accent"])
-                cv.create_text(bx, H // 2, text=badge_text, font=FTINY, fill="#ffffff")
-        render(False)
-        def hover(entered):
-            if active:return
-
-            animate_color(cv,"background",cv.cget("background"),c["surface_hover"] if entered else c["surface"])
-        cv.bind("<Enter>", lambda e:hover(True))
-        cv.bind("<Leave>", lambda e:hover(False))
-        cv.bind("<Button-1>", lambda e: cmd())
-        return cv
+        item = KomicoveSidebarItem(
+            self._sb, text, cmd, THEME,
+            icon_name=icon if isinstance(icon, str) else None,
+            icon=None if isinstance(icon, str) else icon,
+            active=active, badge=badge,
+            compact=pady <= 6, width=SIDEBAR_WIDTH - 16,
+        )
+        item.pack(padx=8, pady=1)
+        return item
 
     def _refresh_library(self):
         c = THEME
@@ -720,32 +1038,43 @@ class LibraryWindow(tk.Tk):
         for w in self._main.winfo_children():
             w.destroy()
 
-        hdr = tk.Frame(self._main, bg=c["bg"])
-        hdr.pack(fill="x", padx=20, pady=(16, 6))
-        tk.Label(hdr, text=TEXTS[LANG]["library"], font=FTITLE, bg=c["bg"], fg=c["text"]).pack(side="left")
-        if LIBRARY_FOLDER:
-            short = LIBRARY_FOLDER
-            if len(short) > 40: short = "…" + short[-37:]
-            tk.Label(hdr, text=short, font=FTINY, bg=c["bg"], fg=c["text_muted"]).pack(side="left", padx=10, pady=(6,0))
-        make_pill(hdr, ui('+  Pasta', '+  Folder'), self._choose_folder, variant="accent", font=FSMALL).pack(side="right")
-        make_pill(hdr, ui('Série / Autor', 'Series / Author'), self._metadata_filters, variant="soft", font=FSMALL).pack(side="right", padx=6)
+        top = tk.Frame(self._main, bg=c["bg"])
+        top.pack(fill="x", padx=CONTENT_PADDING, pady=(18, 7))
+        title_area = tk.Frame(top, bg=c["bg"], width=170, height=44)
+        title_area.pack(side="left", padx=(0, 28))
+        title_area.pack_propagate(False)
+        tk.Label(title_area, text=TEXTS[LANG]["library"], font=design_heading(27),
+                 bg=c["bg"], fg=c["text"]).pack(anchor="w")
+        KomicoveButton(top, ui('Pasta', 'Folder'), self._choose_folder,
+                       c, kind="primary", icon_name="plus").pack(side="right", padx=(8, 0))
+        KomicoveButton(top, ui('Série / Autor', 'Series / Author'), self._metadata_filters,
+                       c, compact=True, icon_name="list").pack(side="right", padx=(8, 0))
 
-        stf = tk.Frame(self._main, bg=c["bg"]); stf.pack(fill="x", padx=20, pady=(0, 4))
-        tk.Label(stf, text=f"{TEXTS[LANG]['filter_status']}:", font=FTINY,
-                 bg=c["bg"], fg=c["text_dim"]).pack(side="left", padx=(0, 6))
+        self._library_search = KomicoveInput(
+            top, c, placeholder=ui('Buscar títulos, autores, gêneros...', 'Search titles, authors, genres...'),
+            value=self._search_query, on_change=self._bubble_search_changed,
+            width=640,
+        )
+        self._library_search.pack(side="left", fill="x", expand=True, pady=(2, 0))
+        self.bind('<Control-k>', lambda _e: self._library_search.entry.focus_set()
+                  if self._active_tab == 'library' and self._library_search.winfo_exists() else None)
+
+        stf = tk.Frame(self._main, bg=c["bg"])
+        stf.pack(fill="x", padx=CONTENT_PADDING, pady=(0, 8))
         self._status_btns = {}
-        for key, lbl in [("all", TEXTS[LANG]["f_all"]), ("unread", TEXTS[LANG]["f_unread"]),
-                         ("reading", TEXTS[LANG]["f_reading"]), ("done", TEXTS[LANG]["f_done"]),
-                         ("favorites", ui('★ Favoritos', '★ Favorites'))]:
+        for key, lbl, icon_name in [
+                         ("all", TEXTS[LANG]["f_all"], "grid-2x2"),
+                         ("unread", TEXTS[LANG]["f_unread"], "book-open"),
+                         ("reading", TEXTS[LANG]["f_reading"], "bookmark"),
+                         ("done", TEXTS[LANG]["f_done"], "check"),
+                         ("favorites", ui('Favoritos', 'Favorites'), "heart")]:
             b = make_pill(stf, lbl, lambda k=key: self._set_status_filter(k),
-                          variant="soft", font=FTINY, pad_x=12, pad_y=5,
-                          active=(self._status_filter == key))
+                          variant="soft", font=design_caption(10), pad_x=17, pad_y=8,
+                          active=(self._status_filter == key), icon_name=icon_name)
             b.pack(side="left", padx=(0, 4))
             self._status_btns[key] = b
 
-        self._book_sort_controls(self._main, self._refresh_library)
-
-        tk.Frame(self._main, bg=c["border"], height=1).pack(fill="x", padx=20, pady=(0, 4))
+        tk.Frame(self._main, bg=c["border"], height=1).pack(fill="x", padx=CONTENT_PADDING, pady=(4, 3))
 
         sf = tk.Frame(self._main, bg=c["bg"]); sf.pack(fill="both", expand=True)
         self._lib_canvas = tk.Canvas(sf, bg=c["bg"], highlightthickness=0)
@@ -773,10 +1102,7 @@ class LibraryWindow(tk.Tk):
             self._resize_job = self.after(350, self._check_ncols)
         self._main.bind("<Configure>", _on_resize)
 
-        self._search_bubble = SearchBubble(self._main, self._bubble_search_changed,
-                                           self._bubble_search_clear, self)
-        if self._search_query:
-            self._search_bubble.set_text(self._search_query)
+        # The reference uses a permanent search field, not a floating bubble.
 
     def _set_status_filter(self, key):
         self._status_filter = key
@@ -785,30 +1111,19 @@ class LibraryWindow(tk.Tk):
             b.pill_set_active(k == key)
 
     def _open_statistics(self):
-        self._active_tab="statistics"; self._build_shell()
-        for w in self._main.winfo_children(): w.destroy()
-        data=personal_statistics(); c=THEME
-        tk.Label(self._main,text=ui('Estatísticas pessoais','Personal statistics'),font=FTITLE,
-                 bg=c['bg'],fg=c['text']).pack(anchor='w',padx=30,pady=(28,6))
-        tk.Label(self._main,text=ui('Os dados ficam somente neste dispositivo.','Your data stays on this device.'),
-                 font=FSMALL,bg=c['bg'],fg=c['text_dim']).pack(anchor='w',padx=30,pady=(0,24))
-        row=tk.Frame(self._main,bg=c['bg']); row.pack(fill='x',padx=24)
-        hours=data['seconds']//3600; minutes=(data['seconds']%3600)//60
-        cards=[(ui('HQs concluídas','Completed comics'),data['completed']),
-               (ui('Páginas lidas','Pages read'),data['pages']),
-               (ui('Tempo de leitura','Reading time'),f"{hours}h {minutes:02d}min"),
-               (ui('HQs iniciadas','Started comics'),data['started'])]
-        for title,value in cards:
-            card=tk.Frame(row,bg=c['surface'],highlightthickness=1,highlightbackground=c['border'])
-            card.pack(side='left',fill='x',expand=True,padx=7)
-            tk.Label(card,text=str(value),font=("Segoe UI",26,"bold"),bg=c['surface'],fg=c['accent']).pack(pady=(22,5))
-            tk.Label(card,text=title,font=FBTN,bg=c['surface'],fg=c['text']).pack(pady=(0,22))
+        self._active_tab = "statistics"
+        self._build_shell()
+        for child in self._main.winfo_children():
+            child.destroy()
+        render_statistics(self._main, THEME, self._go_library)
 
     def _bubble_search_changed(self, val):
         self._search_query = val
         self._populate_library_grid()
     def _bubble_search_clear(self):
         self._search_query = ""
+        if getattr(self, "_library_search", None):
+            self._library_search.clear()
         self._populate_library_grid()
 
     def _status_of(self, path):
@@ -887,39 +1202,211 @@ class LibraryWindow(tk.Tk):
 
         arquivos = sort_comics(arquivos, self._book_sort, prog)
 
-        if not arquivos and not continuar:
-            self._show_empty(self._lib_content, no_results=bool(q))
+        has_active_filter = bool(q or self._status_filter != "all" or any(
+            getattr(self, "_metadata_filter_" + field, "") for field in ("series", "writer")
+        ))
+        if not arquivos and (not continuar or has_active_filter):
+            self._show_empty(self._lib_content, no_results=has_active_filter)
             return
 
         self.update_idletasks()
-        avail = self._main.winfo_width() - 44
+        avail = self._main.winfo_width() - CONTENT_PADDING * 2
         if avail < 50:
             self.after(200, self._populate_library_grid); return
-        card_w = CAPA_W + 24 + GPAD * 2
+        card_w = 156 + GPAD
         ncols = max(2, avail // card_w)
         self._last_ncols = ncols
 
-        if continuar and not q and self._status_filter == "all":
-            tk.Label(self._lib_content, text=f"▶  {TEXTS[LANG]['continue_section']}",
-                     font=FBTN, bg=c["bg"], fg=c["text_dim"], anchor="w").pack(
-                fill="x", padx=GPAD+4, pady=(8, 2))
-            cg = tk.Frame(self._lib_content, bg=c["bg"]); cg.pack(padx=GPAD, anchor="nw")
-            for i, path in enumerate(continuar):
-                card = ComicCard(cg, path, None, self._open, self,
-                                 label_override=comic_display_title(path))
-                card.grid(row=0, column=i, padx=GPAD//2, pady=GPAD//2)
-                self._wire_card(card, path)
-            tk.Frame(self._lib_content, bg=c["border"], height=1).pack(fill="x", padx=GPAD, pady=8)
+        if continuar and not has_active_filter:
+            self._render_library_hero(self._lib_content, continuar[:6])
+
+        section = tk.Frame(self._lib_content, bg=c["bg"])
+        section.pack(fill="x", padx=CONTENT_PADDING, pady=(22, 5))
+        tk.Label(section,
+                 text=ui(f'TODAS AS HQs  ·  {len(arquivos)}', f'ALL COMICS  ·  {len(arquivos)}'),
+                 font=design_caption(10, bold=True), bg=c["bg"], fg=c["text"], anchor="w").pack(side="left")
+        self._book_sort_controls(section, self._refresh_library, side="right")
 
         gf = tk.Frame(self._lib_content, bg=c["bg"])
-        gf.pack(padx=GPAD, pady=GPAD, anchor="nw")
+        gf.pack(padx=CONTENT_PADDING - GPAD // 2, pady=(8, GPAD), anchor="nw")
         for placed, path in enumerate(arquivos):
             row, col = placed // ncols, placed % ncols
             card = ComicCard(gf, path, None, self._open, self,
-                             label_override=comic_display_title(path))
+                             label_override=comic_display_title(path), compact=True)
             card.grid(row=row, column=col, padx=GPAD//2, pady=GPAD//2)
             self._card_map[path] = card
             self._wire_card(card, path)
+
+    def _render_library_hero(self, parent, paths):
+        c = THEME
+        available = max(450, self._main.winfo_width() - CONTENT_PADDING * 2)
+        height = 326
+        hero = tk.Canvas(parent, bg=c["bg"], width=available, height=height,
+                         highlightthickness=0, bd=0)
+        hero.pack(fill="x", padx=CONTENT_PADDING, pady=(9, 0))
+        try:
+            art_width = min(available, max(760, round(available * 0.72)))
+            art_left = available - art_width
+            with Image.open(resource_path('assets_redesign/banners/library_noir.png')) as source:
+                art = ImageOps.fit(source.convert('RGB'), (art_width, height),
+                                   method=Image.LANCZOS, centering=(0.52, 0.59))
+            art = ImageEnhance.Brightness(art).enhance(0.48).convert('RGBA')
+            backdrop = Image.new('RGBA', (available, height), c['bg'])
+            backdrop.paste(art, (art_left, 0))
+            shade = Image.new('RGBA', (available, height), (0, 0, 0, 0))
+            gradient = ImageDraw.Draw(shade)
+            fade_end = min(available, art_left + 360)
+            for x in range(fade_end):
+                opacity = 255 if x < art_left else round(255 * (1 - (x - art_left) / max(1, fade_end - art_left)) ** 1.7)
+                gradient.line((x, 0, x, height), fill=(7, 9, 14, opacity))
+            art = Image.alpha_composite(backdrop, shade)
+            mask = Image.new('L', (available, height), 0)
+            ImageDraw.Draw(mask).rounded_rectangle((0, 0, available - 1, height - 1),
+                                                    radius=24, fill=255)
+            rounded = Image.new('RGBA', (available, height), c['bg'])
+            rounded.paste(art, (0, 0), mask)
+            self._library_hero_photo = ImageTk.PhotoImage(rounded)
+            hero.create_image(0, 0, image=self._library_hero_photo, anchor='nw')
+        except (OSError, ValueError):
+            _runtime._rrect(hero, 1, 1, available - 2, height - 2, 24, fill=c['surface'])
+        _runtime._rrect(hero, 1, 1, available - 2, height - 2, 24,
+                        outline=c['border'], width=1)
+        hero.create_line(2, 19, 2, 72, fill=c['accent'], width=3)
+        hero.create_text(24, 29, text='›', font=design_heading(22),
+                         fill=c['accent'], anchor='w')
+        hero.create_text(43, 28, text=ui('Continuar lendo', 'Continue reading'),
+                         font=design_heading(17), fill=c['text'], anchor='w')
+
+        self._hero_index = min(getattr(self, '_hero_index', 0), max(0, len(paths) - 1))
+        cover_photos = {}
+        hero._cover_photos = cover_photos
+        self._library_hero_cover_photos = cover_photos
+
+        def cover_photo(pil):
+            width, cover_height = 176, 208
+            source = (pil or get_placeholder_pil()).convert('RGBA').resize(
+                (width - 4, cover_height - 4), Image.LANCZOS)
+            edge = Image.new('RGBA', (width, cover_height), (0, 0, 0, 0))
+            ImageDraw.Draw(edge).rounded_rectangle(
+                (0, 0, width - 1, cover_height - 1), radius=19,
+                fill=c['accent'], outline=c['border_glow'], width=1)
+            mask = Image.new('L', source.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                (0, 0, source.width - 1, source.height - 1), radius=17, fill=255)
+            edge.paste(source, (2, 2), mask)
+            return ImageTk.PhotoImage(edge)
+
+        placeholder = cover_photo(None)
+        cover_photos['placeholder'] = placeholder
+
+        def open_context(event, path):
+            card = self._card_map.get(path)
+            if card is not None:
+                card._show_context_menu(event)
+                self.after_idle(self._refresh_library)
+
+        def show_cards():
+            hero.delete('hero-card')
+            cover_photos.clear()
+            cover_photos['placeholder'] = placeholder
+            for column, path in enumerate(paths[self._hero_index:self._hero_index + 2]):
+                x, y = 26 + column * 216, 48
+                tag = f'hero-card-{column}'
+                image_id = hero.create_image(x, y, image=placeholder, anchor='nw',
+                                             tags=('hero-card', tag))
+                title = comic_display_title(path)
+                if len(title) > 25:
+                    title = title[:23] + '…'
+                hero.create_text(x, y + 217, text=title, width=176, anchor='nw',
+                                 font=design_caption(10, bold=True), fill=c['text'],
+                                 tags=('hero-card', tag))
+                page = get_progress_page(path)
+                status = get_manual_status(path)
+                try:
+                    total = max(0, int(get_comic_info(path).get('page_count') or 0))
+                except (ValueError, TypeError):
+                    total = 0
+                fraction = 1.0 if status == 'done' else (
+                    min(1.0, (page + 1) / total) if page is not None and total else 0.0)
+                progress_text = (f'{round(fraction * 100)}%' if total or status == 'done'
+                                 else ui(f'Página {page + 1}', f'Page {page + 1}')
+                                 if page is not None else ui('Em leitura', 'Reading'))
+                bar_y = y + 251
+                hero.create_line(x + 2, bar_y, x + 140, bar_y, fill=c['progress_bg'],
+                                 width=6, capstyle=tk.ROUND, tags=('hero-card', tag))
+                progress_id = hero.create_line(
+                    x + 2, bar_y, x + 2 + round(138 * fraction), bar_y,
+                    fill=c['accent'] if fraction else c['progress_bg'],
+                    width=6, capstyle=tk.ROUND, tags=('hero-card', tag))
+                text_id = hero.create_text(x + 176, bar_y, text=progress_text, anchor='e',
+                                           font=FTINY, fill=c['text_dim'],
+                                           tags=('hero-card', tag))
+                hero.tag_bind(tag, '<Button-1>', lambda _e, p=path: self._open(p))
+                hero.tag_bind(tag, '<Button-3>', lambda e, p=path: open_context(e, p))
+
+                def loaded(_path, pil, item=image_id, key=tag, cover=path):
+                    if not hero.winfo_exists() or not hero.find_withtag(item):
+                        return
+                    custom_cover = get_comic_info(cover).get('cover')
+                    if custom_cover:
+                        try:
+                            with Image.open(custom_cover) as source:
+                                pil = source.convert('RGB')
+                        except (OSError, ValueError):
+                            pass
+                    photo = cover_photo(pil)
+                    cover_photos[key] = photo
+                    hero.itemconfigure(item, image=photo)
+
+                self._cover_loader.request(path, loaded)
+
+                if page is not None and not total and status != 'done':
+                    def count_pages(book=path, current_page=page, line=progress_id,
+                                    label=text_id, left=x, top=bar_y):
+                        backend = None
+                        try:
+                            backend = ArchiveBackend(book)
+                            count = backend.count
+                        except (OSError, ValueError):
+                            return
+                        finally:
+                            if backend is not None:
+                                backend.close()
+                        if count <= 0:
+                            return
+
+                        def update():
+                            if not hero.winfo_exists() or not hero.find_withtag(line):
+                                return
+                            progress = min(1.0, (current_page + 1) / count)
+                            hero.coords(line, left + 2, top,
+                                        left + 2 + round(138 * progress), top)
+                            hero.itemconfigure(line, fill=c['accent'])
+                            hero.itemconfigure(label, text=f'{round(progress * 100)}%')
+
+                        try:
+                            self.after(0, update)
+                        except (RuntimeError, tk.TclError):
+                            pass
+
+                    threading.Thread(target=count_pages, daemon=True).start()
+
+        show_cards()
+        if len(paths) > 2:
+            def move(direction):
+                self._hero_index = (self._hero_index + 2 * direction) % len(paths)
+                show_cards()
+
+            for x, arrow, direction in ((available - 85, '‹', -1),
+                                        (available - 45, '›', 1)):
+                button = tk.Canvas(hero, width=34, height=34, bg=c['bg'],
+                                   highlightthickness=0, cursor='hand2')
+                _runtime._rrect(button, 1, 1, 33, 33, 14,
+                                fill=c['surface_alt'], outline=c['border'])
+                button.create_text(17, 16, text=arrow, font=design_heading(18),
+                                   fill=c['text'])
+                button.bind('<Button-1>', lambda _e, step=direction: move(step))
+                hero.create_window(x, 13, window=button, anchor='nw')
 
     def _wire_card(self, card, path):
         custom_cover = get_comic_info(path).get('cover')
@@ -941,27 +1428,58 @@ class LibraryWindow(tk.Tk):
 
     def _check_ncols(self):
         self._resize_job = None
-        avail = self._main.winfo_width() - 44
+        avail = self._main.winfo_width() - CONTENT_PADDING * 2
         if avail < 50: return
-        card_w = CAPA_W + 24 + GPAD * 2
+        card_w = 156 + GPAD
         nc = max(2, avail // card_w)
         if nc != self._last_ncols:
             self._populate_library_grid()
 
     def _show_empty(self, parent, no_results=False):
         c = THEME
-        f = tk.Frame(parent, bg=c["bg"]); f.pack(pady=80)
+        illustration = None
+        if not no_results:
+            try:
+                # During the first render Tk may still report a 1 px content area.
+                # Derive a stable fallback from the actual window so the artwork
+                # does not randomly alternate between its minimum and full size.
+                self.update_idletasks()
+                root_width = self.winfo_width()
+                if root_width < 600:
+                    root_width = self.winfo_screenwidth()
+                content_width = max(self._main.winfo_width(), root_width - SIDEBAR_WIDTH)
+                art_width = max(620, min(1270, content_width - CONTENT_PADDING * 2 - 50))
+                with Image.open(resource_path('assets_redesign/empty_states/library_desktop.png')) as source:
+                    art = source.convert('RGBA')
+                    art.thumbnail((art_width, 555), Image.LANCZOS)
+                illustration = ImageTk.PhotoImage(art)
+            except (OSError, ValueError):
+                pass
+        self._empty_illustration = illustration
         if no_results:
-            tk.Label(f, text="🔍", font=("Segoe UI Emoji", 42), bg=c["bg"], fg=c["text_muted"]).pack(pady=(20, 6))
-            tk.Label(f, text=f'{TEXTS[LANG]["no_results"]} "{self._search_query}"',
-                     font=FLABEL, bg=c["bg"], fg=c["text_dim"]).pack()
-            make_pill(f, ui('✕  Limpar busca', '✕  Clear search'), self._bubble_search_clear,
-                      variant="soft", font=FBTN, pad_x=18, pad_y=9).pack(pady=12)
+            title = ui('Nenhuma HQ corresponde aos filtros', 'No comics match the filters')
+            description = ui('Tente outro termo ou limpe os filtros para ver sua biblioteca.',
+                             'Try another search or clear the filters to see your library.')
+            action = self._clear_library_filters
+            action_text = ui('Limpar filtros', 'Clear filters')
         else:
-            tk.Label(f, text="📚", font=("Segoe UI Emoji", 42), bg=c["bg"], fg=c["text_muted"]).pack(pady=(20, 6))
-            tk.Label(f, text=TEXTS[LANG]["no_comics"], font=FLABEL, bg=c["bg"], fg=c["text_dim"]).pack()
-            make_pill(f, TEXTS[LANG]["add_folder"], self._choose_folder,
-                      variant="accent", font=FBTN, pad_x=22, pad_y=11).pack(pady=16)
+            title = ui('Sua biblioteca está vazia', 'Your library is empty')
+            description = ui('Escolha uma pasta com quadrinhos para começar sua coleção.',
+                             'Choose a folder with comics to start your collection.')
+            action = self._choose_folder
+            action_text = TEXTS[LANG]["add_folder"]
+        KomicoveEmptyState(parent, c, title=title, description=description,
+                           action=action, action_text=action_text,
+                           illustration=illustration, panel=no_results).pack(
+                               fill="x", pady=(55 if not no_results else 85, 25),
+                               padx=CONTENT_PADDING)
+
+    def _clear_library_filters(self):
+        self._status_filter = 'all'
+        self._metadata_filter_series = ''
+        self._metadata_filter_writer = ''
+        self._search_query = ''
+        self._refresh_library()
 
     def _scan(self):
         from komicove_app.archive import SUPPORTED_EXTENSIONS
@@ -973,19 +1491,23 @@ class LibraryWindow(tk.Tk):
                        if f.lower().endswith(exts) and os.path.isfile(os.path.join(LIBRARY_FOLDER, f))],
                       key=natural_key)
 
-    def _book_sort_controls(self, parent, refresh):
+    def _book_sort_controls(self, parent, refresh, side=None):
         c = THEME
         row = tk.Frame(parent, bg=c["bg"])
-        row.pack(fill="x", padx=20, pady=(0, 6))
+        if side:
+            row.pack(side=side)
+        else:
+            row.pack(fill="x", padx=20, pady=(0, 6))
         tk.Label(row, text=ui("Ordenar:", "Sort:"), font=FTINY,
                  bg=c["bg"], fg=c["text_dim"]).pack(side="left", padx=(0, 6))
-        for key, label in (("recent", ui("Recentes", "Recent")),
-                           ("title", ui("Título A-Z", "Title A-Z")),
-                           ("title_desc", ui("Título Z-A", "Title Z-A")),
-                           ("series", ui("Série e título", "Series and title"))):
+        for key, label, icon_name in (("recent", ui("Recentes", "Recent"), "refresh-cw"),
+                                      ("title", ui("Título A-Z", "Title A-Z"), "list"),
+                                      ("title_desc", ui("Título Z-A", "Title Z-A"), "list"),
+                                      ("series", ui("Série e título", "Series and title"), "library")):
             make_pill(row, label, lambda k=key: self._set_book_sort(k, refresh),
                       variant="soft", font=FTINY, pad_x=10, pad_y=4,
-                      active=(self._book_sort == key)).pack(side="left", padx=(0, 4))
+                      active=(self._book_sort == key), icon_name=icon_name).pack(
+                          side="left", padx=(0, 4))
 
     def _set_book_sort(self, mode, refresh):
         self._book_sort = mode
@@ -1079,28 +1601,60 @@ class LibraryWindow(tk.Tk):
         except Exception as _e: log.debug("silenced: %s", _e)
         for w in self._main.winfo_children():
             w.destroy()
-        hdr = tk.Frame(self._main, bg=c["bg"]); hdr.pack(fill="x", padx=20, pady=(16, 0))
-        tk.Label(hdr, text=TEXTS[LANG]["collections"], font=FTITLE, bg=c["bg"], fg=c["text"]).pack(side="left")
-        ctrl = tk.Frame(self._main, bg=c["bg"]); ctrl.pack(fill="x", padx=20, pady=(8, 0))
+        hdr = tk.Frame(self._main, bg=c["bg"])
+        hdr.pack(fill="x", padx=CONTENT_PADDING, pady=(18, 7))
+        title_area = tk.Frame(hdr, bg=c["bg"], width=170, height=44)
+        title_area.pack(side="left", padx=(0, 28))
+        title_area.pack_propagate(False)
+        tk.Label(title_area, text=TEXTS[LANG]["collections"], font=design_heading(27),
+                 bg=c["bg"], fg=c["text"]).pack(anchor="w")
+        KomicoveButton(hdr, ui('Pasta', 'Folder'), self._choose_folder,
+                       c, kind="primary", icon_name="plus").pack(side="right", padx=(8, 0))
+        KomicoveButton(hdr, ui('Série / Autor', 'Series / Author'), self._metadata_filters,
+                       c, compact=True, icon_name="list").pack(side="right", padx=(8, 0))
+        self._collection_search_field = KomicoveInput(
+            hdr, c, placeholder=ui('Buscar coleções...', 'Search collections...'),
+            value=self._collection_query, on_change=self._set_collection_search,
+            width=max(260, min(640, self._main.winfo_width() - 490)),
+        )
+        self._collection_search_field.pack(side="left", pady=(2, 0))
+        self.bind('<Control-k>', lambda _e: self._collection_search_field.entry.focus_set()
+                  if self._active_tab == 'collections' and self._collection_search_field.winfo_exists() else None)
+
+        ctrl = tk.Frame(self._main, bg=c["bg"])
+        ctrl.pack(fill="x", padx=CONTENT_PADDING, pady=(0, 8))
         tabs = tk.Frame(ctrl, bg=c["bg"]); tabs.pack(side="left")
         self._filter_btns = {}
-        for key, label in [("all", TEXTS[LANG]["all"]), ("subfolders", TEXTS[LANG]["subfolders"]),
-                           ("series", TEXTS[LANG]["series"])]:
+        for key, label, icon_name in [("all", TEXTS[LANG]["all"], "grid-2x2"),
+                                      ("subfolders", TEXTS[LANG]["subfolders"], "folders"),
+                                      ("series", TEXTS[LANG]["series"], "library")]:
             btn = make_pill(tabs, label, lambda k=key: self._set_col_filter(k),
-                            variant="soft", font=FSMALL, pad_x=14, pad_y=6,
-                            active=(self._col_filter == key))
+                            variant="soft", font=design_caption(10), pad_x=17, pad_y=8,
+                            active=(self._col_filter == key), icon_name=icon_name)
             btn.pack(side="left", padx=(0, 5)); self._filter_btns[key] = btn
         srt = tk.Frame(ctrl, bg=c["bg"]); srt.pack(side="right")
-        tk.Label(srt, text=TEXTS[LANG]["sort_by"], font=FTINY, bg=c["bg"], fg=c["text_dim"]).pack(side="left", padx=(0, 6))
+        tk.Label(srt, text=TEXTS[LANG]["sort_by"], font=design_caption(10),
+                 bg=c["bg"], fg=c["text_dim"]).pack(side="left", padx=(0, 6))
         self._sort_btns = {}
-        for key, label in [("name", TEXTS[LANG]["sort_name"]), ("date", TEXTS[LANG]["sort_date"]),
-                           ("progress", TEXTS[LANG]["sort_progress"])]:
+        for key, label, icon_name in [("name", TEXTS[LANG]["sort_name"], "list"),
+                                      ("date", TEXTS[LANG]["sort_date"], "refresh-cw"),
+                                      ("progress", TEXTS[LANG]["sort_progress"],
+                                       "chart-no-axes-column-increasing")]:
             btn = make_pill(srt, label, lambda k=key: self._set_col_sort(k),
-                            variant="soft", font=FTINY, pad_x=10, pad_y=6,
-                            active=(self._col_sort == key))
+                            variant="soft", font=design_caption(10), pad_x=12, pad_y=8,
+                            active=(self._col_sort == key), icon_name=icon_name)
             btn.pack(side="left", padx=(0, 3)); self._sort_btns[key] = btn
-        tk.Frame(self._main, bg=c["border"], height=1).pack(fill="x", padx=20, pady=(8, 4))
+        tk.Frame(self._main, bg=c["border"], height=1).pack(fill="x", padx=CONTENT_PADDING, pady=(4, 3))
         self._col_scroll_area(self._main)
+
+    def _set_collection_search(self, query):
+        self._collection_query = query
+        self._col_scroll_area(self._main)
+
+    def _go_library(self):
+        self._active_tab = 'library'
+        self._build_shell()
+        self._refresh_library()
 
     def _col_scroll_area(self, parent):
         c = THEME
@@ -1125,37 +1679,77 @@ class LibraryWindow(tk.Tk):
                 source = item["path"] if kind == "subfolders" else item["name"]
                 item["alias_key"] = f"{kind}:{source}"
                 item["name"] = aliases.get(item["alias_key"], item["name"])
+        query = self._collection_query.strip().casefold()
+        if query:
+            for kind in ("subfolders", "series"):
+                cols[kind] = [item for item in cols[kind] if query in item["name"].casefold()]
         subfolders = _sort_collections(cols["subfolders"], self._col_sort)
         series = _sort_collections(cols["series"], self._col_sort)
         show_sub = self._col_filter in ("all", "subfolders")
         show_ser = self._col_filter in ("all", "series")
 
         if not (subfolders and show_sub) and not (series and show_ser):
-            f = tk.Frame(content, bg=c["bg"]); f.pack(pady=80)
-            tk.Label(f, text="🗂️", font=("Segoe UI Emoji", 42), bg=c["bg"], fg=c["text_muted"]).pack(pady=(20, 6))
-            tk.Label(f, text=TEXTS[LANG]["no_collections"], font=FLABEL, bg=c["bg"], fg=c["text_dim"]).pack()
+            illustration = None
+            if not query:
+                try:
+                    self.update_idletasks()
+                    root_width = self.winfo_width()
+                    if root_width < 600:
+                        root_width = self.winfo_screenwidth()
+                    content_width = max(self._main.winfo_width(), root_width - SIDEBAR_WIDTH)
+                    art_width = max(620, min(1020, content_width - CONTENT_PADDING * 2 - 80))
+                    with Image.open(resource_path('assets_redesign/empty_states/collections_desktop.png')) as source:
+                        art = source.convert('RGBA')
+                        art.thumbnail((art_width, 510), Image.LANCZOS)
+                    illustration = ImageTk.PhotoImage(art)
+                except (OSError, ValueError):
+                    pass
+            self._empty_collection_illustration = illustration
+            if query:
+                title = ui('Nenhuma coleção corresponde à busca', 'No collections match your search')
+                description = ui('Tente outro nome ou limpe a busca.', 'Try another name or clear the search.')
+                action = lambda: (setattr(self, '_collection_query', ''), self._show_collections())
+                action_text = ui('Limpar busca', 'Clear search')
+            else:
+                title = TEXTS[LANG]['no_collections']
+                description = ui('Organize suas histórias em pastas ou séries para facilitar sua leitura.',
+                                 'Organize your stories into folders or series to make reading easier.')
+                action = self._go_library
+                action_text = ui('Ir para biblioteca', 'Go to library')
+            KomicoveEmptyState(content, c, title=title, description=description,
+                               action=action, action_text=action_text,
+                               illustration=illustration, panel=True).pack(
+                                   fill='x', padx=CONTENT_PADDING, pady=(10, 24))
             return
 
         self.update_idletasks()
-        avail = self._main.winfo_width() - 44
+        avail = self._main.winfo_width() - CONTENT_PADDING * 2
         if avail < 50:
-            self.after(200, lambda: self._col_scroll_area(parent)); return
-        card_w = CAPA_W + 60 + GPAD * 2
-        ncols = max(2, avail // card_w)
+            def retry_when_ready():
+                if parent.winfo_exists() and self._active_tab == 'collections':
+                    self._col_scroll_area(parent)
+            self.after(200, retry_when_ready)
+            return
+        card_w = 320 + GPAD
+        ncols = max(1, avail // card_w)
 
         def _section(par, title, items):
-            tk.Label(par, text=title, font=FBTN, bg=c["bg"], fg=c["text_dim"],
-                     anchor="w", padx=4).pack(fill="x", padx=GPAD, pady=(12, 4))
-            tk.Frame(par, bg=c["border"], height=1).pack(fill="x", padx=GPAD, pady=(0, 6))
-            gf = tk.Frame(par, bg=c["bg"]); gf.pack(padx=GPAD, pady=(0, GPAD), anchor="nw")
+            heading_row = tk.Frame(par, bg=c["bg"])
+            heading_row.pack(fill="x", padx=CONTENT_PADDING, pady=(12, 7))
+            tk.Frame(heading_row, bg=c["accent"], width=4).pack(side="left", fill="y", padx=(0, 12))
+            tk.Label(heading_row, text=f'›  {title}', font=design_heading(18),
+                     bg=c["bg"], fg=c["text"], anchor="w").pack(side="left")
+            gf = tk.Frame(par, bg=c["bg"])
+            gf.pack(padx=CONTENT_PADDING - GPAD // 2, pady=(0, 12), anchor="nw")
             for i, item in enumerate(items):
                 row, col = i // ncols, i % ncols
                 card = CollectionCard(gf, item, open_cb=self._open,
                                       detail_cb=self._show_collection_detail,
                                       rename_cb=self._rename_collection, root=self)
                 card.grid(row=row, column=col, padx=GPAD//2, pady=GPAD//2)
-        if show_sub and subfolders: _section(content, f"📁  {TEXTS[LANG]['subfolders']}", subfolders)
-        if show_ser and series:     _section(content, f"📚  {TEXTS[LANG]['series']}", series)
+            tk.Frame(par, bg=c["border"], height=1).pack(fill="x", padx=CONTENT_PADDING, pady=(0, 8))
+        if show_sub and subfolders: _section(content, TEXTS[LANG]['subfolders'], subfolders)
+        if show_ser and series:     _section(content, TEXTS[LANG]['series'], series)
 
     def _set_col_filter(self, key): self._col_filter = key; self._show_collections()
     def _set_col_sort(self, key):   self._col_sort = key; self._show_collections()
@@ -1269,10 +1863,14 @@ class LibraryWindow(tk.Tk):
             self._cover_loader.request(fpath, _on_loaded)
 
     def _toggle_theme(self):
+        active = getattr(self, "_active_tab", "library")
+        if getattr(self, "_library_search", None) and active == "library":
+            self._search_query = self._library_search.get()
         toggle_theme()
         self._sync_shared_settings()
         save_prefs(dark=_runtime.IS_DARK)
         apply_scrollbar_style()
+        load_icons()
         self._capa_cache.clear()
         if self._search_bubble:
             self._search_query = self._search_bubble.get_text()
@@ -1280,4 +1878,14 @@ class LibraryWindow(tk.Tk):
             except Exception: pass
             self._search_bubble = None
         self._build_shell()
-        self.after(200, self._refresh_library)
+        action = {
+            "collections": self._show_collections,
+            "discovery": self._open_discovery,
+            "downloads": self._open_downloads,
+            "statistics": self._open_statistics,
+            "submissions": self._open_my_publications,
+            "notifications": self._open_notifications,
+            "moderation": self._open_moderation,
+            "profile": self._open_profile,
+        }.get(active, self._refresh_library)
+        self.after(100, action)

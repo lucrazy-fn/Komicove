@@ -46,10 +46,20 @@ def test_register_publish_discover_and_moderate(monkeypatch, tmp_path):
 
             profile = client.patch(
                 "/account/profile", headers={"Authorization": f"Bearer {token}"},
-                json={"display_name": "Leitor Atualizado", "email": "leitor@example.com"},
+                json={
+                    "display_name": "Leitor Atualizado",
+                    "email": "leitor@example.com",
+                    "bio": "Leitor de quadrinhos e criador independente.",
+                },
             )
             assert profile.status_code == 200
             assert profile.json()["display_name"] == "Leitor Atualizado"
+            assert profile.json()["email"] == "leitor@example.com"
+            assert profile.json()["bio"] == "Leitor de quadrinhos e criador independente."
+            reloaded_profile = client.get(
+                "/account/profile", headers={"Authorization": f"Bearer {token}"},
+            )
+            assert reloaded_profile.json()["bio"] == "Leitor de quadrinhos e criador independente."
             synced = client.put(
                 "/account/library-state", headers={"Authorization": f"Bearer {token}"},
                 json={"items": [{"item_key": "comic.cbz", "page": 7, "favorite": True}]},
@@ -202,7 +212,10 @@ def test_register_publish_discover_and_moderate(monkeypatch, tmp_path):
             uploaded = client.put(
                 f"/publications/{publication_id}/file",
                 headers={"Authorization": f"Bearer {token}"},
-                files={"file": ("original.cbz", comic_buffer.getvalue(), "application/zip")},
+                files={
+                    "file": ("original.cbz", comic_buffer.getvalue(), "application/zip"),
+                    "cover": ("cover.jpg", image_buffer.getvalue(), "image/jpeg"),
+                },
             )
             assert uploaded.status_code == 200
             assert uploaded.json()["size_bytes"] > 0
@@ -213,6 +226,12 @@ def test_register_publish_discover_and_moderate(monkeypatch, tmp_path):
             )
             assert owner_cover.status_code == 200
             assert owner_cover.headers["content-type"] == "image/jpeg"
+            repaired_cover = client.put(
+                f"/publications/{publication_id}/cover",
+                headers={"Authorization": f"Bearer {token}"},
+                files={"cover": ("replacement.jpg", image_buffer.getvalue(), "image/jpeg")},
+            )
+            assert repaired_cover.status_code == 200
 
             discovery = client.get("/publications/discovery")
             assert discovery.status_code == 200
