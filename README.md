@@ -6,7 +6,7 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 0.1.0 · Android 0.1.0 · Linux 0.1.0 · Licença MIT**
+**Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/Komicove/) · [Downloads](https://github.com/lucrazy-fn/Komicove/releases) · [Issues](https://github.com/lucrazy-fn/Komicove/issues)
 
@@ -14,7 +14,7 @@ Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android.
 
 ## 📢 PANEL agora é Komicove
 
-**A partir da versão 0.1.0, o PANEL passa a se chamar Komicove.**
+**A partir da versão 0.2.0, o PANEL passa a se chamar Komicove.**
 
 Quando comecei o projeto, escolhi o nome **PANEL** sem saber que já existia outro leitor de quadrinhos com um nome muito parecido. Eu não conhecia esse aplicativo antes de criar e publicar o PANEL.
 

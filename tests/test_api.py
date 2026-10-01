@@ -60,6 +60,20 @@ def test_register_publish_discover_and_moderate(monkeypatch, tmp_path):
                 "/account/profile", headers={"Authorization": f"Bearer {token}"},
             )
             assert reloaded_profile.json()["bio"] == "Leitor de quadrinhos e criador independente."
+            avatar_source = io.BytesIO()
+            Image.new("RGB", (640, 480), (190, 20, 35)).save(avatar_source, "PNG")
+            avatar_upload = client.put(
+                "/account/avatar", headers={"Authorization": f"Bearer {token}"},
+                files={"avatar": ("avatar.png", avatar_source.getvalue(), "image/png")},
+            )
+            assert avatar_upload.status_code == 200
+            assert avatar_upload.json()["avatar_version"]
+            avatar_download = client.get(
+                "/account/avatar", headers={"Authorization": f"Bearer {token}"},
+            )
+            assert avatar_download.status_code == 200
+            assert avatar_download.headers["content-type"].startswith("image/jpeg")
+            assert Image.open(io.BytesIO(avatar_download.content)).size == (512, 384)
             synced = client.put(
                 "/account/library-state", headers={"Authorization": f"Bearer {token}"},
                 json={"items": [{"item_key": "comic.cbz", "page": 7, "favorite": True}]},

@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:theme="@style/KomicoveTheme" android:label="Komicove" android:icon="@drawable/komicove_logo" android:roundIcon="@drawable/komicove_logo" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
+    <application android:theme="@style/KomicoveTheme" android:label="${appLabel}" android:icon="@drawable/komicove_logo" android:roundIcon="@drawable/komicove_logo" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
+        <activity android:name="com.lucrazy.komicove.AuthActivity" android:exported="false" />
         <activity android:name="com.lucrazy.komicove.ReaderActivity" android:exported="false" />
         <activity android:name="com.lucrazy.komicove.MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>

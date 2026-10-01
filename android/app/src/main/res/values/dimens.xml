@@ -1,0 +1,15 @@
+<resources>
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_sm">8dp</dimen>
+    <dimen name="space_md">12dp</dimen>
+    <dimen name="space_lg">16dp</dimen>
+    <dimen name="space_xl">24dp</dimen>
+    <dimen name="radius_small">10dp</dimen>
+    <dimen name="radius_medium">14dp</dimen>
+    <dimen name="radius_large">20dp</dimen>
+    <dimen name="radius_pill">28dp</dimen>
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="input_height">54dp</dimen>
+    <dimen name="bottom_navigation_height">74dp</dimen>
+    <dimen name="navigation_icon_size">24dp</dimen>
+</resources>

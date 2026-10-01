@@ -137,6 +137,22 @@ def update_profile(token: str, display_name: str, email: str | None,
 def get_profile(token: str) -> dict:
     return _request_json("GET", "/account/profile", token=token)
 
+def profile_avatar(token: str) -> bytes:
+    return _download_bytes(token, "/account/avatar", timeout=30)
+
+def upload_profile_avatar(token: str, avatar_bytes: bytes) -> dict:
+    try:
+        resp = requests.put(
+            f"{BASE_URL}/account/avatar",
+            files={"avatar": ("avatar.png", avatar_bytes, "image/png")},
+            headers={"Authorization": f"Bearer {token}"}, timeout=60,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise ApiUnavailableError(str(exc)) from exc
+    if not resp.ok:
+        _raise_response_error(resp, "Não foi possível sincronizar o avatar.")
+    return _response_json(resp, "Não foi possível sincronizar o avatar.")
+
 def active_sessions(token: str) -> list[dict]:
     data = _request_json(
         "GET", "/account/sessions", token=token, feature_name="account_sessions",
@@ -388,6 +404,10 @@ def _raise_response_error(
     feature_name: str | None = None,
 ) -> None:
     detail = _error_detail(resp, fallback)
+    if resp.status_code >= 500:
+        detail = "O servidor está temporariamente indisponível. Tente novamente em instantes."
+    elif resp.status_code == 429:
+        detail = "Muitas tentativas em pouco tempo. Aguarde um momento e tente novamente."
     if resp.status_code == 404 and feature_name:
         raise ApiFeatureUnavailableError(
             "A API publicada precisa ser atualizada para usar este recurso. / "

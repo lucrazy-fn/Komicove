@@ -1,6 +1,8 @@
 from datetime import timedelta
 import hashlib
-from fastapi import APIRouter, Depends, Header, HTTPException
+from io import BytesIO
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from komicove_backend.accounts import account_actions
@@ -18,7 +20,8 @@ router = APIRouter(prefix="/account", tags=["account"])
 def get_profile(user: User=Depends(get_current_user)):
     return {"username":user.username,"display_name":user.display_name or user.username,
         "email":user.email,"role":user.role,"email_verified":bool(user.email_verified),
-        "totp_enabled":bool(user.totp_enabled),"bio":user.bio}
+        "totp_enabled":bool(user.totp_enabled),"bio":user.bio,
+        "avatar_version":user.avatar_updated_at.isoformat() if user.avatar_updated_at else None}
 
 @router.patch("/profile", response_model=UserPublic)
 def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Session=Depends(get_db)):
@@ -37,7 +40,40 @@ def profile(body: ProfileUpdate, user: User=Depends(get_current_user), db: Sessi
         except Exception: pass
     return UserPublic(id=user.id,username=user.username,display_name=user.display_name,
         email=user.email,is_moderator=user.is_moderator,role=user.role,email_verified=user.email_verified,
-        totp_enabled=user.totp_enabled,bio=user.bio)
+        totp_enabled=user.totp_enabled,bio=user.bio,
+        avatar_version=user.avatar_updated_at.isoformat() if user.avatar_updated_at else None)
+
+@router.get("/avatar")
+def avatar(user: User=Depends(get_current_user)):
+    if not user.avatar_data:
+        raise HTTPException(404,"Avatar não configurado.")
+    return Response(content=user.avatar_data,media_type=user.avatar_content_type or "image/jpeg",
+                    headers={"Cache-Control":"private, no-cache"})
+
+@router.put("/avatar")
+async def update_avatar(avatar: UploadFile=File(...), user: User=Depends(get_current_user),
+                        db: Session=Depends(get_db)):
+    raw=await avatar.read(5*1024*1024+1)
+    await avatar.close()
+    if not raw or len(raw)>5*1024*1024:
+        raise HTTPException(413,"A imagem deve ter no máximo 5 MB.")
+    try:
+        source=Image.open(BytesIO(raw))
+        if source.width*source.height>25_000_000:
+            raise HTTPException(413,"A imagem possui resolução grande demais.")
+        source=ImageOps.exif_transpose(source).convert("RGB")
+        source.thumbnail((512,512),Image.Resampling.LANCZOS)
+        output=BytesIO()
+        source.save(output,"JPEG",quality=88,optimize=True,progressive=True)
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError,OSError,ValueError):
+        raise HTTPException(400,"Arquivo de imagem inválido.")
+    user.avatar_data=output.getvalue()
+    user.avatar_content_type="image/jpeg"
+    user.avatar_updated_at=_now()
+    db.flush()
+    return {"avatar_version":user.avatar_updated_at.isoformat()}
 
 @router.post("/email/resend")
 def resend_email_verification(user:User=Depends(get_current_user),db:Session=Depends(get_db)):

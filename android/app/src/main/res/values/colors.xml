@@ -1,0 +1,16 @@
+<resources>
+    <color name="komicove_background">#080B10</color>
+    <color name="komicove_surface">#0F151D</color>
+    <color name="komicove_surface_alt">#151D27</color>
+    <color name="komicove_surface_pressed">#202B38</color>
+    <color name="komicove_border">#344152</color>
+    <color name="komicove_accent">#EF2638</color>
+    <color name="komicove_accent_pressed">#C91F30</color>
+    <color name="komicove_accent_bright">#FF4050</color>
+    <color name="komicove_glow">#66FF2438</color>
+    <color name="komicove_text">#F8F9FB</color>
+    <color name="komicove_text_secondary">#AEBBD0</color>
+    <color name="komicove_success">#35D58B</color>
+    <color name="komicove_warning">#F6C453</color>
+    <color name="komicove_error">#FF5665</color>
+</resources>

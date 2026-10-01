@@ -14,6 +14,14 @@ class _Response:
         return {"detail": "Credenciais inválidas."}
 
 
+class _ServerFailure:
+    status_code = 500
+
+    @staticmethod
+    def json():
+        return {"detail": "500 Internal Server Error"}
+
+
 def test_forbidden_api_response_is_an_authentication_error():
     with pytest.raises(api_client.ApiAuthError, match="Credenciais inválidas"):
         api_client._raise_response_error(
@@ -24,6 +32,12 @@ def test_forbidden_api_response_is_an_authentication_error():
 def test_forbidden_response_remains_a_server_error_for_permission_checks():
     with pytest.raises(api_client.ApiServerError, match="Credenciais inválidas"):
         api_client._raise_response_error(_Response(), "fallback")
+
+
+def test_internal_server_details_are_not_shown_to_users():
+    with pytest.raises(api_client.ApiServerError, match="temporariamente indisponível") as error:
+        api_client._raise_response_error(_ServerFailure(), "fallback")
+    assert "Internal Server Error" not in str(error.value)
 
 
 def test_expired_session_keeps_app_in_local_guest_mode(monkeypatch):

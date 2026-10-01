@@ -47,6 +47,14 @@ def _migrate_legacy_schema() -> None:
     if "bio" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN bio VARCHAR(160)"))
+    avatar_blob_type = "BYTEA" if _engine.dialect.name == "postgresql" else "BLOB"
+    with _engine.begin() as connection:
+        if "avatar_data" not in columns:
+            connection.execute(text(f"ALTER TABLE users ADD COLUMN avatar_data {avatar_blob_type}"))
+        if "avatar_content_type" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_content_type VARCHAR(32)"))
+        if "avatar_updated_at" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_updated_at TIMESTAMP"))
     if "last_seen_at" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP"))

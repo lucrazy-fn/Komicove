@@ -877,6 +877,104 @@ class LibraryWindow(tk.Tk):
             lc.create_text(sidebar_width // 2, 38, text="◈ Komicove", font=FLOGO, fill=c["text"])
         lc.create_line(17, 112, sidebar_width - 17, 112, fill=c["border"], width=1)
 
+        menu_host = tk.Frame(self._sb, bg=c["surface"])
+        menu_host.pack(side="top", fill="both", expand=True)
+        menu_canvas = tk.Canvas(
+            menu_host, bg=c["surface"], highlightthickness=0, bd=0,
+            width=sidebar_width - 5,
+        )
+        menu_scroll = ttk.Scrollbar(
+            menu_host, orient="vertical", command=menu_canvas.yview,
+            style="Vertical.TScrollbar",
+        )
+        self._sidebar_menu = tk.Frame(menu_canvas, bg=c["surface"])
+        menu_window = menu_canvas.create_window(
+            (0, 0), window=self._sidebar_menu, anchor="nw",
+            width=sidebar_width - 7,
+        )
+        menu_canvas.configure(yscrollcommand=menu_scroll.set)
+        menu_canvas.pack(side="left", fill="both", expand=True)
+        menu_scroll.pack(side="right", fill="y")
+
+        def update_sidebar_scroll(_event=None):
+            try:
+                content_height = max(1, self._sidebar_menu.winfo_reqheight())
+                viewport_height = max(1, menu_canvas.winfo_height())
+                viewport_width = max(1, menu_canvas.winfo_width())
+            except tk.TclError:
+                return
+            # Keep the scroll region anchored at y=0.  Using bbox("all") here
+            # allowed transient widget geometry to create an empty strip above
+            # the first sidebar item.
+            menu_canvas.configure(
+                scrollregion=(0, 0, viewport_width, max(content_height, viewport_height))
+            )
+            if content_height <= viewport_height:
+                menu_canvas.yview_moveto(0.0)
+
+        def resize_sidebar_menu(event):
+            menu_canvas.itemconfigure(menu_window, width=max(1, event.width))
+            menu_canvas.after_idle(update_sidebar_scroll)
+
+        def pointer_is_over_sidebar_menu():
+            try:
+                pointer_x = self.winfo_pointerx()
+                pointer_y = self.winfo_pointery()
+                left = menu_canvas.winfo_rootx()
+                top = menu_canvas.winfo_rooty()
+                right = left + menu_canvas.winfo_width()
+                bottom = top + menu_canvas.winfo_height()
+            except tk.TclError:
+                return False
+            return left <= pointer_x < right and top <= pointer_y < bottom
+
+        def scroll_sidebar(steps):
+            update_sidebar_scroll()
+            content_height = max(1, self._sidebar_menu.winfo_reqheight())
+            viewport_height = max(1, menu_canvas.winfo_height())
+            if content_height <= viewport_height:
+                menu_canvas.yview_moveto(0.0)
+                return
+
+            first, last = menu_canvas.yview()
+            if steps < 0 and first <= 0.0001:
+                menu_canvas.yview_moveto(0.0)
+                return
+            if steps > 0 and last >= 0.9999:
+                menu_canvas.yview_moveto(1.0)
+                return
+
+            menu_canvas.yview_scroll(steps, "units")
+            first, last = menu_canvas.yview()
+            if first < 0.0:
+                menu_canvas.yview_moveto(0.0)
+            elif last > 1.0:
+                menu_canvas.yview_moveto(1.0)
+
+        def sidebar_wheel(event):
+            if not pointer_is_over_sidebar_menu():
+                return None
+            # Windows reports a positive delta for scrolling up and a negative
+            # delta for scrolling down.
+            scroll_sidebar(-3 if event.delta > 0 else 3)
+            return "break"
+
+        def sidebar_linux_wheel(event):
+            if not pointer_is_over_sidebar_menu():
+                return None
+            scroll_sidebar(-3 if event.num == 4 else 3)
+            return "break"
+
+        self._sidebar_menu.bind("<Configure>", update_sidebar_scroll)
+        menu_canvas.bind("<Configure>", resize_sidebar_menu)
+        # Bind on the toplevel instead of bind_all on canvas enter/leave.  The
+        # embedded menu frame makes the pointer leave the canvas as soon as it
+        # reaches a button, which used to disable sidebar scrolling and let a
+        # page-level wheel handler process the same gesture instead.
+        self.bind("<MouseWheel>", sidebar_wheel)
+        self.bind("<Button-4>", sidebar_linux_wheel)
+        self.bind("<Button-5>", sidebar_linux_wheel)
+
         self._active_tab = getattr(self, "_active_tab", "library")
         self._sidebar_section(ui('NAVEGAÇÃO', 'NAVIGATION'))
         for label, cmd, tab, icon in [
@@ -911,8 +1009,7 @@ class LibraryWindow(tk.Tk):
                                     self._open_moderation,
                                     active=(self._active_tab == "moderation"), font=FLABEL, pady=7)
 
-        tk.Frame(self._sb, bg=c["surface"]).pack(fill="both", expand=True)
-        tk.Frame(self._sb, bg=c["border"], height=1).pack(fill="x", padx=16, pady=(2, 5))
+        tk.Frame(self._sidebar_menu, bg=c["border"], height=1).pack(fill="x", padx=16, pady=(12, 5))
         self._sidebar_section(ui('PREFERÊNCIAS', 'PREFERENCES'))
         for txt, cmd, icon in [
             (ui('Idioma', 'Language'), self._change_language, "settings"),
@@ -929,9 +1026,17 @@ class LibraryWindow(tk.Tk):
             self._sidebar_account_card()
         else:
             tk.Label(self._sb, text=ui('Modo convidado', 'Guest mode'), font=FSMALL, bg=c["surface"],
-                     fg=c["text_dim"]).pack(anchor="w", padx=20, pady=(8, 14))
+                     fg=c["text_dim"]).pack(side="bottom", anchor="w", padx=20, pady=(8, 14))
 
         tk.Frame(self._sb, bg=c["border"], width=1).place(relx=1, rely=0, relheight=1, anchor="ne")
+
+        # Every rebuilt screen starts with the first navigation item exactly at
+        # the top limit.  The user can then scroll only into the content below.
+        def reset_sidebar_to_top():
+            update_sidebar_scroll()
+            menu_canvas.yview_moveto(0.0)
+
+        menu_canvas.after_idle(reset_sidebar_to_top)
 
         self._main = tk.Frame(self, bg=c["bg"])
         self._main.pack(side="right", fill="both", expand=True)
@@ -941,7 +1046,7 @@ class LibraryWindow(tk.Tk):
         dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); grab_when_visible(dialog)
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
         tk.Label(head,text=ui('✦  Atualizações', '✦  Updates'),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.1.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.2.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         status=tk.Label(dialog,text=ui('Verificando versões…', 'Checking versions…'),font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
         notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
         notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
@@ -971,7 +1076,7 @@ class LibraryWindow(tk.Tk):
             "Komicove: Safe diagnostics\n",
         ) + (
             f"Windows: {updater.CURRENT_VERSION}\n"
-            + "Android: 0.1.0\n"
+            + "Android: 0.2.0\n"
             +
             ui(f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n",
                f"System: {platform.system()} {platform.release()} ({platform.machine()})\n")
@@ -988,35 +1093,111 @@ class LibraryWindow(tk.Tk):
         messagebox.showinfo(ui('Diagnóstico seguro', 'Safe diagnostics'), ui('Relatório copiado para a área de transferência.\n\nCole-o na issue sem adicionar tokens ou senhas.', 'Report copied to the clipboard.\n\nPaste it into the issue without adding tokens or passwords.'), parent=self)
 
     def _sidebar_section(self, text):
-        tk.Label(self._sb, text=text, font=design_caption(8, bold=True), bg=THEME["surface"],
+        tk.Label(self._sidebar_menu, text=text, font=design_caption(8, bold=True), bg=THEME["surface"],
                  fg=THEME["text_muted"], anchor="w").pack(fill="x", padx=19, pady=(12, 4))
 
     def _sidebar_account_card(self):
         c = THEME
-        card = tk.Frame(self._sb, bg=c["surface_alt"], cursor="hand2")
-        card.pack(fill="x", padx=10, pady=(8, 12))
-        self._profile_icon = lucide_icon("circle-user-round", size=20, state="active", dark=IS_DARK)
-        avatar = tk.Label(card, image=self._profile_icon,
-                          bg=c["accent"], fg="#ffffff", width=30, height=30)
-        avatar.pack(side="left", padx=(10, 8), pady=10)
-        info = tk.Frame(card, bg=c["surface_alt"]); info.pack(side="left", fill="x", expand=True)
-        name_label = tk.Label(info, text=getattr(self.current_user, "display_name", ui('Conta', 'Account')), font=FSMALL,
-                              bg=c["surface_alt"], fg=c["text"], anchor="w")
-        name_label.pack(fill="x")
-        role_text = tk.Label(info, text=role_label(self.current_user), font=FTINY,
-                             bg=c["surface_alt"], fg=c["text_dim"], anchor="w")
-        role_text.pack(fill="x")
-        self._logout_icon = lucide_icon("log-out", size=18, state="normal", dark=IS_DARK)
-        logout = tk.Label(card, image=self._logout_icon, bg=c["surface_alt"],
-                          cursor="hand2", padx=9)
-        logout.pack(side="right", fill="y")
-        logout.bind("<Button-1>", lambda _e: self._logout())
-        for widget in (card, avatar, info, name_label, role_text):
-            widget.bind("<Button-1>", lambda _e: self._open_profile())
+        width, height = SIDEBAR_WIDTH - 16, 70
+        card = tk.Canvas(
+            self._sb, width=width, height=height, bg=c["surface"],
+            highlightthickness=0, bd=0, cursor="hand2", takefocus=1,
+        )
+        card.pack(side="bottom", padx=8, pady=(7, 12))
+
+        # A restrained outer halo, thin accent edge and rounded surface match the
+        # floating account card from the redesign reference without a costly blur.
+        # Filled nested layers keep the outline continuous on all four sides.
+        # Canvas polygon outlines can be clipped on the right and bottom edge.
+        _rounded_rect(card, 0, 1, width - 1, height - 1, 15,
+                      fill=c["border_glow"], outline="")
+        _rounded_rect(card, 2, 3, width - 3, height - 3, 14,
+                      fill=c["accent"], outline="")
+        _rounded_rect(card, 3, 4, width - 4, height - 4, 13,
+                      fill=c["surface_alt"], outline="")
+        card.create_oval(10, 12, 54, 56, fill=c["border_glow"], outline="")
+        card.create_oval(12, 14, 52, 54, fill=c["accent"], outline="")
+        card.create_oval(14, 16, 50, 52, fill=c["surface_alt"], outline="")
+
+        self._profile_icon = lucide_icon(
+            "circle-user-round", size=23, state="white", dark=IS_DARK,
+        )
+        self._logout_icon = lucide_icon(
+            "log-out", size=19, state="normal", dark=IS_DARK,
+        )
+        username = getattr(self.current_user, "username", "local") or "local"
+        avatar_path = load_prefs().get(f"profile_avatar_{username}")
+        self._sidebar_avatar_photo = None
+
+        def paint_sidebar_avatar(path):
+            if not path or not os.path.isfile(path) or not card.winfo_exists():
+                return
+            try:
+                source = Image.open(path).convert("RGBA")
+                source = ImageOps.fit(source, (34, 34), Image.LANCZOS)
+                mask = Image.new("L", source.size, 0)
+                ImageDraw.Draw(mask).ellipse((0, 0, 33, 33), fill=255)
+                source.putalpha(mask)
+                self._sidebar_avatar_photo = ImageTk.PhotoImage(source)
+                card.delete("avatar-image")
+                card.create_image(32, 34, image=self._sidebar_avatar_photo,
+                                  tags=("profile", "avatar-image"))
+            except Exception:
+                return
+
+        if self._profile_icon:
+            card.create_image(32, 34, image=self._profile_icon,
+                              tags=("profile", "avatar-image"))
+        paint_sidebar_avatar(avatar_path)
+
+        def sync_sidebar_avatar():
+            try:
+                payload = api_client.profile_avatar(self.current_user.token)
+                avatar_dir = Path(APPDATA_DIR, "profile")
+                avatar_dir.mkdir(parents=True, exist_ok=True)
+                destination = avatar_dir / f"{username}_avatar.png"
+                temporary = destination.with_suffix(".sync")
+                temporary.write_bytes(payload)
+                with Image.open(temporary) as image:
+                    ImageOps.fit(image.convert("RGBA"), (512, 512), Image.LANCZOS).save(
+                        destination, "PNG", optimize=True,
+                    )
+                temporary.unlink(missing_ok=True)
+                save_prefs(**{f"profile_avatar_{username}": str(destination)})
+                self.after(0, lambda: paint_sidebar_avatar(str(destination)))
+            except Exception:
+                return
+
+        if not getattr(self, "_avatar_sync_started", False):
+            self._avatar_sync_started = True
+            threading.Thread(target=sync_sidebar_avatar, daemon=True).start()
+        if self._logout_icon:
+            card.create_image(width - 20, 34, image=self._logout_icon,
+                              tags=("logout",), anchor="center")
+
+        display_name = (
+            getattr(self.current_user, "display_name", None)
+            or getattr(self.current_user, "username", None)
+            or ui('Conta', 'Account')
+        )
+        card.create_text(65, 27, text=display_name, anchor="w",
+                         font=design_body(10, bold=True), fill=c["text"],
+                         width=width - 112, tags=("profile",))
+        card.create_text(65, 45, text=role_label(self.current_user), anchor="w",
+                         font=design_caption(8), fill=c["text_dim"],
+                         tags=("profile",))
+
+        card.tag_bind("logout", "<Button-1>",
+                      lambda _e: (self._logout(), "break")[1])
+        card.tag_bind("logout", "<Enter>", lambda _e: card.config(cursor="hand2"))
+        card.tag_bind("profile", "<Button-1>", lambda _e: self._open_profile())
+        card.bind("<Button-1>", lambda _e: self._open_profile())
+        card.bind("<Return>", lambda _e: self._open_profile())
+        card.bind("<space>", lambda _e: self._open_profile())
 
     def _sidebar_item(self, text, icon, cmd, *, active=False, font=FBTN, pady=11, badge=None):
         item = KomicoveSidebarItem(
-            self._sb, text, cmd, THEME,
+            self._sidebar_menu, text, cmd, THEME,
             icon_name=icon if isinstance(icon, str) else None,
             icon=None if isinstance(icon, str) else icon,
             active=active, badge=badge,

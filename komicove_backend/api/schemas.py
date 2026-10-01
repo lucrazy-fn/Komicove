@@ -58,6 +58,7 @@ class UserPublic(BaseModel):
     email_verified: bool = False
     totp_enabled: bool = False
     bio: str | None = None
+    avatar_version: str | None = None
 
 
 class AuthResponse(BaseModel):

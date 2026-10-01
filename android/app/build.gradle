@@ -6,12 +6,18 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 35
-        versionCode 10603
-        versionName '0.1.0'
+        versionCode 10720
+        versionName '0.2.0'
+        manifestPlaceholders = [appLabel: 'Komicove']
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { release { minifyEnabled false } }
+    buildTypes {
+        debug {
+            manifestPlaceholders = [appLabel: 'Komicove']
+        }
+        release { minifyEnabled false }
+    }
     testOptions { unitTests.includeAndroidResources = true }
 }
 

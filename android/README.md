@@ -1,6 +1,6 @@
 # Komicove Android: leitor nativo
 
-Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 0.1.0, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. A biblioteca pode vincular arquivos e pastas sem guardar uma segunda cópia permanente. Há ordenação alfanumérica e seleção de várias HQs para coleções.
+Aplicativo Android em Java, separado da interface desktop. Android 8.0 ou superior (API 26). Versão 0.2.0, com leitor completo, atualizações, diagnóstico seguro, preferências, EPUB de imagens e leitura guiada experimental. A biblioteca pode vincular arquivos e pastas sem guardar uma segunda cópia permanente. Há ordenação alfanumérica e seleção de várias HQs para coleções.
 
 ## Biblioteca e leitura
 

@@ -11,7 +11,7 @@ final class ZoomPage extends View {
     private void stopAnimation(){if(animator!=null){animator.cancel();animator=null;}}
     @Override protected void onDetachedFromWindow(){stopAnimation();super.onDetachedFromWindow();}
     private RectF overviewRegion;
-    Bitmap image;float zoom=1,panX,panY;private float downX,downY,lastX,lastY;private boolean pinching,moved;private final float touchSlop;
+    Bitmap image;float zoom=1,panX,panY;private float downX,downY,lastX,lastY,controlsProgress,controlsFreed,controlsBaseFit;private boolean pinching,moved;private final float touchSlop;
     private final ScaleGestureDetector scale;private final GestureDetector gestures;private final Actions actions;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
     ZoomPage(Context c,Actions a){super(c);actions=a;touchSlop=ViewConfiguration.get(c).getScaledTouchSlop();setContentDescription(I18n.t(c,"Página do quadrinho. Use dois dedos para ampliar; deslize para trocar de página."));setFocusable(true);
@@ -34,14 +34,23 @@ final class ZoomPage extends View {
     }
     void overview(RectF region){overviewRegion=new RectF(region);fitToScreen();}
     void clearOverview(){overviewRegion=null;invalidate();}
-    void setImage(Bitmap b){stopAnimation();overviewRegion=null;image=b;clamp();invalidate();}
+    void setImage(Bitmap b){stopAnimation();overviewRegion=null;image=b;controlsBaseFit=0;clamp();invalidate();}
+    void setTheme(String theme){
+        ColorMatrix matrix=new ColorMatrix();
+        if("sepia".equals(theme))matrix.set(new float[]{.393f,.769f,.189f,0,0,.349f,.686f,.168f,0,0,.272f,.534f,.131f,0,0,0,0,0,1,0});
+        else if("mono".equals(theme))matrix.setSaturation(0);
+        else if("dark".equals(theme))matrix.setScale(.78f,.78f,.82f,1);
+        else {paint.setColorFilter(null);invalidate();return;}
+        paint.setColorFilter(new ColorMatrixColorFilter(matrix));invalidate();
+    }
     void restore(float z,float x,float y){zoom=Math.max(1,Math.min(6,z));panX=x*getWidth();panY=y*getHeight();clamp();invalidate();}
     void fitToScreen(){stopAnimation();zoom=1;panX=panY=0;clamp();invalidate();}
     float normalizedX(){return getWidth()==0?0:panX/getWidth();}float normalizedY(){return getHeight()==0?0:panY/getHeight();}
+    void setControlsPresentation(float progress,float freed){controlsProgress=Math.max(0,Math.min(1,progress));controlsFreed=Math.max(0,freed);if(controlsProgress<=.001f&&image!=null&&getWidth()>0&&getHeight()>0)controlsBaseFit=fit();invalidate();}
     private float fit(){return image==null?1:Math.min((float)getWidth()/image.getWidth(),(float)getHeight()/image.getHeight());}
     private void clamp(){if(image==null)return;float s=fit()*zoom;float mx=Math.max(0,(image.getWidth()*s-getWidth())/2),my=Math.max(0,(image.getHeight()*s-getHeight())/2);panX=Math.max(-mx,Math.min(mx,panX));panY=Math.max(-my,Math.min(my,panY));}
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){if(oldw>0)panX*=w/(float)oldw;if(oldh>0)panY*=h/(float)oldh;clamp();}
-    @Override protected void onDraw(Canvas c){super.onDraw(c);if(image==null)return;c.save();c.translate(getWidth()/2f+panX,getHeight()/2f+panY);float s=fit()*zoom;c.scale(s,s);c.drawBitmap(image,-image.getWidth()/2f,-image.getHeight()/2f,paint);c.restore();if(overviewRegion!=null){float left=getWidth()/2f+panX-image.getWidth()*s/2,top=getHeight()/2f+panY-image.getHeight()*s/2;Paint border=new Paint(Paint.ANTI_ALIAS_FLAG);border.setColor(Ui.RED);border.setStyle(Paint.Style.STROKE);border.setStrokeWidth(Ui.dp(getContext(),3));c.drawRect(left+overviewRegion.left*image.getWidth()*s,top+overviewRegion.top*image.getHeight()*s,left+overviewRegion.right*image.getWidth()*s,top+overviewRegion.bottom*image.getHeight()*s,border);}}
+    @Override protected void onDraw(Canvas c){super.onDraw(c);if(image==null)return;c.save();float liveFit=fit();if(controlsProgress<=.001f||controlsBaseFit<=0)controlsBaseFit=liveFit;float base=(controlsProgress>.001f?controlsBaseFit:liveFit)*zoom,targetPresentation=zoom<=1.001f?1f+.14f*controlsProgress:1f,s=base*targetPresentation;if(zoom<=1.001f&&controlsProgress>0)s=Math.min(s,getWidth()*.98f/image.getWidth());float actualPresentation=base==0?1:s/base,contentHeight=image.getHeight()*base;float controlsOffset=-controlsFreed/2f+contentHeight*(actualPresentation-1f)/2f,centerY=getHeight()/2f+panY+controlsOffset;c.translate(getWidth()/2f+panX,centerY);c.scale(s,s);c.drawBitmap(image,-image.getWidth()/2f,-image.getHeight()/2f,paint);c.restore();if(overviewRegion!=null){float left=getWidth()/2f+panX-image.getWidth()*s/2,top=centerY-image.getHeight()*s/2;Paint border=new Paint(Paint.ANTI_ALIAS_FLAG);border.setColor(Ui.RED);border.setStyle(Paint.Style.STROKE);border.setStrokeWidth(Ui.dp(getContext(),3));c.drawRect(left+overviewRegion.left*image.getWidth()*s,top+overviewRegion.top*image.getHeight()*s,left+overviewRegion.right*image.getWidth()*s,top+overviewRegion.bottom*image.getHeight()*s,border);}}
     @Override public boolean performClick(){super.performClick();return true;}
     @Override public boolean onTouchEvent(MotionEvent e){if(overviewRegion==null)scale.onTouchEvent(e);gestures.onTouchEvent(e);
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){stopAnimation();downX=lastX=e.getX();downY=lastY=e.getY();pinching=false;moved=false;}

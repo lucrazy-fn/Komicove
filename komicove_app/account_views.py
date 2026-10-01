@@ -172,6 +172,8 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
     av.create_text(av_size // 2, av_size // 2, text=initial, font=(title[0], 20, "bold"), fill=c["accent2"])
 
     avatar_key = f"profile_avatar_{getattr(user, 'username', 'local')}"
+    avatar_dir = Path(APPDATA_DIR, "profile")
+    destination = avatar_dir / f"{getattr(user, 'username', 'local')}_avatar.png"
 
     def paint_avatar(path):
         if not path or not os.path.isfile(path):
@@ -196,15 +198,20 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
         )
         if not source:
             return
-        avatar_dir = Path(APPDATA_DIR, "profile")
         avatar_dir.mkdir(parents=True, exist_ok=True)
-        destination = avatar_dir / f"{getattr(user, 'username', 'local')}_avatar.png"
         try:
             image = Image.open(source).convert("RGBA")
             image.thumbnail((768, 768), Image.LANCZOS)
             image.save(destination, "PNG", optimize=True)
             save_prefs(**{avatar_key: str(destination)})
             paint_avatar(str(destination))
+            status.config(text=ui("Sincronizando avatar…", "Syncing avatar…"), fg=c["text_dim"])
+            def uploaded(_data, error):
+                status.config(
+                    text=error or ui("Avatar sincronizado.", "Avatar synced."),
+                    fg=c["accent2"] if error else c["read_badge_text"],
+                )
+            _run_async(root, lambda: api.upload_profile_avatar(user.token, destination.read_bytes()), uploaded)
         except Exception as exc:
             messagebox.showerror(ui("Avatar", "Avatar"), str(exc), parent=root)
 
@@ -231,6 +238,24 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
 
     status = tk.Label(container, text=ui('Carregando…', 'Loading…'), font=small, bg=c["bg"], fg=c["text_dim"])
     status.pack(anchor="w", padx=30)
+
+    def remote_avatar_loaded(data, error):
+        if error or not data:
+            return
+        try:
+            avatar_dir.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_suffix(".sync")
+            temporary.write_bytes(data)
+            with Image.open(temporary) as image:
+                normalized = ImageOps.fit(image.convert("RGBA"), (512, 512), Image.LANCZOS)
+                normalized.save(destination, "PNG", optimize=True)
+            temporary.unlink(missing_ok=True)
+            save_prefs(**{avatar_key: str(destination)})
+            paint_avatar(str(destination))
+        except Exception:
+            return
+
+    _run_async(root, lambda: api.profile_avatar(user.token), remote_avatar_loaded)
 
     if getattr(user, "role", "user") == "user":
         def use_setup_token():

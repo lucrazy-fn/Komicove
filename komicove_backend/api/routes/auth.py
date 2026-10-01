@@ -33,7 +33,8 @@ def _public(user: User) -> UserPublic:
         display_name=user.display_name or user.username,
         email=user.email, bio=user.bio,
         is_moderator=user.is_moderator, role=user.role,
-        email_verified=bool(user.email_verified), totp_enabled=bool(user.totp_enabled))
+        email_verified=bool(user.email_verified), totp_enabled=bool(user.totp_enabled),
+        avatar_version=user.avatar_updated_at.isoformat() if user.avatar_updated_at else None)
 
 def _valid_second_factor(db: Session, user: User, code: str | None) -> bool:
     if not code:
