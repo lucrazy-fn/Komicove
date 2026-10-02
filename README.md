@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="transition.png" width="850" alt="PANEL está se tornando Komicove">
+  <img src="komicovelogo.png" width="300" alt="Komicove">
 </p>
 
 # Komicove · Comic Book Reader
@@ -8,13 +8,71 @@ Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android.
 
 **Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · Licença MIT**
 
-[Site](https://lucrazy-fn.github.io/Komicove/) · [Downloads](https://github.com/lucrazy-fn/Komicove/releases) · [Issues](https://github.com/lucrazy-fn/Komicove/issues)
+[Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
+## Atualização antecipada: 0.2.0
+
+Como as atualizações estavam demorando mais do que eu gostaria, decidi disponibilizar as melhorias que já estavam prontas em vez de esperar por todas as mudanças planejadas. O desenvolvimento continua, e ainda virão mais novidades, ajustes e correções nas próximas versões.
+
+### Novidades em relação à 0.1.0
+
+- Interface redesenhada no desktop e Android, com ícones padronizados, cantos arredondados e brilho sutil.
+- Revisão das telas de conta, perfil e das opções do leitor.
+- **Android:** controles do leitor minimizáveis, liberando mais espaço para a página.
+- **Android:** melhorias no carregamento de arquivos compactados, cache, uso de memória e reaproveitamento da preparação da HQ ao girar o aparelho.
+- Pastas monitoradas com cadastro persistente, detecção de novas HQs e atualização manual.
+- Opção de ativar ou desativar pastas, ocultando suas HQs sem apagar o progresso.
+- Duplicatas ignoradas silenciosamente e um resumo final da importação.
+- Arquivos removidos ficam indisponíveis sem perder os dados de leitura; movimentos e renomeações são tratados quando identificáveis.
+- Correções na rolagem e preservação da posição da biblioteca ao usar **Mostrar mais**.
+
+A detecção automática funciona com o aplicativo em uso ou ao retomar a biblioteca. Não há monitoramento permanente com o app fechado.
+
+## Conheça a interface
+
+Estas são apenas algumas imagens do Komicove. O aplicativo possui outras telas e recursos além dos mostrados aqui.
+
+### Desktop
+
+Biblioteca com busca, filtros, progresso e acesso às suas próximas leituras.
+
+<p align="center">
+  <img src="docs/screenshots/desktop-biblioteca.png" width="1100" alt="Biblioteca do Komicove no desktop, com capas, filtros e a seção Continuar lendo">
+</p>
+
+<details>
+<summary>Ver o leitor e as pastas monitoradas no desktop</summary>
+
+#### Leitor
+
+<img src="docs/screenshots/desktop-leitor.png" width="1100" alt="Leitor desktop com uma HQ aberta, barra superior e controles inferiores">
+
+#### Pastas monitoradas
+
+<img src="docs/screenshots/desktop-pastas.png" width="1100" alt="Pastas monitoradas no desktop, com contadores, status, atualização e opção de desativar">
+
+</details>
+
+### Android
+
+Biblioteca, leitor e gerenciamento de pastas na interface nativa mobile.
+
+<table>
+  <tr><th>Biblioteca</th><th>Leitor</th><th>Pastas monitoradas</th></tr>
+  <tr>
+    <td><img src="docs/screenshots/android-biblioteca.jpg" width="240" alt="Biblioteca Android com filtros, capas, progresso e navegação inferior"></td>
+    <td><img src="docs/screenshots/android-leitor.jpg" width="240" alt="Leitor Android com uma página aberta, progresso e controles de leitura"></td>
+    <td><img src="docs/screenshots/android-pastas.jpg" width="240" alt="Pastas monitoradas Android com botão de adicionar, atualização e controle de ativação"></td>
+  </tr>
+</table>
+
+As capturas mostram o aplicativo em uso. As HQs exibidas pertencem aos respectivos titulares e não acompanham o Komicove.
+
 ## 📢 PANEL agora é Komicove
 
-**A partir da versão 0.2.0, o PANEL passa a se chamar Komicove.**
+**Desde a versão 0.1.0, o PANEL se chama Komicove.**
 
 Quando comecei o projeto, escolhi o nome **PANEL** sem saber que já existia outro leitor de quadrinhos com um nome muito parecido. Eu não conhecia esse aplicativo antes de criar e publicar o PANEL.
 
@@ -32,6 +90,10 @@ Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até a
 - **Linux x86_64:** há pacotes portátil (`.tar.gz`) e Flatpak experimental. Confira a disponibilidade na página de Releases. A compatibilidade pode variar entre distribuições.
 - **Android 8 ou superior:** baixe o APK na mesma página.
 
+Também testado no **Debian 13**, em ambiente WSL2. O pacote portátil Linux desta atualização foi compilado com glibc 2.41; a compatibilidade com distribuições mais antigas pode variar.
+
+Faça um backup antes de atualizar. No Android, o APK precisa ter uma assinatura compatível com a instalação existente; não desinstale o aplicativo para contornar incompatibilidades sem antes proteger seus dados.
+
 No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, adicione arquivos ou uma pasta pelo seletor do dispositivo. Os arquivos da pasta ficam no local original; o app usa uma cópia temporária enquanto a HQ está aberta. As HQs já importadas em versões anteriores continuam na biblioteca.
 
 Na primeira abertura da nova versão para desktop, os dados locais da antiga pasta `Panel` são copiados para `Komicove`. A pasta antiga permanece como cópia de segurança e não é apagada automaticamente.
@@ -44,6 +106,7 @@ Na primeira abertura da nova versão para desktop, os dados locais da antiga pas
 - Preferências de persistência do zoom e encaixe automático.
 - Leitura guiada experimental no Windows e no Android.
 - Botões de navegação e retorno à biblioteca com área de clique ampliada.
+- Pastas monitoradas com atualização manual e opção de ativar ou desativar.
 
 ### Leitura guiada experimental
 
