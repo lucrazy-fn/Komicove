@@ -69,6 +69,9 @@ class ComicCard:
 
     def _update_progress(self):
         c = THEME
+        if not os.path.isfile(self._path):
+            self.status_lbl.configure(text=ui("Indisponível", "Unavailable"), fg=c["accent"])
+            return
         status = get_manual_status(self._path)
         page = get_progress_page(self._path)
         # ComicInfo is cached when titles are prepared. Do not reopen archives

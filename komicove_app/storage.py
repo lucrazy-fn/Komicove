@@ -126,6 +126,29 @@ def toggle_favorite(path):
     data=load_favorites(); enabled=path not in data
     data.append(path) if enabled else data.remove(path); json_save(FAVORITES_FILE, data); _changed("favorite",path); return enabled
 def is_favorite(path): return path in load_favorites()
+
+def preserve_renamed_book(old_path, new_path):
+    """Copy path-keyed data without erasing the original or newer destination."""
+    progress = load_progress()
+    if old_path in progress and new_path not in progress:
+        save_progress(new_path, progress[old_path])
+    for filename in (BOOKMARKS_FILE, MANUAL_STATUS_FILE, os.path.join(APPDATA_DIR, "book_metadata.json")):
+        data = json_load(filename, {})
+        if old_path in data and new_path not in data:
+            data[new_path] = data[old_path]
+            json_save(filename, data)
+    favorites = load_favorites()
+    if old_path in favorites and new_path not in favorites:
+        favorites.append(new_path)
+        json_save(FAVORITES_FILE, favorites)
+    data = _stats_data()
+    changed = False
+    for entry in data["books"].values():
+        if entry.get("path") == old_path:
+            entry["path"] = new_path
+            changed = True
+    if changed:
+        json_save(STATS_FILE, data)
 def load_manual_status(): return json_load(MANUAL_STATUS_FILE, {})
 def set_manual_status(path, status):
     data=load_manual_status(); data.pop(path, None) if status is None else data.__setitem__(path, status); json_save(MANUAL_STATUS_FILE, data); _changed("status",path)

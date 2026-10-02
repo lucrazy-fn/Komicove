@@ -25,6 +25,10 @@ from komicove_app.design.styles import (
 )
 import webbrowser
 import platform, sys, threading
+import queue
+from komicove_app.monitored_folders import FolderIndex, FolderWatcher
+from komicove_app.storage import preserve_renamed_book
+from komicove_app.folder_views import render_folders, update_folders
 from PIL import ImageOps, ImageEnhance, ImageDraw
 from urllib.parse import urlparse
 
@@ -61,6 +65,12 @@ class LibraryWindow(tk.Tk):
         load_icons()
         load_library_config()
         self._sync_shared_settings()
+        self._folder_index = FolderIndex(os.path.join(_runtime._APPDATA, "monitored_folders.json"), LIBRARY_FOLDER)
+        self._folder_watcher = FolderWatcher(self._folder_index)
+        self._folder_report = None
+        self._folder_manual = False
+        self._folder_added = 0
+        self.after(250, self._poll_folders)
         prefs = load_prefs()
         if prefs.get("lang"):
             self.after(10, self._show_auth)
@@ -981,7 +991,7 @@ class LibraryWindow(tk.Tk):
             (TEXTS[LANG]['library'], self._refresh_library, "library", "book-open"),
             (TEXTS[LANG]['collections'], self._show_collections, "collections", "folders"),
         ]:
-            active = (self._active_tab == tab)
+            active = (self._active_tab == tab or self._active_tab == "folders" and tab == "library")
             self._sidebar_item(label, icon,
                 lambda f=cmd, t=tab: (setattr(self, "_active_tab", t), self._build_shell(), f())[-1],
                 active=active, font=FBTN, pady=8)
@@ -1207,6 +1217,7 @@ class LibraryWindow(tk.Tk):
         return item
 
     def _refresh_library(self):
+        self._active_tab = "library"
         c = THEME
         self._card_map.clear()
         if self._cover_loader: self._cover_loader.clear_queue()
@@ -1663,14 +1674,7 @@ class LibraryWindow(tk.Tk):
         self._refresh_library()
 
     def _scan(self):
-        from komicove_app.archive import SUPPORTED_EXTENSIONS
-        exts = SUPPORTED_EXTENSIONS
-        if not LIBRARY_FOLDER or not os.path.isdir(LIBRARY_FOLDER):
-            return []
-        return sorted([os.path.join(LIBRARY_FOLDER, f)
-                       for f in os.listdir(LIBRARY_FOLDER)
-                       if f.lower().endswith(exts) and os.path.isfile(os.path.join(LIBRARY_FOLDER, f))],
-                      key=natural_key)
+        return sorted(self._folder_index.paths(visible_only=True), key=natural_key)
 
     def _book_sort_controls(self, parent, refresh, side=None):
         c = THEME
@@ -1696,6 +1700,10 @@ class LibraryWindow(tk.Tk):
         refresh()
 
     def _open(self, path, sibling_list=None):
+        if not os.path.isfile(path):
+            messagebox.showwarning("Komicove", ui("HQ indisponível. Atualize a pasta ou restaure o arquivo. Seu progresso foi mantido.",
+                                                 "Comic unavailable. Refresh the folder or restore the file. Your progress was kept."))
+            return
         try:
             loader = SmartPageLoader(path)
         except Exception as e:
@@ -1762,15 +1770,59 @@ class LibraryWindow(tk.Tk):
                 messagebox.showerror(TEXTS[LANG]["error"], str(e))
 
     def _choose_folder(self):
+        self._show_folders()
+
+    def _show_folders(self):
+        if self._active_tab not in ("library", "folders"):
+            self._active_tab = "folders"
+            self._build_shell()
+        self._active_tab = "folders"
+        render_folders(self, THEME)
+
+    def _rescan_folders(self, key=None):
+        # One reconciliation handles moves between roots as well as this folder.
+        self._folder_manual = True
+        self._folder_watcher.refresh()
+
+    def _poll_folders(self):
+        try:
+            while True:
+                report = self._folder_watcher.events.get_nowait()
+                self._folder_added += report["added"]
+                for old, new in report["moves"]:
+                    preserve_renamed_book(old, new)
+                if not report["waiting"] and (self._folder_manual or self._folder_added):
+                    self._folder_report = {**report, "added": self._folder_added,
+                        "duplicates": max(0, report["duplicates"] - (self._folder_added - report["added"]))}
+                    self._folder_added = 0
+                    self._folder_manual = False
+                if hasattr(self, "_main"):
+                    active = getattr(self, "_active_tab", "library")
+                    if active == "folders":
+                        update_folders(self, THEME)
+                    elif active == "library" and report["changed"]:
+                        self._refresh_library()
+        except queue.Empty:
+            pass
+        self.after(250, self._poll_folders)
+
+    def destroy(self):
+        if hasattr(self, "_folder_watcher"):
+            self._folder_watcher.close()
+        super().destroy()
+
+    def _add_monitored_folder(self):
         p = filedialog.askdirectory(title=TEXTS[LANG]["choose_library_folder"],
                                     initialdir=LIBRARY_FOLDER if LIBRARY_FOLDER else None)
         if p:
+            self._folder_index.add(p)
             save_library_config(p)
             self._sync_shared_settings()
             self._capa_cache.clear()
             _COMIC_INFO_CACHE.clear()
             self._search_query = ""
-            self._refresh_library()
+            self._rescan_folders()
+            self._show_folders()
 
     def _show_collections(self):
         if self._search_bubble:
@@ -1853,7 +1905,16 @@ class LibraryWindow(tk.Tk):
         cv.bind("<Enter>", lambda e: cv.bind_all("<MouseWheel>", _on_wheel))
         cv.bind("<Leave>", lambda e: cv.unbind_all("<MouseWheel>"))
 
-        cols = scan_collections(LIBRARY_FOLDER)
+        cols = {"subfolders": [], "series": []}
+        folder_groups, series_groups = {}, {}
+        for path in self._scan():
+            folder_groups.setdefault(os.path.dirname(path), []).append(path)
+            series_groups.setdefault(_serie_name(os.path.basename(path)), []).append(path)
+        roots = {row["path"] for row in self._folder_index.snapshot()["folders"].values()}
+        cols["subfolders"] = [{"name": Path(folder).name, "path": folder, "files": sorted(files, key=natural_key)}
+                              for folder, files in folder_groups.items() if folder not in roots or len(roots) > 1]
+        cols["series"] = [{"name": name, "files": sorted(files, key=natural_key)}
+                          for name, files in series_groups.items() if len(files) >= 2]
         aliases = load_prefs().get("collection_aliases", {})
         for kind in ("subfolders", "series"):
             for item in cols[kind]:

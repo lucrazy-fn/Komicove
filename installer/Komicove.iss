@@ -1,3 +1,7 @@
+#ifndef AppSource
+  #define AppSource "..\dist\Komicove"
+#endif
+
 [Setup]
 AppId={{45B7906A-4DE9-4C45-90C0-6E43D8A48A40}
 AppVerName=Komicove 0.2.0
@@ -18,7 +22,7 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Files]
-Source: "..\dist\Komicove\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
 Type: files; Name: "{app}\PANEL.exe"

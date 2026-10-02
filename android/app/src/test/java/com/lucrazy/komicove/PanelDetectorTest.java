@@ -5,6 +5,8 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
+// Keep the previous Android 15 graphics baseline; Robolectric 4.14 cannot run API 36.
+@org.robolectric.annotation.Config(sdk=35)
 @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 public class PanelDetectorTest {
     @Test public void fallbackCoversPageAndOrdersSpread(){

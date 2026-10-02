@@ -556,7 +556,9 @@ def load_library_config():
 def save_library_config(path):
     global LIBRARY_FOLDER
     LIBRARY_FOLDER = path
-    _json_save(LIBRARY_CONFIG_FILE, {"library_folder": path})
+    cfg = _json_load(LIBRARY_CONFIG_FILE, {})
+    cfg["library_folder"] = path
+    _json_save(LIBRARY_CONFIG_FILE, cfg)
 
 
 def _cover_cache_path(comic_path: str) -> str:

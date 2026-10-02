@@ -1,24 +1,48 @@
 plugins { id 'com.android.application' }
+def releaseSigning = ['KOMICOVE_KEYSTORE', 'KOMICOVE_STORE_PASSWORD', 'KOMICOVE_KEY_ALIAS', 'KOMICOVE_KEY_PASSWORD']
+        .collectEntries { name -> [(name): providers.environmentVariable(name).getOrNull()] }
+if (releaseSigning.values().any { it != null } && !releaseSigning.values().every { it }) {
+    throw new GradleException('Release signing requires all four KOMICOVE signing environment variables.')
+}
 android {
     namespace 'com.lucrazy.komicove'
-    compileSdk 35
+    compileSdk 36
     defaultConfig {
         applicationId 'com.lucrazy.panel'
         minSdk 26
-        targetSdk 35
+        targetSdk 36
         versionCode 10720
         versionName '0.2.0'
         manifestPlaceholders = [appLabel: 'Komicove']
+        testInstrumentationRunner providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
     }
     buildFeatures { buildConfig true }
+    signingConfigs {
+        if (releaseSigning.values().every { it }) {
+            release {
+                storeFile file(releaseSigning.KOMICOVE_KEYSTORE)
+                storePassword releaseSigning.KOMICOVE_STORE_PASSWORD
+                keyAlias releaseSigning.KOMICOVE_KEY_ALIAS
+                keyPassword releaseSigning.KOMICOVE_KEY_PASSWORD
+            }
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes {
         debug {
             manifestPlaceholders = [appLabel: 'Komicove']
+            if (providers.gradleProperty('readerBenchmark').getOrElse('false').toBoolean()) {
+                applicationIdSuffix providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? '.phase2test' : '.phase1test'
+                manifestPlaceholders = [appLabel: providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'Komicove Fase 2 Teste' : 'Komicove Teste']
+            }
         }
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            if (releaseSigning.values().every { it }) signingConfig signingConfigs.release
+        }
     }
     testOptions { unitTests.includeAndroidResources = true }
+    sourceSets.androidTest.java.srcDir(layout.buildDirectory.dir('generated/phase1Baseline'))
 }
 
 tasks.register('copyNamedDebugApk', Copy) {

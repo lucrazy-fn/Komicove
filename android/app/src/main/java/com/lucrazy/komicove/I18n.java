@@ -11,6 +11,9 @@ import android.widget.Toast;
 final class I18n {
     private static final Map<String,String> EN=new LinkedHashMap<>();
     static {
+        put("Pastas da biblioteca","Library folders");put("Remover pasta","Remove folder");put("Nome da pasta","Folder name");put("Atualizando pasta…","Updating folder…");
+        put("HQ indisponível. Atualize a pasta. Seu progresso foi mantido.","Comic unavailable. Refresh the folder. Your progress was kept.");
+        put("Não foi possível atualizar as pastas. Tente novamente.","Could not refresh the folders. Try again.");
         put("Sua próxima leitura.","Your next read."); put("Biblioteca","Library"); put("Coleções","Collections");
         put("Pastas","Folders"); put("Séries","Series"); put("Minhas","Mine"); put("Nome","Name"); put("Data","Date"); put("Progresso","Progress");
         put("Ordenar:","Sort:"); put("HQs","comics"); put("lidas","read"); put("Renomear","Rename"); put("Renomear coleção","Rename collection");
