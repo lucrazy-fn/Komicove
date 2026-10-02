@@ -9,6 +9,7 @@
 .distro-icon{display:inline-block;width:22px;height:22px;flex:none;mask:center/contain no-repeat;-webkit-mask:center/contain no-repeat}
 .ubuntu-icon{background:#e95420;mask-image:url("assets/ubuntu.svg");-webkit-mask-image:url("assets/ubuntu.svg")}
 .mint-icon{background:#86be43;mask-image:url("assets/linuxmint.svg");-webkit-mask-image:url("assets/linuxmint.svg")}
+.debian-icon{background:#d70a53;mask-image:url("assets/debian.svg");-webkit-mask-image:url("assets/debian.svg")}
 @media(max-width:420px){.features{grid-template-columns:1fr}.featured{grid-column:auto}.formats{grid-template-columns:1fr}.formats article{border-right:0;border-bottom:1px solid var(--line)}.formats strong{min-height:0;margin-bottom:18px}.button{padding:14px 20px}.hero h1{font-size:3.8rem}.gallery-controls{gap:0}.gallery-controls button{padding:10px}}
 html:not(.js) .gallery-controls,html:not(.js) #expand{display:none}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.tilt{transform:none!important}}
