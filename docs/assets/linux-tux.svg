@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Local vector illustration of Tux, the Linux penguin mascot. -->
+  <path d="M14 18c-1-6 2-15 10-15s11 9 10 15c4 6 9 15 6 20-3 5-29 5-32 0-3-5 2-14 6-20Z" fill="#17191c" stroke="#a4a7ad" stroke-width=".8"/>
+  <path d="M17 20c-4 4-5 10-5 15 0 5 24 5 24 0 0-5-1-11-5-15-3 2-11 2-14 0Z" fill="#f5f5f2"/>
+  <ellipse cx="19" cy="13" rx="3.5" ry="5" fill="#fff"/>
+  <ellipse cx="29" cy="13" rx="3.5" ry="5" fill="#fff"/>
+  <ellipse cx="20" cy="14" rx="1.4" ry="2.2" fill="#17191c"/>
+  <ellipse cx="28" cy="14" rx="1.4" ry="2.2" fill="#17191c"/>
+  <path d="m16 19 8-4 8 4-8 5Z" fill="#ffcb45" stroke="#d99720" stroke-width=".8"/>
+  <path d="M15 34 5 38l-3 7c6 2 15 0 18-3Zm18 0 10 4 3 7c-6 2-15 0-18-3Z" fill="#ffcb45" stroke="#d99720" stroke-width=".8" stroke-linejoin="round"/>
+</svg>

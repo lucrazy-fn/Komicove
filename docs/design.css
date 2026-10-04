@@ -1,0 +1,141 @@
+/* Visual refinement layer. Shared interaction styles remain in styles.css. */
+:root { color-scheme: dark; --bg:#101013; --surface:#19191e; --red:#ff515b; --line:#303038; }
+h1,h2,h3 { text-wrap:balance; }
+h2 > span[data-i18n] { color:inherit; }
+.button { border-radius:7px; color:#101013; min-height:48px; gap:20px; }
+.button:hover { background:#ff7b83; }
+.button span[data-i18n],.text-link span[data-i18n] { transform:none; }
+.small { min-height:42px; }
+.light:hover { background:#ddd9d2; }
+.header { background:#101013f2; }
+.nav { gap:24px; height:86px; }
+.brand img { width:125px; height:64px; }
+.nav nav { margin-left:auto; gap:20px; font-size:.8rem; }
+.nav .github { margin-left:0; }
+.nav-tools { order:2; display:flex; align-items:center; gap:10px; }
+.language-switch { display:flex; gap:2px; padding:4px; border:1px solid var(--line); border-radius:8px; background:#ffffff03; }
+.language-switch button { min-height:34px; padding:5px 8px; background:transparent; border-radius:5px; font-size:.72rem; font-weight:700; color:var(--muted); }
+.language-switch button[aria-pressed='true'] { background:#383039; color:#ffc4c7; }
+.language-switch button:hover { color:white; }
+.nav nav > .button:hover { color:#101013; }
+
+/* Original app assets replace the decorative brand mockup. */
+.hero { grid-template-columns:1fr 1.07fr; gap:60px; min-height:710px; padding-block:85px 100px; }
+.hero-trust { font-size:.8rem; margin:25px 0 8px; }
+.hero-trust > span:first-child { color:#a3d7b4; margin-right:7px; }
+.platform { margin:0; flex-wrap:wrap; font-size:.72rem; gap:10px; }
+.hero-art { min-width:0; padding:40px 0 100px; }
+.hero-orbit { position:absolute; inset:-60px -25px; border-radius:50%; background:radial-gradient(ellipse,#e43b4933,transparent 65%); pointer-events:none; }
+.tilt { transform:rotate(-3deg); }
+.hero-preview { border:1px solid #61515c; border-radius:12px; overflow:hidden; background:#1c1b21; box-shadow:0 30px 70px #0007; }
+.preview-bar { display:flex; align-items:center; gap:12px; padding:12px 14px; font-size:.68rem; color:#cdc7d1; }
+.preview-version { margin-left:auto; color:#ff969d; }
+.hero-preview img { width:100%; height:auto; display:block; }
+.preview-label { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; color:#ffc4c7; font-size:.62rem; font-weight:700; letter-spacing:.1em; }
+.hero-reader { position:absolute; width:52%; right:-10px; bottom:62px; transform:rotate(4deg); background:#222027; border:1px solid #70606d; border-radius:9px; box-shadow:0 14px 45px #0008; overflow:hidden; }
+.hero-reader img { width:100%; height:auto; display:block; }
+.hero-reader > span { display:flex; justify-content:space-between; padding:7px 12px; font-size:.7rem; }
+.art-caption { position:absolute; bottom:0; inset-inline:0; text-align:left; font-size:.65rem; line-height:1.65; margin:0; color:#aaa2b2; }
+
+/* Cards, gallery, and readability */
+.feature { border-radius:12px; }
+.feature-icon { display:flex; align-items:center; justify-content:center; width:44px; height:44px; border:1px solid #ff515b33; border-radius:11px; background:#ff515b08; font-size:1.6rem; }
+.feature-footer > span[data-i18n] { color:var(--ink); }
+#novidades { padding-top:25px; }
+.formats { grid-template-columns:repeat(5,minmax(0,1fr)); border-radius:12px; overflow:hidden; background:var(--surface); }
+.formats article { padding:28px 20px; }
+.formats p { font-size:.85rem; }
+.formats strong { min-height:100px; font-size:2.1rem; }
+.badge { border-radius:4px; background:#283d32; color:#c5e5d0; }
+.external { background:#412b32; color:#ffc4c7; }
+.gallery { border-radius:12px; }
+.gallery-controls button { border:1px solid transparent; border-radius:7px; min-height:46px; }
+.gallery-controls button.selected { color:#ffd7da; border-color:#ff515b55; background:#ff515b12; }
+.gallery-controls button:hover { background:#ffffff06; }
+.gallery-bar button { background:#ffffff08; border:1px solid var(--line); border-radius:5px; min-height:36px; padding:5px 10px; }
+.notice { border-radius:0 8px 8px 0; }
+.notice strong { color:#ffb0b6; }
+.open-source { border-radius:15px; border-color:#67404c; background:radial-gradient(ellipse at 0 100%,#65293650,transparent 65%),var(--surface); }
+.questions summary > span[data-i18n] { color:var(--ink); font-size:1rem; font-weight:600; transform:none; }
+dialog { border-radius:12px; }
+body:has(dialog[open]) { overflow:hidden; }
+.modal-head button { border-radius:6px; min-height:44px; }
+
+/* Every platform leads to an official release, with existing install notes. */
+.downloads { border-top:1px solid var(--line); }
+.download-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
+.download-card { padding:30px; border:1px solid var(--line); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; align-items:start; position:relative; }
+.download-icon { display:block; width:48px; height:48px; margin-bottom:24px; }
+.download-icon img { display:block; width:100%; height:100%; }
+.platform .platform-icon { display:inline-block; width:18px; height:18px; vertical-align:middle; }
+.download-version { position:absolute; right:25px; top:30px; font-size:.72rem; color:var(--muted); }
+.download-card h3 { font-size:2.5rem; }
+.download-card p { font-size:.85rem; margin-top:14px; flex:1; }
+.download-card .button { width:100%; font-size:.82rem; padding-inline:12px; }
+.download-details { font-size:.78rem; margin-top:16px; text-decoration:underline; text-underline-offset:4px; }
+#linux,#android { padding:48px; margin-bottom:28px; background:var(--surface); border:1px solid var(--line); border-radius:12px; }
+#linux h2,#android h2 { font-size:3rem; margin-bottom:24px; }
+#linux .lead,#android .lead { max-width:820px; }
+#android .notice { margin-block:22px; }
+.closing { margin-top:85px; }
+.closing .eyebrow { color:#201318; }
+.footer img { width:125px; }
+:is(button,a,summary,[tabindex]):focus-visible { outline:3px solid #ff959b; outline-offset:5px; }
+
+@media (max-width:1150px) {
+  .nav { gap:14px; }
+  .nav nav { gap:14px; font-size:.75rem; }
+  .nav .github { display:none; }
+  .hero { gap:32px; }
+  .formats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .formats article { border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .formats article:nth-child(3) { border-right:0; }
+  .formats article:nth-child(4) { border-bottom:0; }
+}
+@media (max-width:900px) {
+  .nav nav { gap:10px; }
+  .nav nav a { font-size:.7rem; }
+  .brand img { width:105px; }
+  .hero { gap:24px; padding-block:65px; }
+  .hero h1 { font-size:4.6rem; }
+  .hero .actions { gap:12px; }
+}
+@media (max-width:760px) {
+  .nav-tools { order:0; margin-left:auto; }
+  .brand img { width:112px; height:64px; }
+  .nav nav { margin-left:0; }
+  .nav nav a { font-size:.9rem; }
+  .hero { grid-template-columns:1fr; padding-block:50px; gap:26px; }
+  .hero h1 { font-size:clamp(3.8rem,12vw,5.5rem); }
+  .hero-art { width:min(560px,95%); padding:15px 0 100px; }
+  .hero-reader { right:0; bottom:65px; }
+  .hero-orbit { inset-inline:0; }
+  .art-caption { margin:0; }
+  .formats { grid-template-columns:1fr 1fr; }
+  .formats article { padding:23px 18px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .formats article:nth-child(even) { border-right:0; }
+  .formats article:nth-child(3) { border-right:1px solid var(--line); }
+  .formats article:nth-child(4) { border-bottom:1px solid var(--line); }
+  .formats article:last-child { grid-column:span 2; }
+  .formats strong { min-height:75px; }
+  .gallery-controls { gap:5px; }
+  .gallery-controls button { padding:10px 12px; font-size:.8rem; }
+  .gallery-body { min-height:0; }
+  .download-grid { grid-template-columns:1fr; }
+  .download-card { padding:28px; }
+  #linux,#android { padding:28px; }
+  #linux h2,#android h2 { font-size:2.6rem; }
+  .closing { margin-top:55px; }
+}
+@media (max-width:420px) {
+  .formats { grid-template-columns:1fr; }
+  .formats article { border-right:0!important; }
+  .formats article:last-child { grid-column:auto; }
+  .formats strong { min-height:0; }
+  .hero h1 { font-size:3.8rem; }
+  .hero .actions { align-items:start; flex-direction:column; }
+  .language-switch button { padding-inline:6px; }
+  .gallery-controls button { padding-inline:8px; }
+  .modal-head h2 { font-size:1.25rem; }
+}
+html:not(.js) .language-switch { display:none; }

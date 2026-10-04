@@ -1,8 +1,26 @@
-// Adicione caminhos relativos para screenshots reais em image (ex.: assets/biblioteca.webp).
+// Local assets and shared translations keep the site usable without a build step.
+const messages = window.KOMICOVE_MESSAGES;
+const languageKey = 'komicove.site.language';
+let language = 'en';
+try { if (localStorage.getItem(languageKey) === 'pt-BR') language = 'pt-BR'; } catch { /* Storage may be unavailable in private contexts. */ }
+const t = key => messages[language][key] ?? messages.en[key] ?? key;
+function translatePage() {
+  document.documentElement.lang = language;
+  document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
+  for (const attribute of ['aria-label', 'alt']) {
+    document.querySelectorAll(`[data-i18n-${attribute}]`).forEach(node => node.setAttribute(attribute, t(node.getAttribute(`data-i18n-${attribute}`))));
+  }
+  document.querySelectorAll('[data-language]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.language === language)));
+  document.title = t('meta.title');
+  for (const selector of ['meta[name="description"]', 'meta[name="twitter:description"]', 'meta[property="og:description"]']) document.querySelector(selector).content = t('meta.description');
+  for (const selector of ['meta[name="twitter:title"]', 'meta[property="og:title"]']) document.querySelector(selector).content = t('meta.title');
+  document.querySelector('meta[property="og:locale"]').content = language === 'en' ? 'en_US' : 'pt_BR';
+}
+translatePage();
 const screens = {
-  biblioteca: {title: 'Biblioteca', description: 'Seu acervo, capas e progresso em uma única visão.', image: 'assets/biblioteca.png', alt: 'Biblioteca da interface anterior, PANEL, com capas e progresso de leitura'},
-  leitor: {title: 'Leitor', description: 'A história em primeiro plano. Zoom, miniaturas e marcadores ao alcance.', image: 'assets/leitor.png', alt: 'Tela de leitura da interface anterior, PANEL'},
-  colecoes: {title: 'Coleções', description: 'Suas séries organizadas, do primeiro volume à próxima leitura.', image: 'assets/colecoes.png', alt: 'Tela de coleções da interface anterior, PANEL'}
+  biblioteca: {image: 'assets/biblioteca.png'},
+  leitor: {image: 'assets/leitor.png'},
+  colecoes: {image: 'assets/colecoes.png'}
 };
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 document.documentElement.classList.add('js');
@@ -10,7 +28,7 @@ const menu = document.querySelector('#menu');
 const toggle = document.querySelector('.menu-toggle');
 function setMenu(open) {
   toggle.setAttribute('aria-expanded', String(open));
-  toggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+  toggle.setAttribute('aria-label', t(open ? 'nav.close' : 'nav.open'));
   menu.classList.toggle('open', open);
   menu.inert = !open && matchMedia('(max-width:760px)').matches;
 }
@@ -59,18 +77,17 @@ function contentFor(key) {
   const screen = screens[key];
   if (screen.image) {
     const img = document.createElement('img');
-    img.src = screen.image; img.alt = screen.alt; img.loading = 'lazy'; img.decoding = 'async';
+    img.src = screen.image; img.alt = t(`screen.${key}.alt`); img.loading = 'lazy'; img.decoding = 'async';
     img.addEventListener('error', () => img.replaceWith(placeholderFor(key)), {once:true});
     return img;
   }
   return placeholderFor(key);
 }
 function placeholderFor(key) {
-  const screen = screens[key];
   const div = document.createElement('div'); div.className = 'placeholder';
   for (const [tag, className, text] of [
-    ['span', 'placeholder-tag', 'ESPAÇO PARA CAPTURA REAL'], ['strong', '', screen.title],
-    ['p', '', screen.description], ['span', 'placeholder-foot', 'A imagem oficial desta tela será adicionada aqui. Esta composição não é uma captura do aplicativo.']
+    ['span', 'placeholder-tag', t('gallery.error')], ['strong', '', t(`screen.${key}.title`)],
+    ['p', '', t(`screen.${key}.description`)], ['span', 'placeholder-foot', t('gallery.errorHelp')]
   ]) {const node = document.createElement(tag); node.className = className; node.textContent = text; div.append(node);}
   return div;
 }
@@ -79,7 +96,7 @@ function selectTab(key) {
   tabs.forEach(tab => {const active = tab.dataset.tab === key; tab.classList.toggle('selected', active); tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1;});
   body.setAttribute('aria-labelledby', `tab-${key}`);
   body.replaceChildren(contentFor(key));
-  document.querySelector('#gallery-title').textContent = `Komicove / ${screens[key].title}`;
+  document.querySelector('#gallery-title').textContent = `Komicove / ${t(`screen.${key}.title`)}`;
   if (!reduced.matches) body.animate([{opacity:.1,transform:'translateY(10px)'},{opacity:1,transform:'translateY(0)'}],{duration:320,easing:'ease-out'});
 }
 tabs.forEach((tab, index) => {
@@ -96,13 +113,36 @@ tabs.forEach((tab, index) => {
 });
 selectTab(selected);
 document.querySelector('#expand').addEventListener('click', () => {
-  document.querySelector('#modal-title').textContent = `Komicove / ${screens[selected].title}`;
+  document.querySelector('#modal-title').textContent = `Komicove / ${t(`screen.${selected}.title`)}`;
   document.querySelector('#modal-content').replaceChildren(contentFor(selected));
   lightbox.showModal();
   if (!reduced.matches) lightbox.animate([{opacity:0,transform:'translateY(12px) scale(.98)'},{opacity:1,transform:'none'}],{duration:250,easing:'ease-out'});
 });
 document.querySelector('#close-modal').addEventListener('click', () => lightbox.close());
 lightbox.addEventListener('click', e => {if(e.target === lightbox) {const r=lightbox.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) lightbox.close();}});
+lightbox.addEventListener('close', () => document.querySelector('#expand').focus());
+
+function changeLanguage(next, persist = true) {
+  language = next === 'pt-BR' ? 'pt-BR' : 'en';
+  if (persist) { try { localStorage.setItem(languageKey, language); } catch { /* Language switching still works without storage. */ } }
+  translatePage();
+  setMenu(toggle.getAttribute('aria-expanded') === 'true');
+  selectTab(selected);
+  if (lightbox.open) {
+    document.querySelector('#modal-title').textContent = `Komicove / ${t(`screen.${selected}.title`)}`;
+    document.querySelector('#modal-content').replaceChildren(contentFor(selected));
+  }
+}
+document.querySelectorAll('[data-language]').forEach(button => button.addEventListener('click', () => changeLanguage(button.dataset.language)));
+window.addEventListener('storage', event => { if (event.key === languageKey) changeLanguage(event.newValue, false); });
+
+// Keep the menu usable with keyboards and close it when clicking outside.
+document.addEventListener('click', event => {
+  if (!event.target.closest('.header') && toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+});
+document.addEventListener('focusin', event => {
+  if (!event.target.closest('.header') && toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+});
 
 document.querySelectorAll('.questions details').forEach(details => {
   let animation = null;
