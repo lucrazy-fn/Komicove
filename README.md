@@ -4,6 +4,8 @@
 
 # Komicove · Comic Book Reader
 
+[English](README.md) · **Português**
+
 A free, open-source comic book reader for Windows, Linux, and Android. Organize your collection, track your progress, and read your local files with no account and no internet connection.
 
 **Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · MIT License**
