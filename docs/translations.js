@@ -171,7 +171,7 @@ window.KOMICOVE_MESSAGES = {
     "downloads.details": "See installation details",
     "nav.downloads": "Downloads",
     "nav.community": "Community",
-    "meta.title": "Komicove — Your comics. Your universe.",
+    "meta.title": "Komicove: Your comics. Your universe.",
     "meta.description": "Meet Komicove 0.2.0, an open-source comic reader for Windows, Linux, and Android. Organize your library, build collections, and read local files offline without an account."
   },
   "pt-BR": {
@@ -345,7 +345,7 @@ window.KOMICOVE_MESSAGES = {
     "downloads.details": "Ver detalhes de instalação",
     "nav.downloads": "Downloads",
     "nav.community": "Comunidade",
-    "meta.title": "Komicove — Seus quadrinhos. Seu universo.",
+    "meta.title": "Komicove: Seus quadrinhos. Seu universo.",
     "meta.description": "Conheça o Komicove 0.2.0, leitor de quadrinhos de código aberto para Windows, Linux e Android. Organize sua biblioteca, crie coleções e leia arquivos locais offline sem conta."
   }
 };
