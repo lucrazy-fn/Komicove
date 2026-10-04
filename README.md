@@ -4,144 +4,144 @@
 
 # Komicove · Comic Book Reader
 
-Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
+A free, open-source comic book reader for Windows, Linux, and Android. Organize your collection, track your progress, and read your local files with no account and no internet connection.
 
-**Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · Licença MIT**
+**Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · MIT License**
 
-[Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
+[Website](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
-> Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
+> Work in progress. The features described here match the current code; older versions may not include them.
 
-## Atualização antecipada: 0.2.0
+## Early update: 0.2.0
 
-Como as atualizações estavam demorando mais do que eu gostaria, decidi disponibilizar as melhorias que já estavam prontas em vez de esperar por todas as mudanças planejadas. O desenvolvimento continua, e ainda virão mais novidades, ajustes e correções nas próximas versões.
+Since updates were taking longer than I would like, I decided to release the improvements that were already ready instead of waiting for all the planned changes. Development continues, and more features, tweaks, and fixes are coming in future versions.
 
-### Novidades em relação à 0.1.0
+### What's new compared to 0.1.0
 
-- Interface redesenhada no desktop e Android, com ícones padronizados, cantos arredondados e brilho sutil.
-- Revisão das telas de conta, perfil e das opções do leitor.
-- **Android:** controles do leitor minimizáveis, liberando mais espaço para a página.
-- **Android:** melhorias no carregamento de arquivos compactados, cache, uso de memória e reaproveitamento da preparação da HQ ao girar o aparelho.
-- Pastas monitoradas com cadastro persistente, detecção de novas HQs e atualização manual.
-- Opção de ativar ou desativar pastas, ocultando suas HQs sem apagar o progresso.
-- Duplicatas ignoradas silenciosamente e um resumo final da importação.
-- Arquivos removidos ficam indisponíveis sem perder os dados de leitura; movimentos e renomeações são tratados quando identificáveis.
-- Correções na rolagem e preservação da posição da biblioteca ao usar **Mostrar mais**.
+- Redesigned interface on desktop and Android, with consistent icons, rounded corners, and a subtle glow.
+- Revised account, profile, and reader options screens.
+- **Android:** collapsible reader controls, freeing up more room for the page.
+- **Android:** improvements to loading compressed files, caching, memory usage, and reusing the comic's preparation when rotating the device.
+- Watched folders with persistent registration, detection of new comics, and manual refresh.
+- Option to enable or disable folders, hiding their comics without deleting progress.
+- Duplicates are silently ignored, with a summary at the end of each import.
+- Removed files become unavailable without losing reading data; moves and renames are handled when they can be identified.
+- Fixes for scrolling and for preserving the library position when using **Show more**.
 
-A detecção automática funciona com o aplicativo em uso ou ao retomar a biblioteca. Não há monitoramento permanente com o app fechado.
+Automatic detection works while the app is in use or when you return to the library. There is no permanent monitoring while the app is closed.
 
-## Conheça a interface
+## Take a look at the interface
 
-Estas são apenas algumas imagens do Komicove. O aplicativo possui outras telas e recursos além dos mostrados aqui.
+These are just a few screenshots of Komicove. The app has other screens and features beyond those shown here.
 
 ### Desktop
 
-Biblioteca com busca, filtros, progresso e acesso às suas próximas leituras.
+Library with search, filters, progress, and quick access to your next reads.
 
 <p align="center">
-  <img src="docs/screenshots/desktop-biblioteca.png" width="1100" alt="Biblioteca do Komicove no desktop, com capas, filtros e a seção Continuar lendo">
+  <img src="docs/screenshots/desktop-biblioteca.png" width="1100" alt="Komicove library on desktop, with covers, filters, and the Continue reading section">
 </p>
 
 <details>
-<summary>Ver o leitor e as pastas monitoradas no desktop</summary>
+<summary>See the reader and watched folders on desktop</summary>
 
-#### Leitor
+#### Reader
 
-<img src="docs/screenshots/desktop-leitor.png" width="1100" alt="Leitor desktop com uma HQ aberta, barra superior e controles inferiores">
+<img src="docs/screenshots/desktop-leitor.png" width="1100" alt="Desktop reader with a comic open, top bar, and bottom controls">
 
-#### Pastas monitoradas
+#### Watched folders
 
-<img src="docs/screenshots/desktop-pastas.png" width="1100" alt="Pastas monitoradas no desktop, com contadores, status, atualização e opção de desativar">
+<img src="docs/screenshots/desktop-pastas.png" width="1100" alt="Watched folders on desktop, with counters, status, refresh, and the option to disable">
 
 </details>
 
 ### Android
 
-Biblioteca, leitor e gerenciamento de pastas na interface nativa mobile.
+Library, reader, and folder management in the native mobile interface.
 
 <table>
-  <tr><th>Biblioteca</th><th>Leitor</th><th>Pastas monitoradas</th></tr>
+  <tr><th>Library</th><th>Reader</th><th>Watched folders</th></tr>
   <tr>
-    <td><img src="docs/screenshots/android-biblioteca.jpg" width="240" alt="Biblioteca Android com filtros, capas, progresso e navegação inferior"></td>
-    <td><img src="docs/screenshots/android-leitor.jpg" width="240" alt="Leitor Android com uma página aberta, progresso e controles de leitura"></td>
-    <td><img src="docs/screenshots/android-pastas.jpg" width="240" alt="Pastas monitoradas Android com botão de adicionar, atualização e controle de ativação"></td>
+    <td><img src="docs/screenshots/android-biblioteca.jpg" width="240" alt="Android library with filters, covers, progress, and bottom navigation"></td>
+    <td><img src="docs/screenshots/android-leitor.jpg" width="240" alt="Android reader with an open page, progress, and reading controls"></td>
+    <td><img src="docs/screenshots/android-pastas.jpg" width="240" alt="Android watched folders with an add button, refresh, and enable/disable toggle"></td>
   </tr>
 </table>
 
-As capturas mostram o aplicativo em uso. As HQs exibidas pertencem aos respectivos titulares e não acompanham o Komicove.
+The screenshots show the app in use. The comics displayed belong to their respective owners and are not distributed with Komicove.
 
-## 📢 PANEL agora é Komicove
+## 📢 PANEL is now Komicove
 
-**Desde a versão 0.1.0, o PANEL se chama Komicove.**
+**Since version 0.1.0, PANEL is called Komicove.**
 
-Quando comecei o projeto, escolhi o nome **PANEL** sem saber que já existia outro leitor de quadrinhos com um nome muito parecido. Eu não conhecia esse aplicativo antes de criar e publicar o PANEL.
+When I started the project, I chose the name **PANEL** without knowing that another comic reader with a very similar name already existed. I wasn't aware of that app before creating and publishing PANEL.
 
-Agora que descobri essa semelhança e o projeto está crescendo, decidi mudar o nome para dar a ele uma identidade mais própria e evitar possíveis confusões no futuro.
+Now that I've discovered the similarity and the project is growing, I decided to change the name to give it a more distinct identity and avoid possible confusion in the future.
 
-Komicove continua sendo o mesmo projeto open-source, com o mesmo desenvolvimento e objetivos. Os dados e contas existentes continuam acessíveis; as versões anteriores permanecem disponíveis com o nome PANEL.
+Komicove is still the same open-source project, with the same development and goals. Existing data and accounts remain accessible; earlier versions remain available under the PANEL name.
 
-Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até agora! ❤️
+Thank you to everyone who has been following, testing, and supporting the project so far! ❤️
 
 **PANEL → Komicove**
 
-## Para começar
+## Getting started
 
-- **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
-- **Linux x86_64:** há pacotes portátil (`.tar.gz`) e Flatpak experimental. Confira a disponibilidade na página de Releases. A compatibilidade pode variar entre distribuições.
-- **Android 8 ou superior:** baixe o APK na mesma página.
+- **Windows 10/11:** download the installer from the Releases page. You don't need to install Python to use the app.
+- **Linux x86_64:** a portable package (`.tar.gz`) and an experimental Flatpak are available. Check availability on the Releases page. Compatibility may vary between distributions.
+- **Android 8 or higher:** download the APK from the same page.
 
-Também testado no **Debian 13**, em ambiente WSL2. O pacote portátil Linux desta atualização foi compilado com glibc 2.41; a compatibilidade com distribuições mais antigas pode variar.
+Also tested on **Debian 13** in a WSL2 environment. The portable Linux package in this update was built with glibc 2.41; compatibility with older distributions may vary.
 
-Faça um backup antes de atualizar. No Android, o APK precisa ter uma assinatura compatível com a instalação existente; não desinstale o aplicativo para contornar incompatibilidades sem antes proteger seus dados.
+Back up your data before updating. On Android, the APK must be signed with a key compatible with the existing installation; do not uninstall the app to work around incompatibilities without first protecting your data.
 
-No Windows, entre no modo convidado e selecione a pasta dos seus quadrinhos. No Android, adicione arquivos ou uma pasta pelo seletor do dispositivo. Os arquivos da pasta ficam no local original; o app usa uma cópia temporária enquanto a HQ está aberta. As HQs já importadas em versões anteriores continuam na biblioteca.
+On Windows, enter guest mode and select the folder containing your comics. On Android, add files or a folder using the device's picker. Files in the folder stay in their original location; the app uses a temporary copy while the comic is open. Comics already imported in earlier versions remain in the library.
 
-Na primeira abertura da nova versão para desktop, os dados locais da antiga pasta `Panel` são copiados para `Komicove`. A pasta antiga permanece como cópia de segurança e não é apagada automaticamente.
+The first time you open the new desktop version, local data from the old `Panel` folder is copied to `Komicove`. The old folder remains as a backup and is not deleted automatically.
 
-## Recursos
+## Features
 
-- Biblioteca com capas, busca, favoritos, progresso salvo e ordem alfanumérica no Android.
-- Coleções para organizar seu acervo, com seleção de várias HQs no Android.
-- Leitor com zoom, marcadores, página dupla, modo mangá e leitura vertical.
-- Preferências de persistência do zoom e encaixe automático.
-- Leitura guiada experimental no Windows e no Android.
-- Botões de navegação e retorno à biblioteca com área de clique ampliada.
-- Pastas monitoradas com atualização manual e opção de ativar ou desativar.
+- Library with covers, search, favorites, saved progress, and alphanumeric ordering on Android.
+- Collections to organize your library, with multi-comic selection on Android.
+- Reader with zoom, bookmarks, double-page mode, manga mode, and vertical reading.
+- Preferences for zoom persistence and automatic fit.
+- Experimental guided reading on Windows and Android.
+- Navigation and return-to-library buttons with enlarged click areas.
+- Watched folders with manual refresh and the option to enable or disable them.
 
-### Leitura guiada experimental
+### Experimental guided reading
 
-Ative em **Preferências do leitor**. As setas percorrem os quadros detectados. No Windows, pressione **L** para ativar ou desativar o recurso.
+Enable it in **Reader preferences**. The arrow keys step through the detected panels. On Windows, press **L** to turn the feature on or off.
 
-Quando a detecção não reconhece as divisões da página, o leitor usa trechos aproximados com sobreposição, identificados como **Trecho**. Páginas com quadros diagonais, sobrepostos ou bordas coloridas podem não ser reconhecidas corretamente.
+When detection doesn't recognize the page's divisions, the reader uses approximate, overlapping segments, labeled **Segment**. Pages with diagonal or overlapping panels, or colored borders, may not be recognized correctly.
 
-## Formatos
+## Formats
 
-| Formato | Windows/Linux | Android |
+| Format | Windows/Linux | Android |
 | --- | --- | --- |
-| CBZ / ZIP | Suporte incluído | Suporte incluído |
-| EPUB de imagens | Suporte experimental | Suporte experimental |
-| PDF | Suporte incluído | Suporte incluído |
-| CBR / RAR | 7-Zip ou ferramenta compatível | Suporte incluído |
-| 7Z / CB7 / TAR / CBT | Requer 7-Zip instalado separadamente | Suporte incluído |
+| CBZ / ZIP | Supported | Supported |
+| Image-based EPUB | Experimental support | Experimental support |
+| PDF | Supported | Supported |
+| CBR / RAR | 7-Zip or a compatible tool | Supported |
+| 7Z / CB7 / TAR / CBT | Requires 7-Zip installed separately | Supported |
 
-Arquivos compactados devem conter páginas de imagem, inclusive dentro de pastas. O Android inclui suporte a RAR5. Arquivos com senha não são suportados.
+Compressed archives must contain image pages, including inside folders. Android includes RAR5 support. Password-protected files are not supported.
 
-## Colaborar com o Komicove
+## Contributing to Komicove
 
-Sugestões, relatos de bugs, melhorias de acessibilidade, traduções e contribuições de código são bem-vindos.
+Suggestions, bug reports, accessibility improvements, translations, and code contributions are welcome.
 
-1. Confira as Issues existentes antes de abrir uma nova.
-2. Para mudanças maiores, descreva a proposta em uma Issue antes de implementar.
-3. Crie um fork e uma branch para sua alteração.
-4. Faça uma mudança focada e teste o comportamento afetado.
-5. Abra um pull request explicando o problema, a solução e como você testou. Para alterações visuais, inclua capturas de tela.
+1. Check existing Issues before opening a new one.
+2. For larger changes, describe your proposal in an Issue before implementing it.
+3. Fork the repository and create a branch for your change.
+4. Make a focused change and test the affected behavior.
+5. Open a pull request explaining the problem, the solution, and how you tested it. For visual changes, include screenshots.
 
-## Encontrou um problema?
+## Found a problem?
 
-Abra uma [Issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues) com a versão do Komicove, seu sistema operacional, os passos para reproduzir e o resultado esperado. Se possível, inclua a mensagem de erro ou uma captura de tela.
+Open an [Issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues) with the Komicove version, your operating system, the steps to reproduce, and the expected result. If possible, include the error message or a screenshot.
 
-Para falhas na leitura guiada, informe a página e se o contador mostrava **Quadro** ou **Trecho**. Não compartilhe senhas, tokens ou arquivos de quadrinhos sem autorização.
+For guided reading failures, include the page and whether the counter showed **Panel** or **Segment**. Do not share passwords, tokens, or comic files without authorization.
 
-## Licença
+## License
 
-O Komicove usa a [licença MIT](LICENSE). As dependências mantêm suas próprias licenças.
+Komicove is released under the [MIT license](LICENSE). Dependencies retain their own licenses.
