@@ -145,10 +145,24 @@ def _7zip_batch_pages(backend, names):
 
 
 def _page_key(path, raw_key):
-    from .archive import ArchiveBackend
+    from .archive import ArchiveBackend, find_7zip, run_7zip, rarfile, natural_key, IMG_EXTS
     backend = None
     try:
-        backend = ArchiveBackend(path)
+        try:
+            backend = ArchiveBackend(path)
+        except rarfile.RarCannotExec:
+            # A RAR renamed .cbz can need an external tool even to read comments.
+            # Identity may use 7-Zip without changing the reader's format handling.
+            from pathlib import Path
+            from types import SimpleNamespace
+            executable = find_7zip()
+            if not executable:
+                raise
+            listing = run_7zip(executable,
+                ["l", "-slt", "-ba", "-sccUTF-8", "--", os.path.abspath(path)]).decode("utf-8")
+            names = sorted([line[7:] for line in listing.splitlines() if line.startswith("Path = ")
+                and Path(line[7:]).suffix.lower() in IMG_EXTS and not Path(line[7:]).name.startswith(".")], key=natural_key)
+            backend = SimpleNamespace(kind="7zip", names=names, path=path, _seven_zip=executable, close=lambda: None)
         if backend.kind == "pdf":
             return raw_key
         names = [name for name in backend.names if "__MACOSX" not in name]
@@ -171,7 +185,7 @@ def _page_key(path, raw_key):
                 for name in names:
                     with archive.open(name) as source:
                         hash_stream(source)
-        elif backend.kind == "7zip":
+        elif backend.kind == "7zip" or (backend.kind == "rar" and backend._seven_zip):
             pages = _7zip_batch_pages(backend, names)
             if pages is not None:
                 for page in pages:
@@ -217,13 +231,15 @@ def portable_id(path):
         absolute = os.path.abspath(path)
         key = os.path.normcase(absolute)
         entry = _load_index()[key]
-        if entry.get("identity_version") == 2 and entry.get("item_key"):
+        if (entry.get("identity_version") == 2 and entry.get("item_key")
+                and (entry["item_key"] != raw_key or absolute.lower().endswith(".pdf")
+                     or entry.get("fallback_revision") == 2)):
             return entry["item_key"], raw_key
         value = _page_key(absolute, raw_key)
         after = os.stat(absolute)
         if (entry["size"], entry["mtime_ns"]) != (after.st_size, after.st_mtime_ns):
             raise OSError("Comic changed while identifying pages")
-        _index[key] = dict(entry, item_key=value, identity_version=2)
+        _index[key] = dict(entry, item_key=value, identity_version=2, fallback_revision=2)
         _dirty = True
         if not _batch_depth:
             _flush_index()

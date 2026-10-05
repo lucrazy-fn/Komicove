@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -332,6 +333,27 @@ def test_batch_page_stream_never_trusts_mismatched_crc_or_order(local, monkeypat
     assert sync._7zip_batch_pages(SimpleNamespace(_seven_zip="7z", path="comic.cbr"), ["page.png"]) is None
     assert process.killed
     assert process.stdout.closed
+
+
+def test_rar_with_cbz_extension_upgrades_cached_fallback_without_losing_raw_alias(local, monkeypatch):
+    from komicove_app import archive
+    path = local / "renamed.cbz"
+    path.write_bytes(b"RAR fixture with a misleading extension")
+    raw = sync.content_id(str(path))
+    sync._index[os.path.normcase(str(path.resolve()))].update(item_key=raw, identity_version=2)
+    def unavailable_comment_decoder(path):
+        raise archive.rarfile.RarCannotExec("Cannot find working tool")
+    monkeypatch.setattr(archive, "ArchiveBackend", unavailable_comment_decoder)
+    monkeypatch.setattr(archive, "find_7zip", lambda: "7z")
+    monkeypatch.setattr(archive, "run_7zip", lambda *args: b"Path = page.jpg\n")
+    page = hashlib.sha256(b"real image bytes").digest()
+    monkeypatch.setattr(sync, "_7zip_batch_pages", lambda backend, names: [page])
+    expected = hashlib.sha256(b"komicove:pages:v2\0" + (1).to_bytes(4, "big") + page).hexdigest()
+    rows, _ = sync.build_sync_payload({}, set(), [str(path)])
+    assert rows[0]["item_key"] == expected
+    assert rows[0]["legacy_keys"] == [raw]
+    monkeypatch.setattr(sync, "_page_key", lambda *args: pytest.fail("unchanged archive was rehashed"))
+    assert sync.portable_id(str(path)) == (expected, raw)
 
 
 @pytest.mark.parametrize("stamp", [float("nan"), float("inf"), -1])
