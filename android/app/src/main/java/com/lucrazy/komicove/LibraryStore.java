@@ -40,10 +40,10 @@ final class LibraryStore {
     }
     JSONArray prepareSyncPayload()throws Exception {
         List<Book> snapshot=all();ContentIdentity identity=new ContentIdentity(context);
-        Map<String,String> keys=new HashMap<>();
+        Map<String,String> keys=new HashMap<>(),rawKeys=new HashMap<>();
         try{
             for(Book book:snapshot){
-                try{String key=identity.key(book,books);keys.put(book.id,key);}catch(IOException|SecurityException unavailable){
+                try{String key=identity.key(book,books);keys.put(book.id,key);rawKeys.put(book.id,identity.rawKey(book,books));}catch(IOException|SecurityException unavailable){
                     if(!book.itemKey.isEmpty())keys.put(book.id,book.itemKey);
                     else if(book.id.matches("[0-9a-f]{64}"))keys.put(book.id,book.id);
                 }
@@ -52,11 +52,14 @@ final class LibraryStore {
         synchronized(this){
         List<Book> current=all();boolean changed=false;JSONArray payload=new JSONArray();
         for(Book book:current){String key=keys.get(book.id);if(key==null)continue;
-            if(book.legacyItemKey.isEmpty()&&book.id.startsWith("uri-")){book.legacyItemKey=key;changed=true;}
+            String raw=rawKeys.getOrDefault(book.id,"");
+            if(book.legacyItemKey.isEmpty()&&book.id.startsWith("uri-")){book.legacyItemKey=raw;changed=true;}
             if(!key.equals(book.itemKey)){book.itemKey=key;changed=true;}
             JSONObject row=new JSONObject().put("item_key",key).put("page",book.syncUpdated==0&&book.page==0&&!book.favorite?JSONObject.NULL:book.page)
                 .put("favorite",book.favorite).put("client_updated_at",book.syncUpdated);
-            if(book.legacyItemKey.equals(key)&&!book.id.equals(key)&&book.id.matches("uri-[0-9a-f]{64}"))row.put("legacy_keys",new JSONArray().put(book.id));
+            JSONArray aliases=new JSONArray();if(!raw.isEmpty()&&!raw.equals(key))aliases.put(raw);
+            if(book.legacyItemKey.equals(raw)&&!raw.isEmpty()&&book.id.matches("uri-[0-9a-f]{64}"))aliases.put(book.id);
+            if(aliases.length()>0)row.put("legacy_keys",aliases);
             payload.put(row);
         }
         if(changed)write(current);return payload;

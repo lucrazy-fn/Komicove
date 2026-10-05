@@ -96,6 +96,34 @@ public class LibrarySyncTest {
         assertEquals(1,store.restoreBackup(new ByteArrayInputStream(backup.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
         JSONObject row=store.prepareSyncPayload().getJSONObject(0);assertEquals(4,row.getInt("page"));assertTrue(row.getBoolean("favorite"));assertTrue(row.getDouble("client_updated_at")>0);
     }
+    @Test public void repackedImagesKeepPortableIdentityAndByteAliases()throws Exception {
+        byte[][] images={"same first image".getBytes(java.nio.charset.StandardCharsets.UTF_8),"same second image".getBytes(java.nio.charset.StandardCharsets.UTF_8)};
+        byte[][] archives=new byte[2][];
+        for(int copy=0;copy<2;copy++){
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(bytes)){
+                zip.setLevel(copy==0?0:9);
+                for(int page=0;page<images.length;page++){zip.putNextEntry(new java.util.zip.ZipEntry(String.format(Locale.ROOT,"%02d.jpg",page+1)));zip.write(images[page]);zip.closeEntry();}
+                zip.putNextEntry(new java.util.zip.ZipEntry("ComicInfo.xml"));zip.write(("metadata copy "+copy).getBytes(java.nio.charset.StandardCharsets.UTF_8));zip.closeEntry();
+            }
+            archives[copy]=bytes.toByteArray();
+        }
+        Files.write(provider.file.toPath(),archives[0]);LibraryStore.Book linked=linked();
+        JSONObject uri=store.prepareSyncPayload().getJSONObject(0);String canonical=uri.getString("item_key");
+        assertEquals(contract.getString("pages_sha256"),canonical);
+        LibraryStore.Book imported=store.importStream(new ByteArrayInputStream(archives[1]),"Repacked.cbz");
+        JSONArray payload=store.prepareSyncPayload();JSONObject privateRow=null;
+        for(int i=0;i<payload.length();i++)if(payload.getJSONObject(i).getJSONArray("legacy_keys").toString().contains(imported.id))privateRow=payload.getJSONObject(i);
+        assertNotNull(privateRow);assertEquals(canonical,privateRow.getString("item_key"));assertNotEquals(imported.id,canonical);
+        assertTrue(uri.getJSONArray("legacy_keys").toString().contains(linked.id));
+        java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");
+        digest.update("komicove:pages:v2\0".getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update(java.nio.ByteBuffer.allocate(4).putInt(images.length).array());
+        for(byte[] image:images)digest.update(java.security.MessageDigest.getInstance("SHA-256").digest(image));
+        StringBuilder expected=new StringBuilder();for(byte b:digest.digest())expected.append(String.format(Locale.ROOT,"%02x",b&255));assertEquals(expected.toString(),canonical);
+        store.applySyncResponse(new JSONArray().put(remote(canonical,1,true,100)));
+        assertEquals(1,new LibraryStore(context).get(linked.id).page);assertTrue(new LibraryStore(context).get(imported.id).favorite);
+        int opened=provider.opens;new LibraryStore(context).prepareSyncPayload();assertEquals(opened,provider.opens);
+    }
     @Test public void requestsAndLocalMergeRemainBatched()throws Exception {
         JSONArray books=new JSONArray();for(int i=0;i<5001;i++){
             LibraryStore.Book book=new LibraryStore.Book();book.id=String.format(Locale.ROOT,"%064x",i);book.title="Fixture";book.file="fixture.cbz";books.put(book.json());

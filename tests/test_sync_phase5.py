@@ -197,6 +197,95 @@ def test_desktop_debounce_coalesces_edits():
     assert len(jobs) == 2
 
 
+def test_repeated_remote_snapshot_does_not_write_or_report_a_change(local, monkeypatch):
+    path = str(local / "comic.cbz")
+    rows = [{"item_key": "key", "page": 8, "favorite": True, "client_updated_at": 20}]
+    assert sync.apply_sync_response(rows, {"key": [path]})
+    monkeypatch.setattr(storage, "json_save", lambda *args: pytest.fail("unchanged remote state was rewritten"))
+    assert not sync.apply_sync_response(rows, {"key": [path]})
+    assert storage.get_progress_page(path) == 8 and storage.is_favorite(path)
+
+
+def test_remote_sync_updates_visible_desktop_library_once_and_keeps_scroll(local):
+    import queue
+    from komicove_app.library_views import LibraryWindow
+    path = str(local / "comic.cbz")
+    rows = [{"item_key": "key", "page": 8, "favorite": True, "client_updated_at": 20}]
+    refreshed = []
+    window = SimpleNamespace(_closing_app=False, _sync_events=queue.SimpleQueue(),
+        _sync_running=True, current_user=SimpleNamespace(token="session"), _sync_job=None,
+        _active_tab="library", _library_grid=None, after=lambda *args: "timer",
+        _poll_sync=lambda: None, _sync_library_state=lambda *args: None,
+        _refresh_library=lambda **options: refreshed.append(options))
+    for _ in range(2):
+        window._sync_events.put(("session", rows, {"key": [path]}, None))
+        LibraryWindow._poll_sync(window)
+    assert refreshed == [{"preserve_scroll": True}]
+    assert storage.get_progress_page(path) == 8 and storage.is_favorite(path)
+
+
+def test_remote_sync_does_not_interrupt_other_desktop_tabs(local):
+    import queue
+    from komicove_app.library_views import LibraryWindow
+    window = SimpleNamespace(_closing_app=False, _sync_events=queue.SimpleQueue(),
+        _sync_running=True, current_user=SimpleNamespace(token="session"), _sync_job=None,
+        _active_tab="reader", after=lambda *args: "timer", _poll_sync=lambda: None,
+        _sync_library_state=lambda *args: None,
+        _refresh_library=lambda **options: pytest.fail("sync interrupted the reader"))
+    path = str(local / "comic.cbz")
+    window._sync_events.put(("session", [{"item_key": "key", "page": 8, "favorite": True, "client_updated_at": 20}], {"key": [path]}, None))
+    LibraryWindow._poll_sync(window)
+    assert storage.get_progress_page(path) == 8
+
+
+def test_repacked_same_pages_migrate_both_byte_ids_and_keep_latest_state(local, server, monkeypatch):
+    import zipfile
+    db, user, exchange = server
+    files = [local / "pc.cbz", local / "android-copy.cbz"]
+    for index, path in enumerate(files):
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED if index == 0 else zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("01.jpg", b"same first image")
+            archive.writestr("02.jpg", b"same second image")
+            archive.writestr("ComicInfo.xml", f"metadata copy {index}")
+    old_ids = [sync.content_id(str(path)) for path in files]
+    assert old_ids[0] != old_ids[1]
+    for key, page, favorite, stamp in [(old_ids[0], 7, True, 100), (old_ids[1], 9, False, 200)]:
+        exchange([{"item_key": key, "page": page, "favorite": favorite, "client_updated_at": stamp}])
+    legacy_uri = "uri-" + "a" * 64
+    exchange([{"item_key": old_ids[1], "legacy_keys": [legacy_uri], "client_updated_at": 0}])
+    paths = [str(path) for path in files]
+    payload, mapping = sync.build_sync_payload({paths[0]: {"page": 7, "ts": 100}}, {paths[0]}, paths)
+    assert len(payload) == 1 and set(payload[0]["legacy_keys"]) == set(old_ids)
+    canonical = payload[0]["item_key"]
+    contract = json.loads((Path(__file__).parents[1] / "android/app/src/test/resources/portable_identity_v1.json").read_text())
+    assert canonical == contract["pages_sha256"]
+    assert canonical not in old_ids
+    response = exchange(payload)
+    sync.apply_sync_response(response, mapping)
+    assert all(storage.get_progress_page(path) == 9 and not storage.is_favorite(path) for path in paths)
+    assert db.scalar(select(LibraryStateAlias).where(LibraryStateAlias.legacy_key == legacy_uri)).item_key == canonical
+    # An older client still writes by its original byte hash and reads its alias.
+    response = exchange([{"item_key": old_ids[0], "page": 3, "favorite": True, "client_updated_at": 300}])
+    sync.apply_sync_response(response, mapping)
+    assert all(storage.get_progress_page(path) == 3 and storage.is_favorite(path) for path in paths)
+    monkeypatch.setattr(sync, "_page_key", lambda *args: pytest.fail("unchanged pages were rehashed"))
+    known = {old_ids[0]: {"sources": {"pc": {"path": paths[0], "signature": [files[0].stat().st_size, files[0].stat().st_mtime_ns]}}}}
+    assert sync.build_sync_payload({}, set(), paths, known=known)[0][0]["item_key"] == canonical
+
+
+def test_changing_page_bytes_changes_portable_identity(local):
+    import zipfile
+    path = local / "comic.cbz"
+    for image in (b"page A", b"page B"):
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("page.jpg", image)
+        current = sync.portable_id(str(path))[0]
+        if image == b"page A":
+            previous = current
+        else:
+            assert current != previous
+
+
 @pytest.mark.parametrize("stamp", [float("nan"), float("inf"), -1])
 def test_invalid_conflict_timestamps_rejected(stamp):
     with pytest.raises(ValueError):

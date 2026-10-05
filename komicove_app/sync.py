@@ -2,6 +2,8 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
+import subprocess
+import zipfile
 from contextlib import contextmanager
 from . import storage
 
@@ -75,6 +77,87 @@ def content_id(path: str) -> str:
         return value
 
 
+def _page_key(path, raw_key):
+    from .archive import ArchiveBackend
+    backend = None
+    try:
+        backend = ArchiveBackend(path)
+        if backend.kind == "pdf":
+            return raw_key
+        names = [name for name in backend.names if "__MACOSX" not in name]
+        if not names or len(names) > 10000:
+            return raw_key
+        digest = hashlib.sha256(b"komicove:pages:v2\0" + len(names).to_bytes(4, "big"))
+        total = 0
+        def hash_stream(source):
+            nonlocal total
+            page, size = hashlib.sha256(), 0
+            for chunk in iter(lambda: source.read(65536), b""):
+                size += len(chunk)
+                total += len(chunk)
+                if size > 48 * 1024 * 1024 or total > 1536 * 1024 * 1024:
+                    raise ValueError("Comic exceeds page identity limits")
+                page.update(chunk)
+            digest.update(page.digest())
+        if backend.kind == "zip":
+            with zipfile.ZipFile(path) as archive:
+                for name in names:
+                    with archive.open(name) as source:
+                        hash_stream(source)
+        elif backend.kind == "7zip":
+            for name in names:
+                process = subprocess.Popen([backend._seven_zip, "x", "-so", "-spd", "--", os.path.abspath(path), name],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                timeout = threading.Timer(60, process.kill)
+                timeout.daemon = True
+                timeout.start()
+                try:
+                    hash_stream(process.stdout)
+                    if process.wait() != 0:
+                        raise OSError("Could not read comic pages")
+                finally:
+                    timeout.cancel()
+                    process.stdout.close()
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait()
+        else:
+            from .archive import rarfile
+            with rarfile.RarFile(path) as archive:
+                for name in names:
+                    with archive.open(name) as source:
+                        hash_stream(source)
+        return digest.hexdigest()
+    except Exception:
+        # Keep the compatible byte identity when a format/decoder is unavailable.
+        return raw_key
+    finally:
+        if backend is not None:
+            backend.close()
+
+
+def portable_id(path):
+    """Sync v2 identifies ordered image bytes; reader/storage IDs remain v1."""
+    global _dirty
+    with _lock:
+        raw_key = content_id(path)
+        absolute = os.path.abspath(path)
+        key = os.path.normcase(absolute)
+        entry = _load_index()[key]
+        if entry.get("identity_version") == 2 and entry.get("item_key"):
+            return entry["item_key"], raw_key
+        value = _page_key(absolute, raw_key)
+        after = os.stat(absolute)
+        if (entry["size"], entry["mtime_ns"]) != (after.st_size, after.st_mtime_ns):
+            raise OSError("Comic changed while identifying pages")
+        _index[key] = dict(entry, item_key=value, identity_version=2)
+        _dirty = True
+        if not _batch_depth:
+            _flush_index()
+        return value, raw_key
+
+
 def seed_content_index(books):
     """Reuse already validated folder digests, only while metadata still matches."""
     global _dirty
@@ -91,7 +174,7 @@ def seed_content_index(books):
                 if source.get("signature") == [stat.st_size, stat.st_mtime_ns]:
                     key = os.path.normcase(os.path.abspath(path))
                     entry = {"sha256": digest, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-                    if _index.get(key) != entry:
+                    if any((_index.get(key) or {}).get(field) != value for field, value in entry.items()):
                         _index[key] = entry
                         _dirty = True
 
@@ -106,7 +189,7 @@ def build_sync_payload(progress: dict, favorites: set[str], paths=(), state=None
             if not os.path.isfile(path):
                 continue
             try:
-                item_id = content_id(path)
+                item_id, old_id = portable_id(path)
             except OSError:
                 continue
             paths_by_id.setdefault(item_id, []).append(path)
@@ -114,14 +197,27 @@ def build_sync_payload(progress: dict, favorites: set[str], paths=(), state=None
             page = entry.get("page") if isinstance(entry, dict) else entry
             row = {"item_key": item_id, "page": page, "favorite": path in favorites,
                    "client_updated_at": storage.sync_stamp(path, progress, state)}
+            legacy = [old_id] if old_id != item_id else []
             previous = payload.get(item_id)
+            if previous:
+                legacy = sorted(set(previous.get("legacy_keys", [])) | set(legacy))
+            if legacy:
+                row["legacy_keys"] = legacy
             if previous is None or row["client_updated_at"] > previous["client_updated_at"]:
                 payload[item_id] = row
-            elif row["client_updated_at"] == previous["client_updated_at"] == 0:
-                previous["favorite"] |= row["favorite"]
-                pages = [x for x in (previous["page"], page) if x is not None]
-                previous["page"] = max(pages) if pages else None
-    return list(payload.values()), paths_by_id
+            else:
+                if legacy:
+                    previous["legacy_keys"] = legacy
+                if row["client_updated_at"] == previous["client_updated_at"] == 0:
+                    previous["favorite"] |= row["favorite"]
+                    pages = [x for x in (previous["page"], page) if x is not None]
+                    previous["page"] = max(pages) if pages else None
+    rows = []
+    for row in payload.values():
+        legacy = row.get("legacy_keys", [])
+        for offset in range(0, max(1, len(legacy)), 16):
+            rows.append(dict(row, legacy_keys=legacy[offset:offset + 16]) if legacy else row)
+    return rows, paths_by_id
 
 
 def apply_sync_response(items, paths_by_id):
@@ -134,14 +230,19 @@ def apply_sync_response(items, paths_by_id):
                 stamp = float(item.get("client_updated_at") or 0)
                 if stamp < storage.sync_stamp(path, progress, state):
                     continue
-                entry = state.setdefault(path, {})
+                entry = dict(state.get(path, {}))
                 entry.update(ts=stamp, favorite=bool(item.get("favorite")))
+                value = progress.get(path)
                 if item.get("page") is not None:
-                    old = progress.get(path)
-                    value = dict(old) if isinstance(old, dict) else {}
+                    value = dict(value) if isinstance(value, dict) else {}
                     value.update(page=item["page"], ts=stamp)
-                    progress[path] = value
                     entry.update(page=item["page"], page_ts=stamp)
+                if (state.get(path) == entry and progress.get(path) == value
+                        and (path in favorites) == entry["favorite"]):
+                    continue
+                state[path] = entry
+                if item.get("page") is not None:
+                    progress[path] = value
                 favorites.add(path) if entry["favorite"] else favorites.discard(path)
                 changed = True
         if changed:

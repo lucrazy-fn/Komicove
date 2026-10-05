@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider android:name="com.lucrazy.komicove.LibraryPhase5FixtureProvider"
+            android:authorities="com.lucrazy.komicove.phase5fixtures" android:exported="true" />
+    </application>
+</manifest>

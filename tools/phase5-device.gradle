@@ -1,0 +1,12 @@
+// Apply with -I ../tools/phase5-device.gradle. Production builds remain unchanged.
+allprojects { project ->
+    project.plugins.withId('com.android.application') {
+        project.androidComponents.finalizeDsl { android ->
+            android.defaultConfig.testInstrumentationRunner = 'com.lucrazy.komicove.LibraryPhase5Instrumentation'
+            android.buildTypes.debug.applicationIdSuffix = '.phase5test'
+            android.buildTypes.debug.manifestPlaceholders = [appLabel: 'Komicove Fase 5 Teste']
+            android.sourceSets.debug.manifest.srcFile(project.file('src/androidTest/AndroidManifest-phase5-target.xml'))
+            android.sourceSets.androidTest.manifest.srcFile(project.file('src/androidTest/AndroidManifest-phase5.xml'))
+        }
+    }
+}

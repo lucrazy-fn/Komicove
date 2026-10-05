@@ -230,19 +230,28 @@ def get_state(user: User=Depends(get_current_user), db: Session=Depends(get_db))
 
 @router.put("/library-state", response_model=list[LibraryStateItem])
 def sync_state(body: LibrarySyncRequest, user: User=Depends(get_current_user), db: Session=Depends(get_db)):
+    """Merge portable v2 state while retaining v1 file and URI aliases."""
     # Serialize this account's read/merge/write transaction on SQLite and PostgreSQL.
     db.execute(update(User).where(User.id == user.id).values(id=User.id))
     existing, aliases = _library_rows(db, user.id)
     for incoming in body.items:
         if incoming.legacy_keys and (not re.fullmatch(r"[0-9a-f]{64}", incoming.item_key) or
-                any(not re.fullmatch(r"uri-[0-9a-f]{64}", key) for key in incoming.legacy_keys)):
+                any(not re.fullmatch(r"(?:uri-)?[0-9a-f]{64}", key) for key in incoming.legacy_keys)):
             raise HTTPException(422, "Alias de identidade inválido.")
         key = aliases[incoming.item_key].item_key if incoming.item_key in aliases else incoming.item_key
         row = existing.get(key)
-        for legacy in incoming.legacy_keys:
+        migration_keys = set(incoming.legacy_keys) - {key}
+        # A URI may already point at the v1 file hash. Only redirect that root
+        # when the client also supplies it as part of the same content migration.
+        for legacy in migration_keys:
             known = aliases.get(legacy)
-            if known is not None and known.item_key != key:
+            if known is not None and known.item_key != key and known.item_key not in migration_keys:
                 raise HTTPException(409, "A identidade antiga já pertence a outra HQ.")
+        for known in aliases.values():
+            if known.item_key in migration_keys:
+                known.item_key = key
+        for legacy in sorted(migration_keys):
+            known = aliases.get(legacy)
             if known is None:
                 known = LibraryStateAlias(user_id=user.id, legacy_key=legacy, item_key=key)
                 db.add(known)

@@ -1,4 +1,6 @@
 {
   "utf8": "Komicove portable identity v1\n",
-  "sha256": "1452f9727c88b889afa68a4e39eded1de46fb98271e0c9428a3477db422574ca"
+  "sha256": "1452f9727c88b889afa68a4e39eded1de46fb98271e0c9428a3477db422574ca",
+  "pages_utf8": ["same first image", "same second image"],
+  "pages_sha256": "0e80ce68471e455f7a05835bbc8908d9d2b1a7cadffa7c4aae7ef67525c715de"
 }

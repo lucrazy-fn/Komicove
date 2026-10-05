@@ -193,7 +193,10 @@ class LibraryWindow(tk.Tk):
                     continue
                 if error is None:
                     try:
-                        apply_sync_response(merged, paths)
+                        changed = apply_sync_response(merged, paths)
+                        if changed and getattr(self, "_active_tab", None) == "library":
+                            options = {"preserve_scroll": True} if hasattr(self, "_library_grid") else {}
+                            self._refresh_library(**options)
                     except OSError as failure:
                         error = failure
                 if error is not None:

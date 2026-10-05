@@ -118,6 +118,25 @@ final class BookSource implements Closeable {
         else{Page page=archiveIndex.pages.get(index);input=new FileInputStream(ArchivePageCache.page(prepared,index,out->extract(page,out)));}
         return new FilterInputStream(new BufferedInputStream(input,65536)){long count;public int read()throws IOException{checkCancelled();int b=in.read();if(b>=0&&++count>MAX_PAGE)throw new IOException("Página grande demais.");return b;}public int read(byte[] b,int o,int n)throws IOException{checkCancelled();int got=in.read(b,o,n);if(got>0&&(count+=got)>MAX_PAGE)throw new IOException("Página grande demais.");return got;}public long skip(long n)throws IOException{checkCancelled();long got=in.skip(Math.min(Math.max(0,n),MAX_PAGE-count+1));if((count+=got)>MAX_PAGE)throw new IOException("Página grande demais.");return got;}};
     }
+    String contentKey()throws Exception {
+        if(pdf!=null)return null;
+        java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");
+        digest.update("komicove:pages:v2\0".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(pages.size()).array());
+        final long[] total={0};
+        for(int index=0;index<pages.size();index++){
+            checkCancelled();java.security.MessageDigest page=java.security.MessageDigest.getInstance("SHA-256");
+            OutputStream sink=new OutputStream(){
+                public void write(int value)throws IOException{checkCancelled();if(++total[0]>MAX_TOTAL)throw new IOException("Comic exceeds identity limit");}
+                public void write(byte[] bytes,int offset,int count)throws IOException{checkCancelled();total[0]+=count;if(total[0]>MAX_TOTAL)throw new IOException("Comic exceeds identity limit");}
+            };
+            OutputStream hashing=new java.security.DigestOutputStream(sink,page);
+            if(zip!=null){try(InputStream input=zip.getInputStream(zip.getEntry(pages.get(index)))){copy(input,limited(hashing,MAX_PAGE));}}
+            else extract(archiveIndex.pages.get(index),hashing);
+            digest.update(page.digest());
+        }
+        StringBuilder key=new StringBuilder();for(byte value:digest.digest())key.append(String.format(Locale.ROOT,"%02x",value&255));return key.toString();
+    }
     Bitmap page(int index,int target)throws IOException {
         try{lifecycle.readLock().lockInterruptibly();}catch(InterruptedException e){Thread.currentThread().interrupt();throw new InterruptedIOException();}
         Bitmap decoded=null;
