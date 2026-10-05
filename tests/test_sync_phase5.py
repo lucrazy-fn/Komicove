@@ -286,6 +286,54 @@ def test_changing_page_bytes_changes_portable_identity(local):
             assert current != previous
 
 
+def test_solid_archive_identity_extracts_once_instead_of_once_per_page(local, monkeypatch):
+    import subprocess
+    from komicove_app import archive
+    executable = archive.find_7zip()
+    if not executable:
+        pytest.skip("7-Zip is unavailable")
+    folder = local / "pages"
+    folder.mkdir()
+    images = {"page10.jpg": b"second image", "page2.png": b"first image"}
+    for name, data in images.items():
+        (folder / name).write_bytes(data)
+    (folder / "ComicInfo.xml").write_text("metadata", encoding="utf-8")
+    path = local / "solid.cb7"
+    subprocess.run([executable, "a", "-t7z", "-ms=on", str(path), "."], cwd=folder,
+        capture_output=True, check=True)
+    expected = hashlib.sha256(b"komicove:pages:v2\0" + (2).to_bytes(4, "big")
+        + hashlib.sha256(images["page2.png"]).digest()
+        + hashlib.sha256(images["page10.jpg"]).digest()).hexdigest()
+    real_popen, calls = subprocess.Popen, []
+    def popen(args, **kwargs):
+        if args[1] == "x":
+            calls.append(args)
+        return real_popen(args, **kwargs)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    assert sync.portable_id(str(path))[0] == expected
+    assert len(calls) == 1
+    assert sync.portable_id(str(path))[0] == expected
+    assert len(calls) == 1
+
+
+def test_batch_page_stream_never_trusts_mismatched_crc_or_order(local, monkeypatch):
+    import io
+    from komicove_app import archive
+    monkeypatch.setattr(archive, "run_7zip", lambda *args:
+        b"Path = page.png\nSize = 3\nCRC = 352441C2\n")  # CRC of abc.
+    class Process:
+        stdout = io.BytesIO(b"xyz")
+        killed = False
+        def poll(self): return 0 if self.killed else None
+        def kill(self): self.killed = True
+        def wait(self): return 0
+    process = Process()
+    monkeypatch.setattr(sync.subprocess, "Popen", lambda *args, **kwargs: process)
+    assert sync._7zip_batch_pages(SimpleNamespace(_seven_zip="7z", path="comic.cbr"), ["page.png"]) is None
+    assert process.killed
+    assert process.stdout.closed
+
+
 @pytest.mark.parametrize("stamp", [float("nan"), float("inf"), -1])
 def test_invalid_conflict_timestamps_rejected(stamp):
     with pytest.raises(ValueError):

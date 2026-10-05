@@ -4,6 +4,8 @@ import os
 import threading
 import subprocess
 import zipfile
+import tempfile
+import zlib
 from contextlib import contextmanager
 from . import storage
 
@@ -77,6 +79,71 @@ def content_id(path: str) -> str:
         return value
 
 
+def _7zip_batch_pages(backend, names):
+    """Frame one extraction by listed sizes and verify each page's CRC/order."""
+    from .archive import run_7zip
+    listing = run_7zip(backend._seven_zip,
+        ["l", "-slt", "-ba", "-sccUTF-8", "--", os.path.abspath(backend.path)]).decode("utf-8")
+    selected, records = set(names), []
+    for block in listing.replace("\r\n", "\n").split("\n\n"):
+        fields = dict(line.split(" = ", 1) for line in block.splitlines() if " = " in line)
+        if fields.get("Path") not in selected:
+            continue
+        size, crc = fields.get("Size", ""), fields.get("CRC", "")
+        if not size.isdecimal() or len(crc) != 8:
+            return None
+        try:
+            records.append((fields["Path"], int(size), int(crc, 16)))
+        except ValueError:
+            return None
+    if (len(records) != len(names) or len({row[0] for row in records}) != len(names)
+            or any(size > 48 * 1024 * 1024 for _, size, _ in records)
+            or sum(size for _, size, _ in records) > 1536 * 1024 * 1024
+            or any("\n" in name or "\r" in name for name in names)):
+        return None
+    fd, list_path = tempfile.mkstemp(prefix="komicove-identity-", suffix=".txt")
+    process = None
+    timeout = None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write("\n".join(names))
+        process = subprocess.Popen([backend._seven_zip, "x", "-so", "-spd", "-scsUTF-8",
+            "-i@" + list_path, "--", os.path.abspath(backend.path)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        timeout = threading.Timer(60, process.kill)
+        timeout.daemon = True
+        timeout.start()
+        pages = {}
+        for name, size, expected_crc in records:
+            digest, crc, remaining = hashlib.sha256(), 0, size
+            while remaining:
+                chunk = process.stdout.read(min(65536, remaining))
+                if not chunk:
+                    raise OSError("Incomplete comic page stream")
+                digest.update(chunk)
+                crc = zlib.crc32(chunk, crc)
+                remaining -= len(chunk)
+            if crc != expected_crc:
+                raise OSError("Comic extraction order or checksum changed")
+            pages[name] = digest.digest()
+        if process.stdout.read(1) or process.wait() != 0:
+            raise OSError("Unexpected comic page stream")
+        return [pages[name] for name in names]
+    except OSError:
+        # Unusual decoders/orders retain the verified per-page extraction path.
+        return None
+    finally:
+        if timeout is not None:
+            timeout.cancel()
+        if process is not None:
+            process.stdout.close()
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+        os.remove(list_path)
+
+
 def _page_key(path, raw_key):
     from .archive import ArchiveBackend
     backend = None
@@ -105,6 +172,11 @@ def _page_key(path, raw_key):
                     with archive.open(name) as source:
                         hash_stream(source)
         elif backend.kind == "7zip":
+            pages = _7zip_batch_pages(backend, names)
+            if pages is not None:
+                for page in pages:
+                    digest.update(page)
+                return digest.hexdigest()
             for name in names:
                 process = subprocess.Popen([backend._seven_zip, "x", "-so", "-spd", "--", os.path.abspath(path), name],
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
