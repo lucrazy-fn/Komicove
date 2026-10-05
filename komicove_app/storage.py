@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import time
+import threading
 from datetime import datetime, timezone
 
 def _migrate_legacy_data(legacy, destination):
@@ -70,15 +71,39 @@ def json_load(path, default):
     except (OSError, json.JSONDecodeError): return default
 
 def json_save(path, data):
+    temporary = None
     try:
-        with open(path, "w", encoding="utf-8") as target: json.dump(data, target, indent=2)
+        fd, temporary = tempfile.mkstemp(prefix=".state-", dir=os.path.dirname(os.path.abspath(path)))
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            json.dump(data, target, indent=2)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, path)
     except OSError: return False
+    finally:
+        if temporary and os.path.exists(temporary): os.remove(temporary)
     return True
 
 _progress_cache: dict = {}
 _progress_dirty = False
 _progress_timer = None
 _change_listeners = []
+STATE_LOCK = threading.RLock()
+SYNC_STATE_FILE = os.path.join(APPDATA_DIR, "library_sync_state.json")
+
+def unregister_change_listener(callback):
+    if callback in _change_listeners: _change_listeners.remove(callback)
+
+def sync_snapshot():
+    with STATE_LOCK:
+        return ({path: dict(value) if isinstance(value, dict) else value
+                 for path, value in load_progress().items()}, set(load_favorites()),
+                json_load(SYNC_STATE_FILE, {}))
+
+def sync_stamp(path, progress, state):
+    entry = progress.get(path)
+    return max(float(entry.get("ts", 0)) if isinstance(entry, dict) else 0,
+               float(state.get(path, {}).get("ts", 0)))
 def register_change_listener(callback):
     if callback not in _change_listeners: _change_listeners.append(callback)
 def _changed(kind,path):
@@ -87,17 +112,26 @@ def _changed(kind,path):
         except Exception: pass
 
 def load_progress():
-    if not _progress_cache: _progress_cache.update(json_load(PROGRESS_FILE, {}))
+    if not _progress_cache:
+        _progress_cache.update(json_load(PROGRESS_FILE, {}))
+        for path, entry in json_load(SYNC_STATE_FILE, {}).items():
+            local = _progress_cache.get(path)
+            stamp = local.get("ts", 0) if isinstance(local, dict) else 0
+            if entry.get("page") is not None and entry.get("page_ts", -1) >= stamp:
+                _progress_cache[path] = {"page": entry["page"], "ts": entry["page_ts"]}
     return _progress_cache
 
 def flush_progress():
     global _progress_dirty, _progress_timer
     _progress_timer = None
-    if _progress_dirty: json_save(PROGRESS_FILE, _progress_cache); _progress_dirty = False
+    if _progress_dirty and json_save(PROGRESS_FILE, _progress_cache): _progress_dirty = False
 
 def save_progress(path, page):
     global _progress_dirty, _progress_timer
-    load_progress(); _progress_cache[path] = {"page": page, "ts": time.time()} if isinstance(page, int) else page
+    with STATE_LOCK:
+        load_progress()
+        stamp = sync_stamp(path, _progress_cache, json_load(SYNC_STATE_FILE, {}))
+        _progress_cache[path] = {"page": page, "ts": max(time.time(), stamp + .000001)} if isinstance(page, int) else page
     _progress_dirty = True
     if _progress_timer is not None:
         try:
@@ -121,10 +155,22 @@ def toggle_bookmark(path, page):
     pages.remove(page) if page in pages else pages.append(page); pages.sort(); data[path]=pages
     json_save(BOOKMARKS_FILE, data); _changed("bookmark",path); return page in pages
 def get_bookmarks(path): return load_bookmarks().get(path, [])
-def load_favorites(): return json_load(FAVORITES_FILE, [])
+def load_favorites():
+    data = set(json_load(FAVORITES_FILE, []))
+    for path, entry in json_load(SYNC_STATE_FILE, {}).items():
+        if "favorite" in entry:
+            data.add(path) if entry["favorite"] else data.discard(path)
+    return sorted(data)
 def toggle_favorite(path):
-    data=load_favorites(); enabled=path not in data
-    data.append(path) if enabled else data.remove(path); json_save(FAVORITES_FILE, data); _changed("favorite",path); return enabled
+    with STATE_LOCK:
+        data=load_favorites(); enabled=path not in data
+        data.append(path) if enabled else data.remove(path)
+        state=json_load(SYNC_STATE_FILE, {})
+        stamp=max(time.time(), sync_stamp(path, load_progress(), state) + .000001)
+        state.setdefault(path, {}).update(ts=stamp, favorite=enabled)
+        if not json_save(SYNC_STATE_FILE, state): raise OSError("Could not save favorite state")
+        json_save(FAVORITES_FILE, data)
+    _changed("favorite",path); return enabled
 def is_favorite(path): return path in load_favorites()
 
 def preserve_renamed_book(old_path, new_path):
@@ -141,6 +187,10 @@ def preserve_renamed_book(old_path, new_path):
     if old_path in favorites and new_path not in favorites:
         favorites.append(new_path)
         json_save(FAVORITES_FILE, favorites)
+    state=json_load(SYNC_STATE_FILE,{})
+    if old_path in state and new_path not in state:
+        state[new_path]=dict(state[old_path])
+        json_save(SYNC_STATE_FILE,state)
     data = _stats_data()
     changed = False
     for entry in data["books"].values():
@@ -272,8 +322,9 @@ def personal_statistics():
         "genres": genres,
     }
 def export_backup(path):
-    json_save(path, {"progress":json_load(PROGRESS_FILE,{}),"bookmarks":json_load(BOOKMARKS_FILE,{}),
-        "favorites":json_load(FAVORITES_FILE,[]),"manual_status":json_load(MANUAL_STATUS_FILE,{}),
+    flush_progress()
+    json_save(path, {"progress":load_progress(),"bookmarks":json_load(BOOKMARKS_FILE,{}),
+        "favorites":load_favorites(),"manual_status":json_load(MANUAL_STATUS_FILE,{}),
         "prefs":json_load(PREFS_FILE,{}),"statistics":json_load(STATS_FILE,{}),"exported_at":time.time()})
 def import_backup(path):
     data=json_load(path,{})
@@ -282,6 +333,14 @@ def import_backup(path):
         if key in data:
             current=json_load(file,default); current.update(data[key]); json_save(file,current)
     if "favorites" in data: json_save(FAVORITES_FILE,data["favorites"])
+    if "progress" in data or "favorites" in data:
+        # Restored values are new local edits, including favorite removals.
+        state=json_load(SYNC_STATE_FILE,{})
+        progress=json_load(PROGRESS_FILE,{})
+        favorites=set(json_load(FAVORITES_FILE,[]))
+        for book in set(progress) | favorites | set(state):
+            state[book]={"ts":max(time.time(),sync_stamp(book,progress,state)+.000001),"favorite":book in favorites}
+        json_save(SYNC_STATE_FILE,state)
     _progress_cache.clear()
 def collection_progress(files):
     data=load_progress(); read=0; latest=None; latest_ts=-1

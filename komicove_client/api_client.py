@@ -173,7 +173,7 @@ def mark_notification_read(token: str, notification_id: str) -> None:
 def sync_library_state(token: str, items: list[dict]) -> list[dict]:
     return _request_json(
         "PUT", "/account/library-state", token=token, payload={"items": items},
-        auth_statuses=(400, 401, 403, 409, 422),
+        auth_statuses=(401, 403),
     )
 
 

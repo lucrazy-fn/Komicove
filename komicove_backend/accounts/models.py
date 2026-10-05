@@ -150,6 +150,14 @@ class LibraryState(Base):
     client_updated_at: Mapped[float] = mapped_column(Float, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=_now)
 
+class LibraryStateAlias(Base):
+    __tablename__ = "library_state_aliases"
+    __table_args__ = (UniqueConstraint("user_id", "legacy_key"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    legacy_key: Mapped[str] = mapped_column(String(512))
+    item_key: Mapped[str] = mapped_column(String(512))
+
 class Report(Base):
     __tablename__ = "reports"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)

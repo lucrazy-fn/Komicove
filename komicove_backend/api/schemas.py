@@ -96,7 +96,8 @@ class LibraryStateItem(BaseModel):
     item_key: str = Field(min_length=1, max_length=512)
     page: int | None = Field(default=None, ge=0)
     favorite: bool = False
-    client_updated_at: float | None = None
+    client_updated_at: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    legacy_keys: list[str] = Field(default_factory=list, max_length=16)
 
 class LibrarySyncRequest(BaseModel):
     items: list[LibraryStateItem] = Field(default_factory=list, max_length=5000)

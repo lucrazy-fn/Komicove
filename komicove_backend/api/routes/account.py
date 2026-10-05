@@ -1,12 +1,14 @@
 from datetime import timedelta
 import hashlib
+import re
+import time
 from io import BytesIO
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from komicove_backend.accounts import account_actions
-from komicove_backend.accounts.models import AccountActionToken, LibraryState, Notification, SessionToken, TotpRecoveryCode, User, _now
+from komicove_backend.accounts.models import AccountActionToken, LibraryState, LibraryStateAlias, Notification, SessionToken, TotpRecoveryCode, User, _now
 from komicove_backend.accounts.security import hash_password, verify_password
 from komicove_backend.accounts.security import (new_recovery_codes, new_totp_secret,
     recovery_code_hash, verify_totp)
@@ -206,23 +208,75 @@ def revoke_session(session_id: str, authorization: str = Header(...),
             return None
     raise HTTPException(404, "Sessão não encontrada. / Session not found.")
 
+def _library_rows(db, user_id):
+    rows = {x.item_key: x for x in db.scalars(select(LibraryState).where(LibraryState.user_id == user_id)).all()}
+    aliases = {x.legacy_key: x for x in db.scalars(select(LibraryStateAlias).where(LibraryStateAlias.user_id == user_id)).all()}
+    return rows, aliases
+
+
+def _library_response(rows, aliases):
+    result = []
+    for key, row in [(key, row) for key, row in rows.items()] + [
+            (key, rows[alias.item_key]) for key, alias in aliases.items() if alias.item_key in rows]:
+        result.append(LibraryStateItem(item_key=key, page=row.page, favorite=row.favorite,
+                                      client_updated_at=float(row.client_updated_at or 0)))
+    return result
+
+
 @router.get("/library-state", response_model=list[LibraryStateItem])
-def get_state(user: User=Depends(get_current_user),db: Session=Depends(get_db)):
-    return [LibraryStateItem(item_key=x.item_key,page=x.page,favorite=x.favorite,
-            client_updated_at=float(x.client_updated_at or 0))
-        for x in db.scalars(select(LibraryState).where(LibraryState.user_id==user.id)).all()]
+def get_state(user: User=Depends(get_current_user), db: Session=Depends(get_db)):
+    return _library_response(*_library_rows(db, user.id))
+
 
 @router.put("/library-state", response_model=list[LibraryStateItem])
-def sync_state(body: LibrarySyncRequest,user: User=Depends(get_current_user),db: Session=Depends(get_db)):
-    existing={x.item_key:x for x in db.scalars(select(LibraryState).where(LibraryState.user_id==user.id)).all()}
+def sync_state(body: LibrarySyncRequest, user: User=Depends(get_current_user), db: Session=Depends(get_db)):
+    # Serialize this account's read/merge/write transaction on SQLite and PostgreSQL.
+    db.execute(update(User).where(User.id == user.id).values(id=User.id))
+    existing, aliases = _library_rows(db, user.id)
     for incoming in body.items:
-        row=existing.get(incoming.item_key)
+        if incoming.legacy_keys and (not re.fullmatch(r"[0-9a-f]{64}", incoming.item_key) or
+                any(not re.fullmatch(r"uri-[0-9a-f]{64}", key) for key in incoming.legacy_keys)):
+            raise HTTPException(422, "Alias de identidade inválido.")
+        key = aliases[incoming.item_key].item_key if incoming.item_key in aliases else incoming.item_key
+        row = existing.get(key)
+        for legacy in incoming.legacy_keys:
+            known = aliases.get(legacy)
+            if known is not None and known.item_key != key:
+                raise HTTPException(409, "A identidade antiga já pertence a outra HQ.")
+            if known is None:
+                known = LibraryStateAlias(user_id=user.id, legacy_key=legacy, item_key=key)
+                db.add(known)
+                aliases[legacy] = known
+            old = existing.pop(legacy, None)
+            if old is not None:
+                if row is None:
+                    old.item_key = key
+                    existing[key] = row = old
+                else:
+                    if (old.client_updated_at or 0) > (row.client_updated_at or 0):
+                        row.page, row.favorite, row.client_updated_at = old.page, old.favorite, old.client_updated_at
+                    elif (old.client_updated_at or 0) == (row.client_updated_at or 0) == 0:
+                        pages = [x for x in (row.page, old.page) if x is not None]
+                        row.page = max(pages) if pages else None
+                        row.favorite = row.favorite or old.favorite
+                    db.delete(old)
+        stamp = float(incoming.client_updated_at) if incoming.client_updated_at is not None else time.time()
         if row is None:
-            row=LibraryState(user_id=user.id,item_key=incoming.item_key); db.add(row); existing[incoming.item_key]=row
-        incoming_stamp = float(incoming.client_updated_at or 0)
-        if (row.client_updated_at or 0) <= incoming_stamp:
-            row.page=incoming.page; row.favorite=incoming.favorite
-            row.client_updated_at=incoming_stamp; row.updated_at=_now()
+            row = LibraryState(user_id=user.id, item_key=key, page=incoming.page,
+                               favorite=incoming.favorite, client_updated_at=stamp)
+            db.add(row)
+            existing[key] = row
+        elif stamp > (row.client_updated_at or 0):
+            # Null represents a device with no reading progress, never an erase.
+            if incoming.page is not None:
+                row.page = incoming.page
+            row.favorite = incoming.favorite
+            row.client_updated_at = stamp
+            row.updated_at = _now()
+        elif stamp == (row.client_updated_at or 0) == 0:
+            # Bootstrap legacy untimestamped state without losing saved values.
+            pages = [x for x in (row.page, incoming.page) if x is not None]
+            row.page = max(pages) if pages else None
+            row.favorite = row.favorite or incoming.favorite
     db.flush()
-    return [LibraryStateItem(item_key=x.item_key,page=x.page,favorite=x.favorite,
-            client_updated_at=float(x.client_updated_at or 0)) for x in existing.values()]
+    return _library_response(existing, aliases)

@@ -232,6 +232,11 @@ final class I18n {
         put("A comunidade está indisponível porque nenhum servidor foi configurado. A leitura local continua funcionando.","The community is unavailable because no server is configured. Local reading still works.");
         put("Sem título","Untitled"); put("Criador","Creator"); put("história","story"); put("histórias","stories");
     }
+    static {
+        put("Não foi possível concluir a solicitação.","Could not complete the request.");
+        put("Alias de identidade inválido.","Invalid identity alias.");
+        put("A identidade antiga já pertence a outra HQ.","The legacy identity already belongs to another comic.");
+    }
     private static void put(String pt,String en){EN.put(pt,en);}
     static String language(Context c){android.content.SharedPreferences current=c.getSharedPreferences("komicove_ui",0);return current.contains("language")?current.getString("language","pt"):c.getSharedPreferences("panel_ui",0).getString("language","pt");}
     static void language(Context c,String value){c.getSharedPreferences("komicove_ui",0).edit().putString("language",value).apply();}

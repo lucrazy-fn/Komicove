@@ -27,7 +27,8 @@ import webbrowser
 import platform, sys, threading
 import queue
 from komicove_app.monitored_folders import FolderIndex, FolderWatcher
-from komicove_app.storage import preserve_renamed_book
+from komicove_app.storage import preserve_renamed_book, sync_snapshot, unregister_change_listener, flush_progress
+from komicove_app.sync import apply_sync_response, seed_content_index
 from komicove_app.folder_views import render_folders, update_folders
 from PIL import ImageOps, ImageEnhance, ImageDraw
 from urllib.parse import urlparse
@@ -57,6 +58,10 @@ class LibraryWindow(tk.Tk):
         self._search_bubble= None
         self._meta_tooltip = None
         self._sync_job = None
+        self._closing_app = False
+        self._sync_running = False
+        self._sync_events = queue.SimpleQueue()
+        self._sync_poll = self.after(100, self._poll_sync)
         self._session_expiry_handled = False
         register_change_listener(self._schedule_sync)
         self._notification_count = 0
@@ -151,36 +156,54 @@ class LibraryWindow(tk.Tk):
         self._start()
 
     def _sync_library_state(self, auth):
+        self._sync_job = None
+        if auth is None or self._closing_app:
+            return
+        if self._sync_running:
+            self._schedule_sync()
+            return
+        self._sync_running = True
+        progress, favorites, state = sync_snapshot()
+        paths = self._folder_index.paths(visible_only=False)
         def worker():
             try:
-                progress, favorites = load_progress(), set(load_favorites())
-                payload, paths_by_id = build_sync_payload(progress, favorites)
-                merged = api_client.sync_library_state(auth.token, payload)
-                changed = False
-                for item in merged:
-                    path = paths_by_id.get(item["item_key"])
-                    if not path: continue
-                    local = progress.get(path, {})
-                    local_stamp = local.get("ts", 0) if isinstance(local, dict) else 0
-                    remote_stamp = float(item.get("client_updated_at") or 0)
-                    if item.get("page") is not None and remote_stamp > local_stamp:
-                        progress[path] = {"page": item["page"], "ts": remote_stamp}; changed = True
-                    if remote_stamp >= local_stamp:
-                        if item.get("favorite"): favorites.add(path)
-                        else: favorites.discard(path)
-                        changed = True
-                if changed:
-                    _json_save(PROGRESS_FILE, progress); _json_save(FAVORITES_FILE, sorted(favorites))
-            except api_client.ApiAuthError:
-                session_store.clear_session()
-                self.after(0, lambda: self._finish_expired_session(auth.token))
-            except api_client.ApiUnavailableError as exc:
-                log.debug("%s: %s", ui('Sincronização da biblioteca indisponível', 'Library sync unavailable'), exc)
-            except api_client.ApiServerError as exc:
-                log.warning("%s: %s", ui('Falha ao sincronizar a biblioteca', 'Library sync failed'), exc)
-            except Exception:
-                log.debug(ui('Sincronização da biblioteca indisponível', 'Library sync unavailable'), exc_info=True)
-        threading.Thread(target=worker, daemon=True).start()
+                payload, paths_by_id = build_sync_payload(progress, favorites, paths, state, self._folder_index.snapshot()["books"])
+                # Bound requests to the API batch limit, including large libraries.
+                merged = {}
+                for offset in range(0, max(1, len(payload)), 5000):
+                    for row in api_client.sync_library_state(auth.token, payload[offset:offset + 5000]):
+                        merged[row["item_key"]] = row
+                self._sync_events.put((auth.token, list(merged.values()), paths_by_id, None))
+            except Exception as error:
+                self._sync_events.put((auth.token, [], {}, error))
+        threading.Thread(target=worker, name="library-sync", daemon=True).start()
+
+    def _poll_sync(self):
+        if self._closing_app:
+            return
+        try:
+            while True:
+                token, merged, paths, error = self._sync_events.get_nowait()
+                self._sync_running = False
+                if self.current_user is None or self.current_user.token != token:
+                    continue
+                if isinstance(error, api_client.ApiAuthError):
+                    session_store.clear_session()
+                    self._finish_expired_session(token)
+                    continue
+                if error is None:
+                    try:
+                        apply_sync_response(merged, paths)
+                    except OSError as failure:
+                        error = failure
+                if error is not None:
+                    log.debug("Library sync unavailable: %s", error)
+                # Retry offline state and pull changes from other devices while open.
+                if self._sync_job is None:
+                    self._sync_job = self.after(30000, lambda: self._sync_library_state(self.current_user))
+        except queue.Empty:
+            pass
+        self._sync_poll = self.after(100, self._poll_sync)
 
     def _finish_expired_session(self, token):
         current = self.current_user
@@ -205,7 +228,8 @@ class LibraryWindow(tk.Tk):
         )
 
     def _schedule_sync(self, _kind=None, _path=None):
-        if self.current_user is None:return
+        if self.current_user is None or self._closing_app:return
+        if _kind not in (None, "progress", "favorite"):return
         if self._sync_job is not None:
             try:self.after_cancel(self._sync_job)
             except Exception:pass
@@ -1796,6 +1820,8 @@ class LibraryWindow(tk.Tk):
                         "duplicates": max(0, report["duplicates"] - (self._folder_added - report["added"]))}
                     self._folder_added = 0
                     self._folder_manual = False
+                if report["changed"]:
+                    self._schedule_sync()
                 if hasattr(self, "_main"):
                     active = getattr(self, "_active_tab", "library")
                     if active == "folders":
@@ -1807,6 +1833,13 @@ class LibraryWindow(tk.Tk):
         self.after(250, self._poll_folders)
 
     def destroy(self):
+        self._closing_app=True
+        if self._sync_poll is not None:
+            self.after_cancel(self._sync_poll)
+        if self._sync_job is not None:
+            self.after_cancel(self._sync_job)
+        unregister_change_listener(self._schedule_sync)
+        flush_progress()
         if hasattr(self, "_folder_watcher"):
             self._folder_watcher.close()
         super().destroy()
