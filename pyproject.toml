@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ai = ["onnxruntime>=1.30,<2", "numpy>=2,<3"]
 build = ["pyinstaller>=6,<7"]
 server = [
   "markdown-it-py>=3,<5",

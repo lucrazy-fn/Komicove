@@ -123,6 +123,15 @@ def test_unavailable_root_and_paused_removed_registry_preserve_books(tmp_path):
     assert next(iter(index.snapshot()["books"].values()))["available"]
     index.configure(key, remove=True)
     assert len(index.paths()) == 1
+    assert index.paths(visible_only=True) == []
+    index.rescan()
+    restored = FolderIndex(index.filename, str(root))
+    assert restored.paths(visible_only=True) == []
+    assert restored.snapshot()["folders"] == {}
+    restored.add(str(root))
+    assert len(restored.paths(visible_only=True)) == 1
+    assert restored.rescan()["added"] == 0
+    assert (root / "a.cbz").is_file()
 
 
 def test_disabled_folder_skips_new_files_until_enabled(tmp_path):
@@ -179,6 +188,76 @@ def test_polling_watcher_detects_changes_and_stops(tmp_path):
         watcher.close()
         watcher.thread.join(2)
     assert not watcher.thread.is_alive()
+
+
+def test_removing_folder_hides_exclusive_books_and_keeps_other_sources(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    index.add(other)
+    comic(root / "exclusive.cbz", "blue")
+    comic(root / "shared.cbz")
+    shutil.copyfile(root / "shared.cbz", other / "copy.cbz")
+    comic(other / "other.cbz", "green")
+    settle(index, clock)
+    shared = next(book["path"] for book in index.snapshot()["books"].values()
+                  if len(book["sources"]) == 2)
+    index.configure(index.key(root), remove=True)
+    assert set(index.paths(visible_only=True)) == {shared, str(other / "other.cbz")}
+    index.rescan()
+    restored = FolderIndex(index.filename)
+    assert len(restored.paths(visible_only=True)) == 2
+    restored.configure(index.key(other), remove=True)
+    assert restored.paths(visible_only=True) == []
+    assert len(restored.paths()) == 3
+    assert (root / "exclusive.cbz").is_file()
+    assert (other / "copy.cbz").is_file()
+
+
+def test_removed_folder_keeps_standalone_books_visible(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    comic(root / "folder.cbz")
+    settle(index, clock)
+    index.data["books"]["standalone"] = {"path": "standalone.cbz", "sources": {}}
+    index.configure(index.key(root), remove=True)
+    assert FolderIndex(index.filename).paths(visible_only=True) == ["standalone.cbz"]
+
+
+def test_move_after_removing_old_folder_uses_new_source_path(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    original = root / "comic.cbz"
+    comic(original)
+    settle(index, clock)
+    identity = next(iter(index.snapshot()["books"]))
+    index.configure(index.key(root), remove=True)
+    other = tmp_path / "new-folder"
+    other.mkdir()
+    destination = other / original.name
+    original.rename(destination)
+    index.add(other)
+    result = settle(index, clock)
+    assert result["added"] == 0
+    assert result["moves"] == [(str(original), str(destination))]
+    assert index.paths(visible_only=True) == [str(destination)]
+    assert FolderIndex(index.filename).paths(visible_only=True) == [str(destination)]
+    assert next(iter(index.snapshot()["books"])) == identity
+    assert index.snapshot()["books"][identity]["available"]
+
+
+def test_enabled_source_is_preferred_over_disabled_folder(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    original = root / "comic.cbz"
+    comic(original)
+    settle(index, clock)
+    index.configure(index.key(root), enabled=False)
+    other = tmp_path / "other"
+    other.mkdir()
+    destination = other / "copy.cbz"
+    shutil.copyfile(original, destination)
+    index.add(other)
+    result = settle(index, clock)
+    assert result["moves"] == [(str(original), str(destination))]
+    assert index.paths(visible_only=True) == [str(destination)]
 
 
 def test_overlapping_roots_keep_membership_without_rehashing(tmp_path):

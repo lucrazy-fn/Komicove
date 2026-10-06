@@ -1,0 +1,16 @@
+PT-BR
+Este pacote inclui o detector Inkwell de cedarrapidsboy, baseado em YOLOv8-n
+da Ultralytics. Os pesos sao distribuidos sob AGPL-3.0; veja AGPL-3.0.txt.
+O modelo original nao foi modificado. A leitura e a inferencia sao locais.
+O codigo do Komicove possui sua propria licenca no arquivo LICENSE.
+
+EN
+This package includes the Inkwell detector by cedarrapidsboy, based on
+Ultralytics YOLOv8-n. The weights are distributed under AGPL-3.0;
+see AGPL-3.0.txt. The original model is unmodified. Inference is local.
+Komicove source code has its own license in LICENSE.
+
+Model/source: https://huggingface.co/cedarrapidsboy/inkwell-panel-models
+Revision: fa7afba52ba7dc7b0840c7702b767972b5e17a9b
+Architecture/source: https://github.com/ultralytics/ultralytics
+SHA256: f240e1296efd048126b26ea4ffeddc97d7c3aa667a37e3127c2afc6d5e9b9578

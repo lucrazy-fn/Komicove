@@ -1,10 +1,32 @@
 from komicove_app.runtime import *
 import komicove_app.runtime as _runtime
-from komicove_app.guided import detect_regions
+from komicove_app.guided import DetectionCache, reading_regions
+from komicove_app.guided_ai import LocalPanelAI
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from komicove_app.panel_editor import PanelEditor
 from komicove_app.design.icons import lucide_icon
 from komicove_app.design.styles import KomicoveButton, KomicoveCard
 from komicove_app.design.spacing import RADIUS_LARGE, RADIUS_MEDIUM, RADIUS_SMALL
+
+
+def _guided_crop(image, rect, width, height, zoom, sampling):
+    """Resize only the visible part of a panel, including at high zoom."""
+    iw, ih = image.size
+    left, top, right, bottom = rect
+    x, y = int(left * iw), int(top * ih)
+    right, bottom = max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))
+    scale = min(max(1, width - 24) / (right - x), max(1, height - 24) / (bottom - y)) * zoom
+    nw, nh = max(1, int((right - x) * scale)), max(1, int((bottom - y) * scale))
+    px, py = (width - nw) // 2, (height - nh) // 2
+    vx, vy = max(0, -px), max(0, -py)
+    vw, vh = min(nw, width), min(nh, height)
+    box = (x + vx * (right - x) / nw, y + vy * (bottom - y) / nh,
+           x + (vx + vw) * (right - x) / nw, y + (vy + vh) * (bottom - y) / nh)
+    crop = image.resize((vw, vh), sampling, box=box)
+    full = Image.new('RGB', (width, height), THEME['canvas_bg'])
+    full.paste(crop, (max(0, px), max(0, py)))
+    return full, scale
 
 
 class ReaderSlider(tk.Canvas):
@@ -147,11 +169,12 @@ class ThumbnailStrip(tk.Frame):
             pass
 
 
-class WebtoonViewer(tk.Toplevel):
+class WebtoonContent:
     def __init__(self, parent, loader: SmartPageLoader, width=800, height=900):
         super().__init__(parent)
-        self.title(ui('Komicove - Modo Webtoon', 'Komicove - Webtoon Mode'))
-        self.geometry(f"{width}x{height}")
+        if not getattr(self,'_embedded',False):
+            self.title(ui('Komicove - Modo Webtoon', 'Komicove - Webtoon Mode'))
+            self.geometry(f"{width}x{height}")
         bg = THEME["canvas_bg"]
         self.configure(bg=bg)
         self._loader = loader
@@ -176,6 +199,28 @@ class WebtoonViewer(tk.Toplevel):
 
         self._build_placeholders(bg)
         self.after(60, self._check_visible)
+        if not getattr(self, '_embedded', False):
+            self.bind('<F11>', lambda _e: self._fullscreen())
+            self.bind('<Escape>', lambda _e: self._escape())
+
+    def _fullscreen(self):
+        host = self.winfo_toplevel()
+        host.attributes('-fullscreen', not host.attributes('-fullscreen'))
+        self._apply_fullscreen_layout()
+
+    def _apply_fullscreen_layout(self):
+        if self.winfo_toplevel().attributes('-fullscreen'):
+            self.scrollbar.pack_forget()
+            if hasattr(self, '_bar'): self._bar.pack_forget()
+        else:
+            self.scrollbar.pack(side='right', fill='y')
+            if hasattr(self, '_bar'): self._bar.pack(fill='x', before=self.canvas)
+
+    def _escape(self):
+        if self.winfo_toplevel().attributes('-fullscreen'):
+            self._fullscreen()
+        else:
+            self.destroy()
 
     def _build_placeholders(self, bg=None):
         if bg is None:
@@ -227,7 +272,11 @@ class WebtoonViewer(tk.Toplevel):
         threading.Thread(target=work, daemon=True).start()
 
 
-class ReaderWindow(tk.Toplevel):
+class WebtoonViewer(WebtoonContent,tk.Toplevel):
+    pass
+
+
+class ReaderContent:
     ZSTEP = 0.15
     ZMIN  = 0.1
     ZMAX  = 5.0
@@ -235,8 +284,9 @@ class ReaderWindow(tk.Toplevel):
 
     def __init__(self, master, path, loader: SmartPageLoader, on_finish=None):
         super().__init__(master)
-        set_app_icon(self)
-        self.title(f"Komicove: {Path(path).stem}")
+        if not getattr(self,'_embedded',False):
+            set_app_icon(self)
+            self.title(f"Komicove: {Path(path).stem}")
         self.configure(bg=THEME["bg"])
 
         self._path      = path
@@ -252,7 +302,9 @@ class ReaderWindow(tk.Toplevel):
         self._double    = False
         self._immersive = False
         self._fading    = False
+        self._page_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='reader-page')
         self._slider    = None
+        self._owned_tk_variables = []
         try: self._content_key = content_id(path)
         except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
         try:
@@ -267,6 +319,19 @@ class ReaderWindow(tk.Toplevel):
         self._guide_animation = None
         self._guided = bool(prefs.get("reader_guided", False))
         self._guide_key = None
+        self._guide_cache = DetectionCache(ai=LocalPanelAI.available())
+        self._guide_result = None
+        self._guide_manual = False
+        self._guide_fallback = False
+        self._guide_pending = False
+        self._detection_future = None
+        self._detection_cancel = Event()
+        self._detection_poll = None
+        self._detection_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="guided")
+        self._editor_future = None
+        self._editor_poll = None
+        self._editor_cancel = Event()
+        self.bind("<Destroy>", self._dispose_detection, add="+")
         self._regions = []
         self._region_index = 0
         self._guide_last = False
@@ -275,11 +340,14 @@ class ReaderWindow(tk.Toplevel):
         self._guide_written = None
         self._read_started = time.monotonic()
         self._persist_zoom = bool(prefs.get("reader_persist_zoom", True))
+        self._persist_position = bool(prefs.get("reader_persist_position", self._persist_zoom))
         self._auto_fit = bool(prefs.get("reader_auto_fit", True))
         self._manga = prefs.get("manga", False)
         reader_state = load_reader_state(self._content_key)
         self._guide_saved = (reader_state.get("guided_page", -1), reader_state.get("guided_panel", 0))
-        self._has_saved_zoom = "zoom" in reader_state
+        self._has_saved_zoom = self._persist_zoom and "zoom" in reader_state
+        self._viewport_page = None
+        self._restored_position = self._persist_position and "offset" in reader_state
         self._updating_zoom = False
         self._zoom = float(reader_state.get("zoom", self.Z0))
         self._offset = list(reader_state.get("offset", [0, 0]))
@@ -288,11 +356,12 @@ class ReaderWindow(tk.Toplevel):
             self._double = False
         self._manga = bool(reader_state.get("manga", self._manga))
 
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = min(1280, sw-60), min(860, sh-60)
-        self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
-        self.minsize(800, 600)
-        self.protocol("WM_DELETE_WINDOW", self._close)
+        if not getattr(self,'_embedded',False):
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            w, h = min(1280, sw-60), min(860, sh-60)
+            self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+            self.minsize(800, 600)
+            self.protocol("WM_DELETE_WINDOW", self._close)
 
         p = get_progress_page(path)
         if p is not None and 0 <= p < loader.count:
@@ -331,19 +400,21 @@ class ReaderWindow(tk.Toplevel):
         title_box.pack(side="left", fill="y")
         fname = Path(self._path).stem
         if len(fname) > 48: fname = fname[:45] + "…"
-        tk.Label(title_box, text=fname, font=("Segoe UI", 14, "bold"),
-                 bg=c["surface"], fg=c["text"], anchor="w").pack(anchor="w")
+        self._reader_title=fname
+        self._reader_title_label=tk.Label(title_box,text=fname,font=("Segoe UI",14,"bold"),bg=c["surface"],fg=c["text"],anchor="w")
+        self._reader_title_label.pack(anchor="w")
         tk.Label(title_box, text=ui('Leitor', 'Reader'), font=("Segoe UI", 8),
                  bg=c["surface"], fg=c["text_dim"], anchor="w").pack(anchor="w", pady=(1, 0))
 
         right = tk.Frame(inner, bg=c["surface"])
+        self._standard_reader_actions=right
         right.pack(side="right", fill="y")
         self._mkbtn(right, ui('Tela cheia', 'Fullscreen'), self._fullscreen,
                     icon_name="maximize").pack(side="right", padx=3)
         self._mkbtn(right, "Webtoon", self._open_webtoon, icon_name="columns-2").pack(side="right", padx=3)
         self._overview_btn = self._mkbtn(
             right,
-            ui('Página inteira', 'Full page') if self._guided else ui('Encaixar', 'Fit'),
+            ui('Se localizar', 'Find your place') if self._guided else ui('Encaixar', 'Fit'),
             self._toggle_overview, icon_name="scan",
         )
         self._overview_btn.pack(side="right", padx=3)
@@ -358,7 +429,19 @@ class ReaderWindow(tk.Toplevel):
                                   icon_name="bookmark", variant="soft")
         self._bm_btn.pack(side="right", padx=3)
 
-        tk.Frame(self, bg=c["border"], height=1).pack(fill="x")
+        self._guided_reader_actions = tk.Frame(inner, bg=c["surface"])
+        guide_row = tk.Frame(self._guided_reader_actions, bg=c["surface"])
+        guide_row.pack(anchor="e")
+        guide_palette=dict(c,border=c['accent'],border_glow=c['accent2'],surface_alt='#171118',surface_hover='#26161e')
+        self._guided_heading=KomicoveButton(guide_row,ui('Se localizar','Find your place'),self._toggle_overview,guide_palette,compact=True,icon_name='book-open')
+        self._guide_status = tk.Label(guide_row, font=("Segoe UI", 9), bg=c["surface"], fg=c["text_dim"])
+        self._guided_header_items=[self._guided_heading,self._guide_status,
+            self._mkbtn(guide_row,ui('Redetectar','Redetect'),self._redetect_panels,icon_name='refresh-cw'),
+            self._mkbtn(guide_row,ui('Editar quadros','Edit panels'),self._edit_panels,icon_name='pencil'),
+            self._mkbtn(guide_row,ui('Sair','Exit'),self._toggle_guided,icon_name='maximize')]
+
+        self._header_divider = tk.Frame(self, bg=c["border"], height=1)
+        self._header_divider.pack(fill="x")
 
         self._cv = tk.Canvas(self, bg=c["canvas_bg"], highlightthickness=0, cursor="crosshair")
         self._cv.pack(fill="both", expand=True)
@@ -372,7 +455,10 @@ class ReaderWindow(tk.Toplevel):
         self._prog_cv = tk.Canvas(ib, height=5, bg=c["surface"], highlightthickness=0)
         self._prog_cv.pack(fill="x", padx=8)
         self._prog_cv.bind("<Button-1>", self._seek_click)
+        self._guided_zoom=1.
+        self._guide_render_scale=1.
         controls = tk.Frame(ib, bg=c["surface"])
+        self._normal_reader_controls=controls
         controls.pack(fill="both", expand=True, padx=7, pady=(4, 0))
 
         nf = tk.Frame(controls, bg=c["surface"]); nf.pack(side="left")
@@ -395,7 +481,7 @@ class ReaderWindow(tk.Toplevel):
         self._nav_btn(zf, "", self._zoom_in,
                       icon=lucide_icon("zoom-in", size=19, state="normal", dark=IS_DARK)).pack(side="left", padx=3)
 
-        self._zvar = tk.DoubleVar(value=self._zoom)
+        self._zvar = self._own_variable(tk.DoubleVar(master=self,value=self._zoom))
         sl = ReaderSlider(controls, self._zoom, self.ZMIN, self.ZMAX,
                           self._slider_zoom, width=126)
         sl.pack(side="left", padx=(2, 10))
@@ -419,7 +505,7 @@ class ReaderWindow(tk.Toplevel):
         bright_label = tk.Label(bf, image=bright_icon, bg=c["surface"])
         bright_label.image = bright_icon
         bright_label.pack(side="left", padx=(0, 2))
-        self._bright_var = tk.DoubleVar(value=self._brightness)
+        self._bright_var = self._own_variable(tk.DoubleVar(master=self,value=self._brightness))
         bright_sl = ReaderSlider(bf, self._brightness, 0.3, 2.0,
                                  self._slider_brightness, width=88)
         bright_sl.pack(side="left")
@@ -435,6 +521,29 @@ class ReaderWindow(tk.Toplevel):
                                      icon_name="book-open-check", variant="soft")
         self._manga_btn.pill_set_active(self._manga)
         self._manga_btn.pack(side="right", padx=3)
+
+        self._guided_footer=tk.Frame(ib,bg=c["surface"])
+        guide_controls=self._guided_footer
+        self._nav_btn(guide_controls,"",self._prev,
+            icon=lucide_icon("chevron-left",size=22,dark=IS_DARK),size=44).pack(side="left",padx=5)
+        self._guided_page_lbl=tk.Label(guide_controls,font=("Consolas",11,"bold"),bg=c["surface_alt"],fg=c["text"],width=10,pady=8,cursor="hand2")
+        self._guided_page_lbl.pack(side="left",padx=4)
+        self._guided_page_lbl.bind("<Button-1>",lambda e:self._show_page_picker())
+        self._nav_btn(guide_controls,"",self._next,
+            icon=lucide_icon("chevron-right",size=22,dark=IS_DARK),size=44).pack(side="left",padx=5)
+        self._nav_btn(guide_controls,"",lambda:self._set_guided_zoom(self._guided_zoom/1.15),
+            icon=lucide_icon("zoom-out",size=19,dark=IS_DARK)).pack(side="left",padx=(14,4))
+        self._guided_zoom_lbl=tk.Label(guide_controls,font=("Segoe UI",10),bg=c["surface"],fg=c["text_dim"],width=5)
+        self._guided_zoom_lbl.pack(side="left",padx=4)
+        self._nav_btn(guide_controls,"",lambda:self._set_guided_zoom(self._guided_zoom*1.15),
+            icon=lucide_icon("zoom-in",size=19,dark=IS_DARK)).pack(side="left",padx=4)
+        self._guided_slider=ReaderSlider(guide_controls,1.,.5,4.,self._set_guided_zoom,width=180)
+        self._guided_slider.pack(side="left",padx=14)
+        self._nav_btn(guide_controls,"",self._show_page_picker,
+            icon=lucide_icon("layout-grid",size=19,dark=IS_DARK)).pack(side="right",padx=5)
+        self._nav_btn(guide_controls,"",self._toggle_overview,
+            icon=lucide_icon("scan",size=19,dark=IS_DARK)).pack(side="right",padx=5)
+        self._guide_mode_label=KomicoveButton(guide_controls,ui('Modo aproximado','Approximate mode'),self._edit_panels,guide_palette,compact=True,icon_name='focus')
 
         self._thumb_frame = tk.Frame(self, bg=c["surface"], height=120)
         self._thumb_frame.pack_propagate(False)
@@ -474,6 +583,8 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<space>", lambda e: self._next())
         self.bind("<bracketleft>",  lambda e: self._set_brightness(self._brightness - 0.1))
         self.bind("<bracketright>", lambda e: self._set_brightness(self._brightness + 0.1))
+        if self._immersive:
+            self._apply_immersive_layout()
 
     def _pill(self, parent, text, cmd, *, icon=None, icon_name=None, variant="ghost",
               font=FSMALL, pad_x=14, pad_y=8, min_w=0):
@@ -508,12 +619,15 @@ class ReaderWindow(tk.Toplevel):
         return cv
 
     def _processed_pil(self, idx):
-        pass
+        key = (idx, self._rotation, self._brightness)
+        if getattr(self, '_processed_key', None) == key:
+            return self._processed_image
         img = self._loader.get_pil(idx)
         if self._rotation:
             img = img.rotate(-self._rotation, expand=True, resample=Image.BICUBIC)
         if abs(self._brightness - 1.0) > 0.01:
             img = ImageEnhance.Brightness(img.convert("RGB")).enhance(self._brightness).convert("RGBA")
+        self._processed_key, self._processed_image = key, img
         return img
 
     def _compose_pages(self):
@@ -537,21 +651,36 @@ class ReaderWindow(tk.Toplevel):
     def _show(self, reset=True, alpha=1.0):
         cw = self._cv.winfo_width() or 800
         ch = self._cv.winfo_height() or 600
+        frame_key = (self._idx, cw, ch, self._rotation, self._brightness,
+                     self._double, self._manga, self._guided, self._zoom,
+                     tuple(self._offset), self._guide_key, self._region_index,
+                     self._guide_overview, self._guided_zoom, self._guide_motion,
+                     tuple(self._regions), self._guide_pending, self._guide_fallback)
+        if not reset and self._fading and alpha < 1.0 and getattr(self, '_rendered_key', None) == frame_key:
+            self._present_frame(self._rendered_frame, alpha)
+            return
         img = self._compose_pages()
         iw, ih = img.size
-        record_page_read(
-            self._content_key, self._idx, self._count,
-            path=self._path, metadata=self._statistics_metadata,
-        )
+        if not self._guide_motion:
+            record_page_read(
+                self._content_key, self._idx, self._count,
+                path=self._path, metadata=self._statistics_metadata,
+            )
 
         if self._guided:
             key = (self._idx, self._rotation, self._double, self._manga)
             if key != self._guide_key:
                 manual=load_manual_panels(self._content_key,self._idx)
                 if manual:
+                    self._guide_pending=False
                     self._regions=[tuple(r) for r in manual]; self._guide_fallback=False
+                    self._guide_manual=True
+                    self._guide_result=None
                 else:
-                    self._regions, self._guide_fallback = detect_regions(img, self._manga)
+                    self._guide_manual=False
+                    self._guide_fallback=True
+                    self._regions=reading_regions(iw, ih, self._manga)
+                    self._request_detection(key)
                 self._region_index = len(self._regions) - 1 if self._guide_last else 0
                 if self._guide_saved and self._guide_saved[0] == self._idx and not self._guide_last:
                     self._region_index = max(0, min(int(self._guide_saved[1]), len(self._regions) - 1))
@@ -561,30 +690,63 @@ class ReaderWindow(tk.Toplevel):
             rect = self._regions[self._region_index]
             if self._guide_motion and self._guide_motion[:2] == (self._guide_key, self._region_index) and not self._guide_overview:
                 rect = self._guide_motion[2]
+            if not self._guide_overview:
+                source = getattr(self, '_guide_preview', None) if self._guide_motion else None
+                source = source if source is not None else img
+                sampling = Image.Resampling.BILINEAR if self._guide_motion else Image.Resampling.LANCZOS
+                full, scale = _guided_crop(source, rect, cw, ch, self._guided_zoom, sampling)
+                self._guide_render_scale = scale * source.width / iw
+                self._rendered_key, self._rendered_frame = frame_key, full
+                self._present_frame(full, alpha)
+                if not self._guide_motion:
+                    self._hud()
+                    self._save_guided_position()
+                return
             left, top, right, bottom = rect
             x, y = int(left * iw), int(top * ih)
-            crop = img.copy() if self._guide_overview else img.crop((x, y, max(x + 1, int(right * iw)), max(y + 1, int(bottom * ih))))
-            scale = min(max(1, cw - 24) / crop.width, max(1, ch - 24) / crop.height)
-            crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))), Image.Resampling.LANCZOS)
+            bounds=(x,y,max(x+1,int(right*iw)),max(y+1,int(bottom*ih)))
+            # resize creates the output; whole-page crops need no full-size copy.
+            crop = img if self._guide_overview or bounds==(0,0,iw,ih) else img.crop(bounds)
+            scale = min(max(1, cw - 24) / crop.width, max(1, ch - 24) / crop.height)*self._guided_zoom
+            self._guide_render_scale=scale
+            sampling = Image.Resampling.BILINEAR if self._guide_motion else Image.Resampling.LANCZOS
+            crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))), sampling)
             full = Image.new("RGB", (cw, ch), THEME["canvas_bg"])
             full.paste(crop.convert("RGB"), ((cw - crop.width) // 2, (ch - crop.height) // 2))
             if self._guide_overview:
                 ox, oy = (cw - crop.width) // 2, (ch - crop.height) // 2
-                ImageDraw.Draw(full).rectangle((ox + left * crop.width, oy + top * crop.height,
-                                                ox + right * crop.width, oy + bottom * crop.height),
-                                               outline=THEME["accent"], width=3)
-            if alpha < 1:
-                full = Image.blend(Image.new("RGB", full.size, THEME["canvas_bg"]), full, alpha)
-            self._tk_img = ImageTk.PhotoImage(full)
-            self._cv.delete("all")
-            self._cv.create_image(0, 0, anchor="nw", image=self._tk_img)
-            self._hud()
-            self._save_guided_position()
+                bounds=(ox+left*crop.width,oy+top*crop.height,ox+right*crop.width,oy+bottom*crop.height)
+                overlay=Image.new("RGBA",full.size)
+                draw=ImageDraw.Draw(overlay)
+                for padding,opacity in ((7,20),(4,38),(2,70)):
+                    draw.rectangle(tuple(v+(-padding if i<2 else padding) for i,v in enumerate(bounds)),outline=(255,40,65,opacity),width=2)
+                draw.rectangle(bounds,outline=THEME["accent"],width=3)
+                full=Image.alpha_composite(full.convert("RGBA"),overlay).convert("RGB")
+            self._rendered_key, self._rendered_frame = frame_key, full
+            self._present_frame(full, alpha)
+            if not self._guide_motion:
+                self._hud()
+                self._save_guided_position()
             return
 
-        if reset:
-            self._zoom = self.Z0
-            self._offset = [0, 0]
+        first_page = self._viewport_page is None
+        changed_page = not first_page and self._viewport_page != self._idx
+        if first_page or changed_page or reset:
+            old_zoom = self._zoom
+            if reset or (changed_page and not self._persist_zoom) or (first_page and not self._has_saved_zoom):
+                self._zoom = min((cw - 24) / iw, (ch - 24) / ih) * .95 if self._auto_fit else self.Z0
+            keep_position = self._persist_position and (changed_page or (first_page and self._restored_position)) and not reset
+            if keep_position:
+                ratio = self._zoom / old_zoom if old_zoom else 1
+                self._offset = [v * ratio for v in self._offset]
+            else:
+                self._offset = [(-1 if self._manga else 1) * max(0, (iw * self._zoom - cw) / 2),
+                                max(0, (ih * self._zoom - ch) / 2)]
+            self._viewport_page = self._idx
+        # Clamp retained framing when the next page has different dimensions.
+        mx, my = max(0, (iw * self._zoom - cw) / 2), max(0, (ih * self._zoom - ch) / 2)
+        self._offset = [max(-mx, min(mx, self._offset[0])), max(-my, min(my, self._offset[1]))]
+        self._pan_bounds = (mx, my)
 
         nw = max(1, int(iw * self._zoom))
         nh = max(1, int(ih * self._zoom))
@@ -596,33 +758,55 @@ class ReaderWindow(tk.Toplevel):
         py = ch // 2 + int(self._offset[1]) - nh // 2
         full.paste(resized.convert("RGB"), (px, py))
 
-        if alpha < 1.0:
-            full = Image.blend(Image.new("RGB", (cw, ch), bg_rgb), full, alpha)
-
-        self._tk_img = ImageTk.PhotoImage(full)
-        self._cv.delete("all")
-        self._cv.create_image(0, 0, anchor="nw", image=self._tk_img)
+        self._rendered_key, self._rendered_frame = frame_key, full
+        self._present_frame(full, alpha)
         self._hud()
+
+    def _present_frame(self, full, alpha=1.0):
+        if alpha < 1.0:
+            background = THEME['canvas_bg'] if self._guided else ((7, 7, 14) if IS_DARK else (232, 228, 222))
+            full = Image.blend(Image.new('RGB', full.size, background), full, alpha)
+        self._tk_img = ImageTk.PhotoImage(full)
+        item = getattr(self, '_canvas_image', None)
+        if item is not None and self._cv.type(item):
+            self._cv.itemconfigure(item, image=self._tk_img)
+            self._cv.coords(item, 0, 0)
+        else:
+            self._canvas_image = self._cv.create_image(0, 0, anchor='nw', image=self._tk_img)
 
     def _fade_to(self, new_idx):
         if self._fading: return
         new_idx = max(0, min(new_idx, self._count - 1))
         if new_idx == self._idx: return
         self._fading = True
-        start = time.perf_counter()
-        self._loader.get_pil(new_idx)
+        future = self._page_executor.submit(self._loader.get_pil, new_idx)
+        start = None
 
         def animate():
+            nonlocal start
+            if not future.done():
+                self.after(16, animate)
+                return
+            if start is None:
+                try:
+                    future.result()
+                except Exception:
+                    self._fading = False
+                    log.exception('Page loading failed')
+                    return
+                start = time.perf_counter()
             elapsed = time.perf_counter() - start
             prog = min(elapsed / FADE_SPEED, 1.0)
+            # Loading/rendering can skip the entire second half of the fade.
+            # Commit the page even when the next frame is already the last.
+            if prog >= 0.5 and not hasattr(animate, "swapped"):
+                self._idx = new_idx
+                save_progress(self._path, self._idx)
+                animate.swapped = True
+                self._prefetch_neighbors()
             if prog < 0.5:
-                self._show(reset=False, alpha=1.0 - ease_out(prog))
+                self._show(reset=False, alpha=1.0 - ease_out(prog * 2))
             elif prog < 1.0:
-                if not hasattr(animate, "swapped"):
-                    self._idx = new_idx
-                    save_progress(self._path, self._idx)
-                    animate.swapped = True
-                    self._prefetch_neighbors()
                 self._show(reset=False, alpha=ease_out((prog - 0.5) * 2))
             else:
                 self._show(reset=False)
@@ -637,18 +821,143 @@ class ReaderWindow(tk.Toplevel):
         self._loader.prefetch(self._idx - 1)
 
     def _edit_panels(self):
+        if self._editor_future is not None:
+            return
         if self._double:
             messagebox.showinfo(ui('Editor de quadros','Panel editor'),
                 ui('Desative a página dupla para editar esta página.','Turn off double-page mode to edit this page.'),parent=self)
             return
-        image=self._compose_pages()
-        automatic,_=detect_regions(image,self._manga)
-        current=load_manual_panels(self._content_key,self._idx) or automatic
+        page=self._idx
+        key=(page,self._rotation,False,self._manga)
+        preview=self._compose_pages()
+        loader,cache,manga,rotation=self._loader,self._guide_cache,self._manga,self._rotation
+        cancel=self._editor_cancel=Event()
+        def detect(force=False):
+            original=loader.get_pil(page)
+            rotated=original.rotate(-rotation,expand=True,resample=Image.Resampling.BICUBIC) if rotation else None
+            try:
+                return cache.detect(key,rotated if rotated is not None else original,manga,force,cancel).regions
+            finally:
+                if rotated is not None:
+                    rotated.close()
         def saved(regions):
-            save_manual_panels(self._content_key,self._idx,regions)
-            self._guide_key=None; self._regions=list(regions); self._region_index=0
-            self._show(reset=False)
-        PanelEditor(self,image,current,automatic,saved)
+            save_manual_panels(self._content_key,page,regions)
+            if self._idx==page:
+                self._guide_key=None; self._regions=list(regions); self._region_index=0
+                self._show(reset=False)
+        future=self._detection_executor.submit(detect)
+        self._editor_future=future
+        def finish():
+            self._editor_poll=None
+            if not future.done():
+                self._editor_poll=self.after(30,finish)
+                return
+            self._editor_future=None
+            if cancel.is_set():
+                return
+            try:
+                automatic=list(future.result())
+            except Exception:
+                messagebox.showerror(ui('Editor de quadros','Panel editor'),
+                    ui('Não foi possível detectar os quadros.','Could not detect panels.'),parent=self)
+                return
+            # Keep this editor anchored to its original page if the reader moved.
+            current=load_manual_panels(self._content_key,page) or automatic
+            PanelEditor(self,preview,current,automatic,saved,
+                        on_redetect=lambda: detect(True),detection_cancel=cancel)
+        self._editor_poll=self.after(30,finish)
+
+    def _request_detection(self, key, force=False):
+        self._detection_cancel.set()
+        self._detection_cancel=Event()
+        cancel=self._detection_cancel
+        if self._detection_future:
+            self._detection_future.cancel()
+        if self._detection_poll:
+            self.after_cancel(self._detection_poll)
+        self._guide_pending=True
+        page,rotation,_,manga=key
+        # Detect original colors, not the user's brightness/theme transformation.
+        loader,cache=self._loader,self._guide_cache
+        def analyze():
+            image=loader.get_pil(page)
+            rotated=image.rotate(-rotation,expand=True,resample=Image.Resampling.BICUBIC) if rotation else None
+            try:
+                return cache.detect(key,rotated if rotated is not None else image,manga,force,cancel)
+            finally:
+                if rotated is not None:
+                    rotated.close()
+        future=self._detection_executor.submit(analyze)
+        self._detection_future=future
+        def poll():
+            self._detection_poll=None
+            if future is not self._detection_future:
+                return
+            if not future.done():
+                self._detection_poll=self.after(30,poll)
+                return
+            self._guide_pending=False
+            if key != self._guide_key:
+                return
+            try:
+                result=future.result()
+            except Exception:
+                log.exception("Guided detection failed")
+                self._hud()
+                return
+            self._guide_result=result
+            if not load_manual_panels(self._content_key,page):
+                self._regions=list(result.regions)
+                self._guide_fallback=result.fallback
+                self._region_index=min(self._region_index,len(self._regions)-1)
+            elif force:
+                messagebox.showinfo(ui('Redetectar','Redetect'),
+                    ui('Detecção atualizada. Seus quadros manuais foram preservados. Use Editar quadros para aplicar a detecção.',
+                       'Detection updated. Your manual panels were preserved. Use Edit panels to apply the detection.'),parent=self)
+            if self._guided:
+                self._show(reset=False)
+        self._detection_poll=self.after(30,poll)
+
+    def _redetect_panels(self):
+        if self._fading:
+            return
+        self._request_detection((self._idx,self._rotation,self._double,self._manga),force=True)
+        self._hud()
+
+    def _dispose_detection(self,event):
+        if event.widget is not self:
+            return
+        self._detection_cancel.set()
+        self._editor_cancel.set()
+        if self._editor_poll:
+            self.after_cancel(self._editor_poll)
+        if self._editor_future:
+            self._editor_future.cancel()
+        self._tk_img=None
+        self._rendered_frame = None
+        self._processed_image = None
+        self._guide_preview = None
+        self._page_executor.shutdown(wait=False, cancel_futures=True)
+        if self._detection_poll:
+            self.after_cancel(self._detection_poll)
+        if self._detection_future:
+            self._detection_future.cancel()
+        self._detection_executor.shutdown(wait=False,cancel_futures=True)
+        self._guide_cache.close()
+        # Tk variables can participate in cycles with button callbacks. Delete
+        # their Tcl resources here, on the UI thread, instead of letting a
+        # background archive/AI allocation trigger their finalizers later.
+        for variable in self._owned_tk_variables:
+            try:variable.__del__()
+            except tk.TclError:pass
+            finally:
+                variable._tk=None
+                variable._root=None
+        self._owned_tk_variables.clear()
+
+    def _own_variable(self,variable):
+        self._owned_tk_variables.append(variable)
+        return variable
 
     def _update_progress_bar(self):
         if not hasattr(self, "_prog_cv") or not self._prog_cv.winfo_exists():
@@ -670,18 +979,65 @@ class ReaderWindow(tk.Toplevel):
             self._prog_cv.create_rectangle(bx-1, 0, bx+1, h, fill="#ffd24a", outline="")
 
     def _hud(self):
+        compact=self.winfo_width()<1100
+        self._top.config(height=104 if self._guided and compact else 72)
+        title=self._reader_title
+        if self._guided and len(title)>(16 if compact else 25):
+            title=title[:13 if compact else 22]+'…'
+        self._reader_title_label.config(text=title)
+        for col,item in enumerate(self._guided_header_items):
+            item.grid_forget()
+            if compact:
+                item.grid(row=0 if col<2 else 1,column=0 if col==0 else 1 if col==1 else col-2,
+                          columnspan=2 if col==1 else 1,padx=3,pady=3,sticky='ew')
+            else:
+                item.grid(row=0,column=col,padx=3,pady=3)
+        if self._guided:
+            self._normal_reader_controls.pack_forget()
+            self._guided_footer.pack(fill="both",expand=True,padx=7,pady=(4,0))
+            self._standard_reader_actions.pack_forget()
+            self._guided_reader_actions.pack(side="right",fill="y")
+            if self._guide_pending:
+                label=ui('Detectando…','Detecting…')
+            elif self._guide_manual:
+                label=ui('Quadros manuais','Manual panels')
+            else:
+                label=ui('Modo aproximado','Approximate mode') if self._guide_fallback else ui('Detecção automática','Automatic detection')
+                if self._guide_result and self._guide_result.method.startswith('ai_'):
+                    label=ui('IA local · Aproximado','Local AI · Approximate') if self._guide_fallback else ui('IA local','Local AI')
+                if self._guide_result:
+                    label+=f" · {self._guide_result.confidence:.0%}"
+            self._guide_status.config(text=label,fg=THEME['accent'] if self._guide_fallback else '#39c68c')
+            if self._guide_fallback and not self._guide_pending:
+                self._guide_mode_label.pack(side="right",padx=6)
+            else:
+                self._guide_mode_label.pack_forget()
+        else:
+            self._guided_footer.pack_forget()
+            self._normal_reader_controls.pack(fill="both",expand=True,padx=7,pady=(4,0))
+            self._guided_reader_actions.pack_forget()
+            self._standard_reader_actions.pack(side="right",fill="y")
+            self._guide_mode_label.pack_forget()
+        self._guided_page_lbl.config(text=f"{self._idx+1} / {self._count}")
+        self._guided_zoom_lbl.config(text=f"{self._guide_render_scale*100:.0f}%")
+        self._guided_heading.set_text(ui('Voltar ao quadro', 'Return to panel') if self._guide_overview else ui('Se localizar', 'Find your place'))
         if hasattr(self, "_overview_btn"):
             self._overview_btn.pill_set_text(
                 (ui('Voltar ao quadro', 'Return to panel') if self._guide_overview
-                 else ui('Página inteira', 'Full page'))
+                 else ui('Se localizar', 'Find your place'))
                 if self._guided else ui('Encaixar', 'Fit')
             )
         n = self._count
         suffix = f" +1" if (self._double and self._idx + 1 < n) else ""
         self._page_lbl.config(text=f"{self._idx+1}{suffix} / {n}")
         if self._guided and self._regions:
-            label = "Trecho" if self._guide_fallback else ui('Quadro', 'Panel')
-            self._page_lbl.config(text=f"{self._idx+1}/{n}\n{label} {self._region_index+1}/{len(self._regions)}", width=13, font=("Consolas", 10, "bold"))
+            label = ui('Aprox.','Approx.') if self._guide_fallback else ui('Quadro', 'Panel')
+            if self._guide_manual:
+                label=ui('Manual','Manual')
+            score=f" · {self._guide_result.confidence:.0%}" if self._guide_result and not self._guide_manual else ""
+            if self._guide_pending:
+                label=ui('Detectando','Detecting')
+            self._page_lbl.config(text=f"{self._idx+1}/{n}{score}\n{label} {self._region_index+1}/{len(self._regions)}", width=13, font=("Consolas", 9, "bold"))
         else:
             self._page_lbl.config(width=11)
         self._zoom_lbl.config(text=f"{self._zoom*100:.0f}%")
@@ -786,7 +1142,7 @@ class ReaderWindow(tk.Toplevel):
         return "break"
 
     def _guided_move(self, direction):
-        if self._fading:
+        if self._fading or self._guide_pending:
             return
         target = self._region_index + direction
         if 0 <= target < len(self._regions):
@@ -811,12 +1167,38 @@ class ReaderWindow(tk.Toplevel):
             return
         key, index = self._guide_key, self._region_index
         target = self._regions[index]
-        started = time.monotonic()
+        image = self._compose_pages()
+        preview_key = (key, self._brightness, self._cv.winfo_width(), self._cv.winfo_height())
+        future = None
+        if getattr(self, '_guide_preview_key', None) != preview_key:
+            limit = min(2048, max(1024, int(max(preview_key[-2:]) * 1.25)))
+            def prepare():
+                preview = image.copy()
+                preview.thumbnail((limit, limit), Image.Resampling.BILINEAR)
+                return preview.convert('RGB')
+            future = self._page_executor.submit(prepare)
+        started = None
         def frame():
+            nonlocal started, future
             self._guide_animation = None
             if not self._guided or not self._animate_guided or self._guide_overview or self._guide_key != key or self._region_index != index:
                 self._guide_motion = None
                 return
+            if future is not None:
+                if not future.done():
+                    self._guide_animation = self.after(8, frame)
+                    return
+                try:
+                    self._guide_preview = future.result()
+                    self._guide_preview_key = preview_key
+                except Exception:
+                    self._guide_motion = None
+                    self._show(reset=False)
+                    return
+                future = None
+            frame_started = time.monotonic()
+            if started is None:
+                started = frame_started
             progress = min(1., (time.monotonic() - started) / .24)
             eased = progress * progress * (3 - 2 * progress)
             self._guide_motion = (key, index, tuple(a + (b - a) * eased for a, b in zip(previous, target)))
@@ -824,7 +1206,8 @@ class ReaderWindow(tk.Toplevel):
                 self._guide_motion = None
             self._show(reset=False)
             if progress < 1:
-                self._guide_animation = self.after(20, frame)
+                delay = max(1, round(16 - (time.monotonic() - frame_started) * 1000))
+                self._guide_animation = self.after(delay, frame)
         frame()
 
     def _maybe_next_chapter(self):
@@ -832,15 +1215,24 @@ class ReaderWindow(tk.Toplevel):
             return
         if messagebox.askyesno(TEXTS[LANG]["next_issue"],
                                TEXTS[LANG]["next_chapter_q"]):
-            self._on_finish(self._path)
-            self.destroy()
+            path,callback=self._path,self._on_finish
+            self._close()
+            callback(path)
 
     def _seek_click(self, e):
         pw = self._prog_cv.winfo_width() or 1
         frac = max(0.0, min(1.0, e.x / pw))
         self._fade_to(int(frac * (self._count - 1)))
 
+    def _set_guided_zoom(self,value):
+        self._guided_zoom=max(.5,min(4.,float(value)))
+        self._guided_slider.set(self._guided_zoom)
+        self._show(reset=False)
+
     def _set_zoom(self, z):
+        if self._guided:
+            self._set_guided_zoom(self._guided_zoom*(1.15 if z>self._zoom else 1/1.15))
+            return
         self._zoom = max(self.ZMIN, min(self.ZMAX, z))
         if hasattr(self, "_slider") and self._slider:
             self._slider.set(self._zoom)
@@ -852,20 +1244,17 @@ class ReaderWindow(tk.Toplevel):
             self._set_zoom(float(v))
 
     def _initial_render(self):
-        if self._auto_fit and not self._has_saved_zoom:
-            self._fit()
-        else:
-            self._show(reset=False)
+        self._show(reset=False)
 
     def _reader_preferences(self):
         dialog = tk.Toplevel(self)
         dialog.title(ui('Preferências do leitor', 'Reader preferences'))
         dialog.configure(bg=THEME["bg"])
         dialog.resizable(False, False)
-        W, H = 720, 650
+        W, H = 900, 760
         dialog.geometry(f"{W}x{H}+{max(0, self.winfo_rootx() + (self.winfo_width()-W)//2)}+{max(0, self.winfo_rooty() + (self.winfo_height()-H)//2)}")
         dialog.transient(self); grab_when_visible(dialog)
-        header=tk.Frame(dialog,bg=THEME["surface"],height=88);header.pack(fill="x");header.pack_propagate(False)
+        header=tk.Frame(dialog,bg=THEME["surface"],height=104);header.pack(fill="x");header.pack_propagate(False)
         heading_box = tk.Frame(header, bg=THEME["surface"]); heading_box.pack(side="left", padx=28, pady=17)
         tk.Label(heading_box,text=ui('Preferências do leitor', 'Reader preferences'),font=("Segoe UI", 20, "bold"),
                  bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w")
@@ -874,12 +1263,13 @@ class ReaderWindow(tk.Toplevel):
         KomicoveButton(header, ui('Fechar', 'Close'), dialog.destroy, THEME, kind="secondary",
                        compact=True, icon_name="x").pack(side="right", padx=24)
         body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=24,pady=18)
-        persist = tk.BooleanVar(value=self._persist_zoom)
-        autofit = tk.BooleanVar(value=self._auto_fit)
-        guided = tk.BooleanVar(value=self._guided)
-        animated = tk.BooleanVar(value=self._animate_guided)
-        manga = tk.BooleanVar(value=self._manga)
-        double = tk.BooleanVar(value=self._double)
+        persist = self._own_variable(tk.BooleanVar(master=self,value=self._persist_zoom))
+        position = self._own_variable(tk.BooleanVar(master=self,value=self._persist_position))
+        autofit = self._own_variable(tk.BooleanVar(master=self,value=self._auto_fit))
+        guided = self._own_variable(tk.BooleanVar(master=self,value=self._guided))
+        animated = self._own_variable(tk.BooleanVar(master=self,value=self._animate_guided))
+        manga = self._own_variable(tk.BooleanVar(master=self,value=self._manga))
+        double = self._own_variable(tk.BooleanVar(master=self,value=self._double))
         columns = tk.Frame(body, bg=THEME["bg"]); columns.pack(fill="both", expand=True)
         columns.grid_columnconfigure(0, weight=1, uniform="reader-preferences")
         columns.grid_columnconfigure(1, weight=1, uniform="reader-preferences")
@@ -895,20 +1285,27 @@ class ReaderWindow(tk.Toplevel):
             tk.Label(row, text=label, font=("Segoe UI", 11, "bold"), bg=THEME["bg"],
                      fg=THEME["text"]).pack(side="left")
 
-        def option(parent, var, title, detail):
+        def option(parent, var, title, detail, icon_name=None):
             shell = KomicoveCard(parent, THEME, height=78, radius=RADIUS_MEDIUM, padding=10)
             shell.pack(fill="x", pady=5)
             ReaderSwitch(shell.content, var).pack(side="right", padx=(8, 2))
+            if icon_name:
+                icon = lucide_icon(icon_name, size=28, state="active", dark=IS_DARK)
+                badge = tk.Label(shell.content, image=icon, bg=THEME["surface"])
+                badge.image = icon
+                badge.pack(side="left", padx=(2, 12))
             labels = tk.Frame(shell.content, bg=THEME["surface"]); labels.pack(side="left", fill="both", expand=True)
             tk.Label(labels, text=title, font=FBTN, bg=THEME["surface"], fg=THEME["text"]).pack(anchor="w")
             tk.Label(labels, text=detail, font=("Segoe UI", 8), bg=THEME["surface"],
                      fg=THEME["text_dim"], wraplength=230, justify="left").pack(anchor="w", pady=(3, 0))
 
         section(left, ui('Visualização', 'Viewing'), "scan")
-        option(left, autofit, ui('Encaixe automático', 'Automatic fit'),
-               ui('Ajusta cada página à área disponível.', 'Fits every page to the available area.'))
-        option(left, persist, ui('Persistir zoom e posição', 'Keep zoom and position'),
-               ui('Mantém o enquadramento ao trocar de página.', 'Keeps framing while changing pages.'))
+        option(left, persist, ui('Manter nível de zoom', 'Keep zoom level'),
+               ui('Mantém o nível de zoom ao trocar de página.', 'Keeps the zoom level when changing pages.'), 'zoom-in')
+        option(left, position, ui('Manter posição', 'Keep position'),
+               ui('Mantém a área visualizada ao trocar de página.', 'Keeps the viewed area when changing pages.'), 'focus')
+        option(left, autofit, ui('Ajustar página automaticamente', 'Automatically fit page'),
+               ui('Redimensiona a página para o melhor enquadramento.', 'Resizes the page for the best fit.'), 'scan')
         option(left, double, ui('Página dupla', 'Double page'),
                ui('Exibe duas páginas lado a lado.', 'Shows two pages side by side.'))
         option(left, manga, ui('Ordem mangá', 'Manga order'),
@@ -935,8 +1332,8 @@ class ReaderWindow(tk.Toplevel):
             self._guide_motion = None
             self._animate_guided = bool(animated.get())
             save_prefs(reader_animate_guided=self._animate_guided)
-            self._persist_zoom = bool(persist.get()); self._auto_fit = bool(autofit.get())
-            save_prefs(reader_persist_zoom=self._persist_zoom, reader_auto_fit=self._auto_fit)
+            self._persist_zoom = bool(persist.get()); self._persist_position = bool(position.get()); self._auto_fit = bool(autofit.get())
+            save_prefs(reader_persist_zoom=self._persist_zoom, reader_persist_position=self._persist_position, reader_auto_fit=self._auto_fit)
             self._guided = bool(guided.get())
             save_prefs(reader_guided=self._guided)
             self._manga = bool(manga.get())
@@ -945,8 +1342,6 @@ class ReaderWindow(tk.Toplevel):
             self._guide_overview = False
             if self._guided:
                 self._double = False
-            if not self._persist_zoom:
-                self._zoom = self.Z0; self._offset = [0, 0]; self._show(reset=False)
             dialog.destroy()
             self._show(reset=False)
         footer = tk.Frame(dialog, bg=THEME["surface"]); footer.pack(fill="x", side="bottom")
@@ -968,10 +1363,14 @@ class ReaderWindow(tk.Toplevel):
         if self._drag:
             dx = e.x - self._drag[0]
             dy = e.y - self._drag[1]
-            self._offset[0] += dx
-            self._offset[1] += dy
+            old_x, old_y = self._offset
+            mx, my = getattr(self, '_pan_bounds', (0, 0))
+            self._offset = [max(-mx, min(mx, old_x + dx)),
+                            max(-my, min(my, old_y + dy))]
             self._drag = (e.x, e.y)
-            self._cv.move("all", dx, dy)
+            item = getattr(self, '_canvas_image', None)
+            if item is not None:
+                self._cv.move(item, self._offset[0] - old_x, self._offset[1] - old_y)
     def _drag_end(self, e):
         self._drag = None; self._cv.config(cursor="crosshair")
         self._show(reset=False)
@@ -1254,18 +1653,23 @@ class ReaderWindow(tk.Toplevel):
         self._show(reset=True)
 
     def _fullscreen(self):
-        self.attributes("-fullscreen", not self.attributes("-fullscreen"))
+        self._immersive_toggle()
+
+    def _apply_immersive_layout(self):
+        if self._immersive:
+            for widget in (self._top, self._header_divider, self._bot, self._thumb_frame):
+                widget.pack_forget()
+        else:
+            self._top.pack(fill="x", before=self._cv)
+            self._header_divider.pack(fill="x", before=self._cv)
+            self._bot.pack(fill="x")
+            if self._thumb_visible:
+                self._thumb_frame.pack(fill="x", before=self._bot)
 
     def _immersive_toggle(self):
         self._immersive = not self._immersive
-        if self._immersive:
-            self._top.pack_forget()
-            self._bot.pack_forget()
-            self.attributes("-fullscreen", True)
-        else:
-            self.attributes("-fullscreen", False)
-            self._top.pack(fill="x", before=self._cv)
-            self._bot.pack(fill="x")
+        self.attributes("-fullscreen", self._immersive)
+        self._apply_immersive_layout()
         self.after(60, lambda: self._show(reset=False))
 
     def _escape(self):
@@ -1325,7 +1729,7 @@ class ReaderWindow(tk.Toplevel):
         self._thumb_strip = ThumbnailStrip(self._thumb_frame, bg_color=THEME["surface"],
                                            on_click=self._fade_to)
         self._thumb_strip.pack(fill="both", expand=True)
-        if not self._thumb_frame.winfo_ismapped():
+        if not self._immersive and not self._thumb_frame.winfo_ismapped():
             self._thumb_frame.pack(fill="x", before=self._bot)
         threading.Thread(target=self._load_thumbs_bg, daemon=True).start()
 
@@ -1344,10 +1748,13 @@ class ReaderWindow(tk.Toplevel):
                 pass
 
     def _close(self):
+        if getattr(self,'_closing',False):
+            return
+        self._closing=True
         self._save_guided_position()
         save_progress(self._path, self._idx)
         save_reader_state(self._content_key, page=self._idx,
-                          zoom=self._zoom if self._persist_zoom else self.Z0,
+                          zoom=self._zoom,
                           offset=self._offset, double=self._double, manga=self._manga)
         record_reading_time(
             self._content_key, time.monotonic()-self._read_started,
@@ -1356,3 +1763,129 @@ class ReaderWindow(tk.Toplevel):
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()
+
+
+class ReaderWindow(ReaderContent,tk.Toplevel):
+    """Standalone reader retained for tooling and external hosts."""
+
+
+class EmbeddedReader(ReaderContent,tk.Frame):
+    """Same reader controls, hosted by the existing desktop window."""
+    _embedded=True
+
+    def __init__(self,master,path,loader,on_finish=None,on_close=None):
+        self._host=master.winfo_toplevel()
+        self._return=None
+        self._host_bindings={}
+        self._scheduled=set()
+        self._destroyed=False
+        self._previous_title=self._host.title()
+        self._previous_fullscreen=self._host.attributes('-fullscreen')
+        self._previous_minimum=self._host.minsize()
+        super().__init__(master,path,loader,on_finish)
+        self._return=on_close
+        self._host.title(f'Komicove: {Path(path).stem}')
+        self._host.minsize(max(800,self._previous_minimum[0]),max(600,self._previous_minimum[1]))
+
+    def attributes(self,*args):
+        return self._host.attributes(*args)
+
+    def bind(self,sequence=None,func=None,add=None):
+        if func is None or sequence in ('<Destroy>','<Configure>'):
+            return super().bind(sequence,func,add)
+        previous=self._host_bindings.pop(sequence,None)
+        if previous:
+            self._host.unbind(sequence,previous)
+        def dispatch(event):
+            if not self._destroyed and self.winfo_ismapped():
+                func(event)
+                return 'break'
+        identifier=self._host.bind(sequence,dispatch,add='+')
+        self._host_bindings[sequence]=identifier
+        return identifier
+
+    def after(self,ms,func=None,*args):
+        if self._destroyed:
+            return None
+        if func is None:
+            return tk.Misc.after(self,ms)
+        identifier=None
+        def invoke():
+            self._scheduled.discard(identifier)
+            if not self._destroyed:
+                func(*args)
+        identifier=tk.Misc.after(self,ms,invoke)
+        self._scheduled.add(identifier)
+        return identifier
+
+    def after_cancel(self,identifier):
+        self._scheduled.discard(identifier)
+        return tk.Misc.after_cancel(self,identifier)
+
+    def destroy(self):
+        if self._destroyed:
+            return
+        self._destroyed=True
+        webtoon=getattr(self,'_webtoon',None)
+        if webtoon is not None:
+            webtoon.destroy()
+        for identifier in list(self._scheduled):
+            self.after_cancel(identifier)
+        for sequence,identifier in self._host_bindings.items():
+            self._host.unbind(sequence,identifier)
+        self._host_bindings.clear()
+        self._host.attributes('-fullscreen',self._previous_fullscreen)
+        self._host.title(self._previous_title)
+        self._host.minsize(*self._previous_minimum)
+        super().destroy()
+        if self._return:
+            callback,self._return=self._return,None
+            callback()
+
+    def _open_webtoon(self):
+        if getattr(self,'_webtoon',None) is not None:
+            return
+        def back():
+            self._webtoon=None
+            if not self._destroyed:
+                self.pack(fill='both',expand=True)
+                self.focus_set()
+                self.after(80,lambda:self._show(reset=False))
+        self._webtoon=EmbeddedWebtoon(self.master,self._loader,
+            width=self.winfo_width(),height=self.winfo_height(),on_close=back)
+        self.pack_forget()
+        self._webtoon.pack(fill='both',expand=True)
+
+
+class EmbeddedWebtoon(WebtoonContent,tk.Frame):
+    _embedded=True
+    after=EmbeddedReader.after
+    after_cancel=EmbeddedReader.after_cancel
+
+    def __init__(self,master,loader,width,height,on_close):
+        self._scheduled=set();self._destroyed=False
+        self._return=on_close
+        self._host=master.winfo_toplevel();self._escape_binding=None
+        self._previous_fullscreen=self._host.attributes('-fullscreen')
+        super().__init__(master,loader,width,height)
+        bar=tk.Frame(self,bg=THEME['surface'])
+        self._bar=bar
+        bar.pack(fill='x',before=self.canvas)
+        make_pill(bar,ui('Voltar','Back'),self.destroy,icon_name='arrow-left',
+                  variant='accent',font=FBTN,pad_x=22,pad_y=10).pack(side='left',padx=28,pady=13)
+        self._host=self.winfo_toplevel()
+        self._escape_binding=self._host.bind('<Escape>',lambda _e:(self._escape(),'break')[-1],add='+')
+        self._fullscreen_binding=self._host.bind('<F11>',lambda _e:(self._fullscreen(),'break')[-1],add='+')
+        self._apply_fullscreen_layout()
+
+    def destroy(self):
+        if self._destroyed:return
+        self._destroyed=True
+        for identifier in list(self._scheduled):self.after_cancel(identifier)
+        if self._escape_binding:self._host.unbind('<Escape>',self._escape_binding)
+        if self._fullscreen_binding:self._host.unbind('<F11>',self._fullscreen_binding)
+        self._host.attributes('-fullscreen',self._previous_fullscreen)
+        self.unbind_all('<MouseWheel>')
+        super().destroy()
+        callback,self._return=self._return,None
+        if callback:callback()

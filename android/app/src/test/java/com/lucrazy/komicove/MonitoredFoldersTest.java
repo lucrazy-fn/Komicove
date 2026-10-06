@@ -65,6 +65,29 @@ public class MonitoredFoldersTest {
         assertEquals(8,store.get(book.id).page);assertTrue(store.get(book.id).favorite);
         assertEquals(2,monitor.visibleBooks().size());
     }
+    @Test public void removedFolderHidesBooksAndReaddingPreservesReadingData()throws Exception{
+        File file=archive("first");provider.files.put("first",file);settle();monitor.scan();LibraryStore.Book book=store.all().get(0);
+        book.page=8;book.favorite=true;book.collection="Mine";store.save(book);
+        monitor.configure(ROOT.toString(),null,null,true);assertTrue(monitor.visibleBooks().isEmpty());
+        monitor.scan();MonitoredFolders restored=new MonitoredFolders(context,new LibraryStore(context));assertTrue(restored.visibleBooks().isEmpty());
+        assertEquals(1,store.all().size());assertTrue(file.isFile());
+        JSONArray registry=restored.folders();registry.put(new JSONObject().put("uri",ROOT.toString()).put("enabled",true));context.getSharedPreferences("library_folders",0).edit().putString("registry",registry.toString()).commit();
+        assertEquals(0,restored.scan().added);LibraryStore.Book visible=restored.visibleBooks().get(0);
+        assertEquals(book.id,visible.id);assertEquals(8,visible.page);assertTrue(visible.favorite);assertEquals("Mine",visible.collection);
+    }
+    @Test public void removedFolderKeepsAlternateSourcesAndStandaloneImportsVisible()throws Exception{
+        provider.files.put("first",archive("first"));settle();monitor.scan();LibraryStore.Book book=store.all().get(0);
+        String other="content://phase2.test/tree/other";JSONArray registry=monitor.folders();registry.put(new JSONObject().put("uri",other).put("enabled",true));context.getSharedPreferences("library_folders",0).edit().putString("registry",registry.toString()).commit();
+        book.sources.put(new JSONObject().put("folder",other).put("uri","content://phase2.test/document/copy"));context.getSharedPreferences("library",0).edit().putString("items",new JSONArray().put(book.json()).toString()).commit();
+        LibraryStore.Book local=new LibraryStore.Book();local.id="standalone";local.title="Local";local.file="standalone.cbz";store.save(local);
+        monitor.configure(ROOT.toString(),null,null,true);assertEquals(2,monitor.visibleBooks().size());
+        monitor.configure(other,null,null,true);assertEquals(1,monitor.visibleBooks().size());assertEquals("standalone",monitor.visibleBooks().get(0).id);
+        assertEquals("standalone",new MonitoredFolders(context,new LibraryStore(context)).visibleBooks().get(0).id);assertEquals(2,store.all().size());
+    }
+    @Test public void legacyRegistryStillShowsMonitoredBooks()throws Exception{
+        provider.files.put("first",archive("first"));settle();monitor.scan();context.getSharedPreferences("library_folders",0).edit().remove("registry").commit();
+        assertEquals(1,new MonitoredFolders(context,store).visibleBooks().size());
+    }
     @Test public void visibilityKeepsActiveAlternateSourceAndStandaloneImports()throws Exception{
         provider.files.put("first",archive("first"));settle();monitor.scan();LibraryStore.Book book=store.all().get(0);
         String other="content://phase2.test/tree/other";JSONArray registry=monitor.folders();registry.put(new JSONObject().put("uri",other).put("enabled",true));context.getSharedPreferences("library_folders",0).edit().putString("registry",registry.toString()).commit();

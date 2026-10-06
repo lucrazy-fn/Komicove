@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import ImageTk
 
@@ -14,7 +15,7 @@ from komicove_app.translations import ui
 class PanelEditor(tk.Toplevel):
     """Visual editor that preserves the existing normalized panel data."""
 
-    def __init__(self, master, image, regions, auto_regions, on_save):
+    def __init__(self, master, image, regions, auto_regions, on_save, on_redetect=None, detection_cancel=None):
         super().__init__(master)
         set_app_icon(self)
         self.title(ui("Editor manual de quadros", "Manual panel editor"))
@@ -25,6 +26,12 @@ class PanelEditor(tk.Toplevel):
         self.regions = [list(region) for region in regions]
         self.auto_regions = [list(region) for region in auto_regions]
         self.on_save = on_save
+        self.on_redetect = on_redetect
+        self._detection_cancel = detection_cancel
+        self._detector = ThreadPoolExecutor(max_workers=1,thread_name_prefix="panel-editor")
+        self._detecting = False
+        self._detect_poll = None
+        self.bind('<Destroy>',self._dispose,add='+')
         self.selected = None
         self.action = None
         self.start = None
@@ -283,9 +290,42 @@ class PanelEditor(tk.Toplevel):
         self.regions[self.selected], self.regions[target] = self.regions[target], self.regions[self.selected]
         self.selected = target; self._draw()
 
-    def _reset(self): self.regions = [list(region) for region in self.auto_regions]; self.selected = None; self._draw()
+    def _reset(self):
+        if self._detecting:
+            return
+        self._detecting=True
+        if self.on_redetect is None:
+            from komicove_app.guided import detect_result
+            image=self.image
+            self.on_redetect=lambda: detect_result(image).regions
+        future=self._detector.submit(self.on_redetect)
+        def finish():
+            self._detect_poll=None
+            if not future.done():
+                self._detect_poll=self.after(30,finish)
+                return
+            self._detecting=False
+            try:
+                self.auto_regions=[list(region) for region in future.result()]
+            except Exception:
+                messagebox.showerror(ui('Redetectar','Redetect'),ui('Não foi possível detectar os quadros.','Could not detect panels.'),parent=self)
+                return
+            self.regions=[list(region) for region in self.auto_regions]
+            self.selected=None
+            self._draw()
+        self._detect_poll=self.after(30,finish)
+
+    def _dispose(self,event):
+        if event.widget is self:
+            if self._detection_cancel is not None:
+                self._detection_cancel.set()
+            if self._detect_poll:
+                self.after_cancel(self._detect_poll)
+            self._detector.shutdown(wait=False,cancel_futures=True)
 
     def _save(self):
+        if self._detecting:
+            return
         if not self.regions:
             messagebox.showwarning(ui("Editor de quadros", "Panel editor"), ui("Crie pelo menos um quadro.", "Create at least one panel."), parent=self)
             return

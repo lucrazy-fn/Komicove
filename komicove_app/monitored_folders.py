@@ -99,10 +99,10 @@ class FolderIndex:
 
     def paths(self, *, visible_only=False):
         snapshot = self.snapshot()
-        disabled = {key for key, row in snapshot["folders"].items() if not row["enabled"]}
+        active = {key for key, row in snapshot["folders"].items() if row["enabled"]}
         return [book["path"] for book in snapshot["books"].values()
                 if not visible_only or not book.get("sources")
-                or any(source["folder"] not in disabled for source in book["sources"].values())]
+                or any(source["folder"] in active for source in book["sources"].values())]
 
     def _folder_covers(self, stop):
         from PIL import Image
@@ -254,12 +254,15 @@ class FolderIndex:
                 retained.update(sources)
             for book in self.data["books"].values():
                 old = book["path"]
-                available = [s["path"] for s in book["sources"].values()
-                             if s.get("available", True) and
-                             (s["folder"] not in results or results[s["folder"]] != "unavailable")]
+                available_sources = [s for s in book["sources"].values()
+                                     if s["folder"] in self.data["folders"] and s.get("available", True) and
+                                     (s["folder"] not in results or results[s["folder"]] != "unavailable")]
+                available = [s["path"] for s in available_sources]
                 book["available"] = bool(available)
-                if available and old not in available:
-                    book["path"] = available[0]
+                active = [s["path"] for s in available_sources if self.data["folders"][s["folder"]]["enabled"]]
+                preferred = active or available
+                if preferred and old not in preferred:
+                    book["path"] = preferred[0]
                     moves.append((old, book["path"]))
             for key, state in results.items():
                 row = self.data["folders"].get(key)

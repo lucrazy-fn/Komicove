@@ -33,3 +33,12 @@ def test_7zip_failure_is_reported(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 2, b"", b"error"))
     with pytest.raises(ValueError, match="não conseguiu ler"):
         archive.run_7zip("7z", ["l", "broken.cb7"])
+
+
+@pytest.mark.parametrize("extension", [".cbr", ".cbz", ".pdf", ".cb7"])
+def test_missing_archive_reports_missing_file_before_detecting_format(monkeypatch, tmp_path, extension):
+    def unexpected_tool_lookup():
+        raise AssertionError("A missing file must not start archive detection")
+    monkeypatch.setattr(archive, "find_7zip", unexpected_tool_lookup)
+    with pytest.raises(FileNotFoundError):
+        archive.ArchiveBackend(tmp_path / ("missing" + extension))

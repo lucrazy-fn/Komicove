@@ -38,6 +38,8 @@ class ComicCard:
                             bg=card_bg, fg=c["text"] if hero else c["text_dim"],
                             wraplength=self._cw, anchor="w")
         self.lbl.pack(pady=(0, 2))
+        if compact:
+            self.lbl.configure(height=2)
         progress_row = tk.Frame(self.frame, bg=card_bg)
         progress_row.pack(fill="x", pady=(2 if hero else 4, 2 if hero else 3))
         self.progress_cv = tk.Canvas(progress_row,
@@ -244,6 +246,203 @@ class ComicCard:
     def _on_enter(self, e): self._animate(1.0)
     def _on_leave(self, e): self._animate(0.0)
     def grid(self, **kwargs): self.frame.grid(**kwargs)
+
+    def destroy(self):
+        if self._anim_id:
+            self._root.after_cancel(self._anim_id)
+            self._anim_id = None
+        if self.frame.winfo_exists():
+            self.frame.destroy()
+        self._tk_img = None
+
+
+class _CanvasCardTarget:
+    """Card-local events and tooltip coordinates on the shared library canvas."""
+    def __init__(self, card):
+        self.card = card
+
+    def bind(self, sequence, callback, add=None):
+        binding = self.card.canvas.tag_bind(self.card.tag, sequence, callback, add)
+        self.card._bindings.append((sequence, binding))
+        return binding
+
+    def event_generate(self, sequence, **options):
+        canvas = self.card.canvas
+        x = round(self.card.x - canvas.canvasx(0) + options.pop('x', 0))
+        y = round(self.card.y - canvas.canvasy(0) + options.pop('y', 0))
+        canvas.event_generate('<Motion>', x=x, y=y)
+        canvas.event_generate(sequence, x=x, y=y, **options)
+
+    def winfo_exists(self): return self.card.winfo_exists()
+    def winfo_rootx(self): return round(self.card.canvas.winfo_rootx() + self.card.x - self.card.canvas.canvasx(0))
+    def winfo_rooty(self): return round(self.card.canvas.winfo_rooty() + self.card.y - self.card.canvas.canvasy(0))
+    def winfo_width(self): return self.card._cw
+    def winfo_height(self): return self.card.height
+
+
+class CanvasComicCard(ComicCard):
+    """The library card uses canvas items, so scrolling never moves child windows."""
+    def __init__(self, canvas, path, img_pil, open_cb, root, label_override=None, **options):
+        self.canvas = canvas
+        self.tag = f'comic-card-{id(self)}'
+        self._paint_tag = self.tag + '-paint'
+        self._bindings = []
+        self.x = self.y = 0
+        self._path, self._open_cb, self._root = path, open_cb, root
+        self._alpha, self._anim_id = 0.0, None
+        self._img_pil, self._tk_img = img_pil, None
+        self._cover_w, self._cover_h = 136, 188
+        self._cw, self._ch = 156, 212
+        name = label_override or Path(path).stem
+        self._nome = name[:20] + '…' if len(name) > 22 else name
+        metrics = getattr(canvas, '_comic_font_metrics', None)
+        if metrics is None or metrics[:2] != (FSMALL, FTINY):
+            metrics = (FSMALL, FTINY,
+                       tkfont.Font(root=root, font=FSMALL).metrics('linespace'),
+                       tkfont.Font(root=root, font=FTINY).metrics('linespace'))
+            canvas._comic_font_metrics = metrics
+        self._line_height, self._status_height = metrics[2:]
+        self.height = self._ch + 2 * self._line_height + self._status_height + 22
+        self._alive = True
+        self.frame = self
+        self.cv = self.lbl = _CanvasCardTarget(self)
+        size = (self._cw, self.height)
+        if getattr(canvas, '_comic_hit_size', None) != size:
+            canvas._comic_hit_photo = tk.PhotoImage(master=canvas, width=size[0], height=size[1])
+            canvas._comic_hit_size = size
+        self._hit_photo = canvas._comic_hit_photo
+        self._hit_item = canvas.create_image(0, 0, image=self._hit_photo, anchor='nw', tags=self.tag)
+        self._update_progress()
+        self._draw(0.0)
+        self.cv.bind('<Enter>', self._on_enter)
+        self.cv.bind('<Leave>', self._on_leave)
+        self.cv.bind('<Button-1>', lambda event: self._open_cb(self._path))
+        self.cv.bind('<Double-Button-1>', lambda event: self._open_cb(self._path))
+        self.cv.bind('<Button-3>', self._show_context_menu)
+
+    def winfo_exists(self): return self._alive and self.canvas.winfo_exists()
+    def update_idletasks(self): self.canvas.update_idletasks()
+    def winfo_reqheight(self): return self.height
+
+    def place_on_canvas(self, x, y):
+        self.canvas.move(self.tag, x - self.x, y - self.y)
+        self.x, self.y = x, y
+        return self.tag
+
+    def _update_progress(self):
+        status, page = get_manual_status(self._path), get_progress_page(self._path)
+        try:
+            total = max(0, int(_COMIC_INFO_CACHE.get(self._path, {}).get('page_count') or 0))
+        except (TypeError, ValueError):
+            total = 0
+        self._fraction = 0.0
+        self._unavailable = not os.path.isfile(self._path)
+        if self._unavailable:
+            self._status_text = ui('Indisponível', 'Unavailable')
+        elif status == 'done':
+            self._status_text, self._fraction = ui('Concluída', 'Completed'), 1.0
+        elif page is not None:
+            self._status_text = ui(f'Página {page + 1}', f'Page {page + 1}')
+            self._fraction = min(1.0, (page + 1) / total) if total else 0.0
+        elif status == 'reading':
+            self._status_text = ui('Em leitura', 'Reading')
+        else:
+            self._status_text = ui('Não lida', 'Unread')
+        if hasattr(self, '_status_item'):
+            self._draw(self._alpha)
+
+    def _draw(self, alpha):
+        if not self.winfo_exists():
+            return
+        canvas, c = self.canvas, THEME
+        tag = (self.tag, self._paint_tag)
+        x, y = self.x, self.y
+        canvas.delete(self._paint_tag)
+        canvas.create_rectangle(x, y, x + self._cw, y + self.height,
+                                fill=c['bg'], outline='', tags=tag)
+        scale = 1 + (self.SCALE_MAX - 1) * ease_out(alpha)
+        width, height = int(self._cover_w * scale), int(self._cover_h * scale)
+        px, py = x + (self._cw - width) // 2, y + (self._ch - height) // 2
+        image = self._img_pil if self._img_pil is not None else get_placeholder_pil()
+        if image is not None:
+            resized = image.resize((width, height), Image.BILINEAR).convert('RGBA')
+            if alpha > .01:
+                resized = Image.alpha_composite(resized, Image.new('RGBA', resized.size, (0, 0, 0, int(120 * alpha))))
+            mask = Image.new('L', resized.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle((0, 0, width - 1, height - 1), radius=CARD_R, fill=255)
+            result = Image.new('RGB', resized.size, c['surface_alt'])
+            result.paste(resized, mask=mask)
+            ImageDraw.Draw(result).rounded_rectangle((0, 0, width - 1, height - 1), radius=CARD_R,
+                outline=c['accent2'] if alpha > .4 else c['border'], width=2 if alpha > .4 else 1)
+            self._tk_img = ImageTk.PhotoImage(result, master=canvas)
+            canvas.create_image(px, py, anchor='nw', image=self._tk_img, tags=tag)
+        if self._img_pil is None:
+            canvas.create_text(x + self._cw / 2, y + self._ch / 2, text='…',
+                               font=FSMALL, fill=c['text_muted'], tags=tag)
+        elif alpha > .3:
+            canvas.create_text(x + self._cw / 2, y + self._ch / 2 - 14, text='▶',
+                               font=('Segoe UI Symbol', 22), fill=c['text'], tags=tag)
+            canvas.create_text(x + self._cw / 2, y + self._ch / 2 + 26, text=self._nome,
+                               width=width - 16, font=('Segoe UI', 8, 'bold'), fill=c['text'], tags=tag)
+        canvas.create_text(x + self._cw / 2, y + self._ch + self._line_height,
+                           text=self._nome, width=self._cw, font=FSMALL,
+                           fill=c['text'] if alpha > .5 else c['text_dim'], tags=tag)
+        bar_y = y + self._ch + 2 * self._line_height + 6
+        canvas.create_rectangle(x + 10, bar_y, x + self._cw - 10, bar_y + 4,
+                                fill=c['progress_bg'], outline='', tags=tag)
+        if self._fraction:
+            canvas.create_rectangle(x + 10, bar_y, x + 10 + (self._cw - 20) * self._fraction, bar_y + 4,
+                                    fill=c['accent'], outline='', tags=tag)
+        self._status_item = canvas.create_text(x + 10, bar_y + 10, anchor='nw', text=self._status_text,
+            font=FTINY, fill=c['accent'] if self._unavailable else c['text_dim'], tags=tag)
+        status = get_manual_status(self._path)
+        if status in ('done', 'reading'):
+            canvas.create_oval(px + 4, py + 4, px + 20, py + 20,
+                               fill=c['read_badge'] if status == 'done' else c['surface_alt'], outline='', tags=tag)
+            canvas.create_text(px + 12, py + 12, text='✓' if status == 'done' else '▶',
+                               font=FTINY, fill=c['read_badge_text'], tags=tag)
+        if is_favorite(self._path):
+            icon = ICONS.get('favorited')
+            if icon:
+                canvas.create_image(px + width - 14, py + 12, image=icon, tags=tag)
+            else:
+                canvas.create_text(px + width - 12, py + 12, text='★', font=FSMALL,
+                                   fill=c['accent'], tags=tag)
+        canvas.tag_raise(self._hit_item)
+
+    def _animate(self, target):
+        if self._anim_id:
+            self._root.after_cancel(self._anim_id)
+            self._anim_id = None
+        def tick():
+            self._anim_id = None
+            if not self.winfo_exists():
+                return
+            step = 1 / self.HOVER_STEPS
+            self._alpha = min(target, self._alpha + step) if target > self._alpha else max(target, self._alpha - step)
+            if abs(self._alpha - target) <= .001:
+                self._alpha = target
+            self._draw(self._alpha)
+            if abs(self._alpha - target) > .001:
+                self._anim_id = self._root.after(self.HOVER_MS, tick)
+        tick()
+
+    def destroy(self):
+        if self._anim_id:
+            self._root.after_cancel(self._anim_id)
+            self._anim_id = None
+        if self.canvas.winfo_exists():
+            for sequence, binding in self._bindings:
+                self.canvas.tag_unbind(self.tag, sequence, binding)
+            self.canvas.delete(self.tag)
+        self._bindings.clear()
+        self._alive = False
+        self._tk_img = None
+        self._hit_photo = None
+        self._img_pil = None
+        self.frame = None
+        self.canvas = None
+        self._root = None
 
 
 class CollectionCard:
@@ -529,14 +728,16 @@ def read_comic_info(path: str) -> dict:
 
 _COMIC_INFO_CACHE = {}
 
-def get_comic_info(path):
+def get_comic_info(path, overrides=None):
     if path not in _COMIC_INFO_CACHE:
         _COMIC_INFO_CACHE[path] = read_comic_info(path)
-    return {**_COMIC_INFO_CACHE.get(path, {}), **book_metadata.get(path)}
+    custom = book_metadata.get(path) if overrides is None else overrides.get(os.path.abspath(path), {})
+    return {**_COMIC_INFO_CACHE.get(path, {}), **custom}
 
-def comic_display_title(path):
-    info = get_comic_info(path)
-    if book_metadata.get(path).get('title'): return info['title']
+def comic_display_title(path, overrides=None):
+    info = get_comic_info(path, overrides)
+    custom = book_metadata.get(path) if overrides is None else overrides.get(os.path.abspath(path), {})
+    if custom.get('title'): return info['title']
     if info.get("series") and info.get("number"):
         return f"{info['series']} #{info['number']}"
     if info.get("title"): return info["title"]
@@ -544,9 +745,10 @@ def comic_display_title(path):
     return Path(path).stem
 
 
-def sort_comics(paths, mode, progress=None):
+def sort_comics(paths, mode, progress=None, *, titles=None, metadata=None):
     """Order library and collection cards without changing files on disk."""
     paths = list(paths)
+    display_title = (lambda path: titles[path]) if titles is not None else comic_display_title
 
     def title_key(value):
         return [(0, int(part)) if part.isdigit() else (1, part.casefold())
@@ -567,12 +769,12 @@ def sort_comics(paths, mode, progress=None):
         return sorted(paths, key=recent_key, reverse=True)
     if mode == "series":
         def series_key(path):
-            info = get_comic_info(path)
+            info = metadata[path] if metadata is not None else get_comic_info(path)
             series = info.get("series") or _serie_name(Path(path).name)
-            return title_key(series), title_key(comic_display_title(path))
+            return title_key(series), title_key(display_title(path))
 
         return sorted(paths, key=series_key)
-    return sorted(paths, key=lambda path: title_key(comic_display_title(path)),
+    return sorted(paths, key=lambda path: title_key(display_title(path)),
                   reverse=(mode == "title_desc"))
 
 

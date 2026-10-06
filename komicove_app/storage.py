@@ -203,7 +203,12 @@ def load_manual_status(): return json_load(MANUAL_STATUS_FILE, {})
 def set_manual_status(path, status):
     data=load_manual_status(); data.pop(path, None) if status is None else data.__setitem__(path, status); json_save(MANUAL_STATUS_FILE, data); _changed("status",path)
 def get_manual_status(path): return load_manual_status().get(path)
-def load_prefs(): return json_load(PREFS_FILE, {})
+def load_prefs():
+    data = json_load(PREFS_FILE, {})
+    if "reader_persist_position" not in data:
+        data["reader_persist_position"] = bool(data.get("reader_persist_zoom", True))
+        json_save(PREFS_FILE, data)
+    return data
 def save_prefs(**values):
     data=load_prefs(); data.update(values); json_save(PREFS_FILE, data)
 def _stats_data():

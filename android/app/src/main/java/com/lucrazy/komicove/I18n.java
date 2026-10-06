@@ -11,6 +11,73 @@ import android.widget.Toast;
 final class I18n {
     private static final Map<String,String> EN=new LinkedHashMap<>();
     static {
+        put("Oculta os controles e as barras do sistema.","Hides reader controls and system bars.");
+        put("Acesse sua conta e continue explorando histórias incríveis.","Sign in to your account and keep exploring amazing stories.");
+        put("Entre para a comunidade e descubra um universo de histórias incríveis.","Join the community and discover a universe of amazing stories.");
+        put("Nome de usuário","Username"); put("Confirmar senha","Confirm password");
+        put("Entrar como convidado","Continue as guest");
+        put("Já tenho uma conta? ","Already have an account? "); put("Ainda não tem uma conta? ","Don't have an account? ");
+        put("Preencha usuário e senha.","Enter your username and password.");
+        put("O usuário deve ter pelo menos 3 caracteres.","The username must contain at least 3 characters.");
+        put("Use apenas letras, números, ponto, hífen ou sublinhado no usuário.","Use only letters, numbers, periods, hyphens or underscores in your username.");
+        put("A senha deve ter pelo menos 8 caracteres.","The password must contain at least 8 characters.");
+        put("As senhas não coincidem.","Passwords do not match."); put("Informe um e-mail válido.","Enter a valid email address.");
+        put("Informe um nome de exibição válido.","Enter a valid display name.");
+        put("Criando conta...","Creating account..."); put("Entrando...","Signing in...");
+        put("Não foi possível entrar.","Could not sign in."); put("Não foi possível concluir.","Could not complete the operation.");
+        put("Enviar código","Send code"); put("Código recebido","Received code");
+        put("Senha alterada. Agora você pode entrar.","Password changed. You can now sign in.");
+        put("Código inválido ou expirado.","Invalid or expired code.");
+        put("Código de autenticação em duas etapas inválido.","Invalid two-factor authentication code.");
+        put("Este e-mail já está cadastrado.","This email is already registered.");
+        put("Nome de usuário '","Username '"); put("' já está em uso.","' is already in use.");
+        put("Verifique o campo usuário.","Check the username field."); put("Verifique o campo senha.","Check the password field.");
+        put("Verifique o campo e-mail.","Check the email field.");
+        put("Sua sessão expirou. Entre novamente.","Your session expired. Sign in again.");
+        put("Usuário ou senha inválidos.","Invalid username or password.");
+        put("O servidor está temporariamente indisponível. Tente novamente em instantes.","The server is temporarily unavailable. Try again shortly.");
+        put("Muitas tentativas em pouco tempo. Aguarde um momento e tente novamente.","Too many attempts in a short time. Wait a moment and try again.");
+        put("Você não tem permissão para realizar esta ação.","You do not have permission to perform this action.");
+        put("O conteúdo solicitado não foi encontrado.","The requested content was not found.");
+        put("Não foi possível concluir a solicitação.","Could not complete the request.");
+        put("Esta conta foi banida.","This account was banned."); put("Conta suspensa até ","Account suspended until "); put(" Motivo: "," Reason: "); put(" às "," at ");
+        put("Komicove não conseguiu iniciar","Komicove could not start");
+        put("Envie uma captura desta tela para corrigirmos o problema. Seus dados não foram apagados.","Send a screenshot of this screen so we can fix the problem. Your data has not been deleted.");
+        put("Foto de perfil","Profile picture"); put("Alterar foto de perfil","Change profile picture");
+        put("Imagem indisponível.","Image unavailable."); put("Não foi possível abrir a imagem.","Could not open the image.");
+        put("Não foi possível salvar a imagem.","Could not save the image."); put("Salvando foto…","Saving picture…");
+        put("Foto atualizada no Windows e no celular.","Picture updated on Windows and on your phone.");
+        put("Foto salva neste aparelho. Atualize o servidor para sincronizar.","Picture saved on this device. Update the server to sync it.");
+        put("Favoritos","Favorites"); put("Todas","All"); put("Restaurar","Restore"); put("Descobrir","Discover");
+        put("Confirmar","Confirm"); put("Ativar","Enable"); put("Desativar","Disable"); put("Enviando…","Sending…");
+        put(" nesta seleção"," in this selection"); put("Você já está usando a versão mais recente.","You are already using the latest version.");
+        put("Pasta aninhada demais.","Folder nesting is too deep.");
+        put("O seletor não concedeu acesso permanente ao arquivo. Tente adicionar pela pasta.","The picker did not grant permanent file access. Try adding the folder instead.");
+        put("Arquivo indisponível. Confira o acesso à pasta.","File unavailable. Check folder access.");
+        put("Arquivo maior que 768 MB.","File exceeds 768 MB."); put("Sem espaço para abrir a HQ.","Not enough space to open the comic.");
+        put("Permissão da pasta perdida. Selecione a pasta novamente.","Folder permission was lost. Select the folder again.");
+        put("Backup grande demais.","Backup is too large."); put("Use um backup Android compatível com o Komicove.","Use an Android backup compatible with Komicove.");
+        put("Não foi possível salvar as pastas.","Could not save the folders."); put("Limite de arquivos da pasta.","Folder file limit reached.");
+        put("Pasta indisponível.","Folder unavailable."); put("HQ inválida ou fora dos limites de segurança.","Invalid comic or safety limits exceeded.");
+        put("Arquivo ainda sendo copiado.","File is still being copied.");
+        put("Recurso ausente no EPUB.","Missing EPUB resource."); put("Documento EPUB grande demais.","EPUB document is too large.");
+        put("Recurso externo bloqueado","External resource blocked"); put("EPUB sem documento principal.","EPUB has no main document."); put("EPUB grande demais.","EPUB is too large.");
+        put("Adicionar ou remover marcador","Add or remove bookmark"); put("Tela cheia","Full screen"); put("Modo","Mode"); put("Guiada","Guided");
+        put("Minimizar controles","Minimize controls"); put("Restaurar controles","Restore controls"); put("Leitura guiada","Guided reading"); put("Sair","Exit");
+        put("A leitura guiada está disponível em Página única e Mangá.","Guided reading is available in Single page and Manga modes.");
+        put("Leitura guiada ativada","Guided reading enabled"); put("Leitura guiada desativada","Guided reading disabled");
+        put("Use o modo de página única ou mangá para editar quadros.","Use single-page or manga mode to edit panels.");
+        put("Toque para selecionar. Arraste o quadro ou as alças vermelhas. Arraste no vazio para criar.","Tap to select. Drag the panel or its red handles. Drag empty space to create a panel.");
+        put("Editor de quadros. Toque em um quadro para selecionar e arraste as alças para redimensionar.","Panel editor. Tap a panel to select it and drag the handles to resize it.");
+        put("Esq.","Left"); put("Dir.","Right"); put("Cima","Up"); put("Baixo","Down"); put("Menor","Smaller"); put("Maior","Larger"); put("Antes","Before");
+        put("Rolagem vertical","Vertical scrolling"); put("Une as páginas verticalmente, sem espaço entre elas.","Joins pages vertically without gaps between them.");
+        put("Lidas","Read"); put("Tema de leitura","Reading theme"); put("Padrão","Default"); put("Escuro","Dark"); put("Sépia","Sepia"); put("P&B","B&W");
+        put("IA local","Local AI");put("IA local · Aproximado","Local AI · Approximate");
+        put("Detectando…","Detecting…");put("Detecção automática","Automatic detection");put("Modo aproximado","Approximate mode");put("Quadros manuais","Manual panels");
+        put("Diminuir zoom","Zoom out");put("Aumentar zoom","Zoom in");
+        put("Detecção atualizada. Quadros manuais preservados. Aplique pelo editor.","Detection updated. Manual panels preserved. Apply through the editor.");
+        put("Não foi possível detectar os quadros.","Could not detect panels.");put("Quadro manual ","Manual panel ");
+        put("Recalcular a detecção sem apagar quadros manuais.","Recalculate detection without deleting manual panels.");
         put("Pastas da biblioteca","Library folders");put("Remover pasta","Remove folder");put("Nome da pasta","Folder name");put("Atualizando pasta…","Updating folder…");
         put("HQ indisponível. Atualize a pasta. Seu progresso foi mantido.","Comic unavailable. Refresh the folder. Your progress was kept.");
         put("Não foi possível atualizar as pastas. Tente novamente.","Could not refresh the folders. Try again.");
@@ -89,6 +156,8 @@ final class I18n {
         put("Modo de leitura","Reading mode"); put("Páginas","Pages"); put("Marcadores","Bookmarks"); put("Preferências","Preferences");
         put("Personalize sua experiência de leitura","Personalize your reading experience");
         put("Leitura e navegação","Reading and navigation"); put("Aparência e exibição","Appearance and display");
+        put("Manter nível de zoom","Keep zoom level"); put("Manter posição","Keep position");
+        put("Mantém o nível de zoom ao trocar de página.","Keeps the zoom level when changing pages."); put("Mantém a área visualizada ao trocar de página.","Keeps the viewed area when changing pages.");
         put("Persistir zoom e deslocamento","Keep zoom and position"); put("Mantém o nível de zoom e a posição entre páginas.","Keeps the zoom level and position between pages.");
         put("Ajustar à tela automaticamente","Fit to screen automatically"); put("Redimensiona cada página para o melhor enquadramento.","Resizes each page for the best fit.");
         put("Leitura guiada (experimental)","Guided reading (experimental)"); put("Destaca os quadros na ordem de leitura.","Highlights panels in reading order.");
@@ -112,7 +181,7 @@ final class I18n {
         put("Carregando página ","Loading page "); put("Manter zoom e posição entre páginas","Keep zoom and position between pages");
         put("Encaixar a página ao abrir","Fit page when opened"); put("Leitura guiada: experimental","Guided reading: experimental");
         put("Transições suaves entre quadros","Smooth transitions between panels"); put("Preferências do leitor","Reader preferences");
-        put("Leitor","Reader"); put("Página inteira","Full page"); put("Voltar ao quadro","Return to panel"); put("Encaixar","Fit");
+        put("Leitor","Reader"); put("Página inteira","Full page"); put("Voltar ao quadro","Return to panel"); put("Encaixar","Fit"); put("Se localizar","Find your place");
         put("Voltar à biblioteca","Back to library"); put("Mostrar página inteira","Show full page"); put("Opções do leitor","Reader options");
         put("Abrindo…","Opening…"); put("Anterior","Previous"); put("Próximo","Next"); put("Ir para página","Go to page");
         put("Página ","Page "); put("Quadro ","Panel "); put("Trecho ","Section "); put("Página indisponível","Page unavailable");
@@ -233,7 +302,6 @@ final class I18n {
         put("Sem título","Untitled"); put("Criador","Creator"); put("história","story"); put("histórias","stories");
     }
     static {
-        put("Não foi possível concluir a solicitação.","Could not complete the request.");
         put("Alias de identidade inválido.","Invalid identity alias.");
         put("A identidade antiga já pertence a outra HQ.","The legacy identity already belongs to another comic.");
     }
@@ -250,6 +318,7 @@ final class I18n {
     static String language(Context c){android.content.SharedPreferences current=c.getSharedPreferences("komicove_ui",0);return current.contains("language")?current.getString("language","pt"):c.getSharedPreferences("panel_ui",0).getString("language","pt");}
     static void language(Context c,String value){c.getSharedPreferences("komicove_ui",0).edit().putString("language",value).apply();}
     static String t(Context c,String value){
+        if("Código inválido ou expirado. / Invalid or expired code.".equals(value))value="Código inválido ou expirado.";
         if(value==null||!"en".equals(language(c)))return value;
         String exact=EN.get(value);if(exact!=null)return exact;
         String result=value;

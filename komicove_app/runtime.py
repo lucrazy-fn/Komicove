@@ -3,6 +3,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 import zipfile
+import queue
 import os, sys, io, json, time, threading, hashlib, re, shutil, logging
 from pathlib import Path
 from collections import deque
@@ -592,7 +593,7 @@ def make_pill(parent, text, cmd, *, icon=None, icon_name=None, variant="ghost",
     tmp = tk.Label(parent, text=text, font=font)
     tmp_w = tmp.winfo_reqwidth(); tmp_h = tmp.winfo_reqheight()
     tmp.destroy()
-    font_measure = tkfont.Font(font=font)
+    font_measure = tkfont.Font(root=parent, font=font)
     dynamic_icon = {"image": icon}
     preview_icon = icon or (lucide_icon(icon_name, size=17, state="normal", dark=IS_DARK)
                             if icon_name else None)
@@ -678,9 +679,13 @@ def make_pill(parent, text, cmd, *, icon=None, icon_name=None, variant="ghost",
     cv.bind("<Leave>", lambda e: _normal() if cv._pill_active else animate(base_fill, base_fg, base_outline))
     cv.bind("<Button-1>", lambda e: cmd())
     def cancel_motion(event):
-        if event.widget is cv and cv._motion_job is not None:
-            cv.after_cancel(cv._motion_job)
-            cv._motion_job = None
+        if event.widget is cv:
+            if cv._motion_job is not None:
+                cv.after_cancel(cv._motion_job)
+                cv._motion_job = None
+            # Release the Tcl font here, before a worker can collect callbacks.
+            font_measure.__del__()
+            font_measure.delete_font = False
     cv.bind("<Destroy>", cancel_motion, add="+")
     return cv
 
@@ -712,63 +717,183 @@ def animate_color(widget, option, start, end, duration=160):
 
 
 class CoverLoader:
+    MAX_CACHED = 160
+    DELIVERY_BATCH = 4
+    DELIVERY_SECONDS = .008
+
     def __init__(self, root: tk.Tk, cache: dict):
         self._root = root
         self._cache = cache
         self._queue = deque()
+        self._cached_callbacks = deque()
         self._pending = {}
         self._lock = threading.Lock()
+        self._wake = threading.Event()
         self._running = True
+        self._generation = 0
+        self._inflight = {}
+        self._completed = queue.SimpleQueue()
+        self._delivering = False
+        self._poll = self._root.after(100, self._deliver)
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
     def request(self, path, callback):
+        if not self._running:
+            return
         if path in self._cache:
-            self._root.after(0, lambda: callback(path, self._cache[path]))
+            pil = self._cache.pop(path)
+            self._cache[path] = pil
+            generation = self._generation
+            self._cached_callbacks.append((path, generation, pil, callback))
+            self._schedule_delivery()
             return
         with self._lock:
             callbacks = self._pending.setdefault(path, [])
             callbacks.append(callback)
-            if len(callbacks) == 1:
+            if len(callbacks) == 1 and self._inflight.get(path) != self._generation:
                 self._queue.append(path)
+                self._wake.set()
+        self._schedule_delivery()
+
+    def _schedule_delivery(self):
+        if self._delivering:
+            return
+        if self._poll is not None:
+            self._root.after_cancel(self._poll)
+        self._poll = self._root.after(20, self._deliver)
+
+    def cancel(self, path, callback):
+        self._cached_callbacks = deque(item for item in self._cached_callbacks
+                                       if not (item[0] == path and item[3] == callback))
+        with self._lock:
+            callbacks = self._pending.get(path, [])
+            if callback in callbacks:
+                callbacks.remove(callback)
+            if not callbacks:
+                self._pending.pop(path, None)
+                try:
+                    self._queue.remove(path)
+                except ValueError:
+                    pass
 
     def clear_queue(self):
+        self._cached_callbacks.clear()
         with self._lock:
+            self._generation += 1
             self._queue.clear()
             self._pending.clear()
+        self._discard_completed()
 
     def stop(self):
-        self._running = False
+        with self._lock:
+            self._running = False
+            self._wake.set()
+        self.clear_queue()
+        if self._poll is not None:
+            self._root.after_cancel(self._poll)
+            self._poll = None
+        self._discard_completed()
+
+    def _discard_completed(self):
+        while True:
+            try:
+                _, _, pil = self._completed.get_nowait()
+            except queue.Empty:
+                return
+            if pil is not None:
+                pil.close()
+
+    def _deliver(self):
+        self._poll = None
+        if not self._running:
+            return
+        self._delivering = True
+        started = time.perf_counter()
+        delivered = 0
+        while self._cached_callbacks and delivered < self.DELIVERY_BATCH:
+            path, generation, pil, callback = self._cached_callbacks.popleft()
+            if generation == self._generation:
+                try:
+                    callback(path, pil)
+                except Exception:
+                    log.exception('Cover callback failed')
+            delivered += 1
+            if not self._running or time.perf_counter() - started >= self.DELIVERY_SECONDS:
+                break
+        for _ in range(self.DELIVERY_BATCH - delivered):
+            if not self._running or time.perf_counter() - started >= self.DELIVERY_SECONDS:
+                break
+            try:
+                path, generation, pil = self._completed.get_nowait()
+            except queue.Empty:
+                break
+            with self._lock:
+                if self._inflight.get(path) == generation:
+                    self._inflight.pop(path)
+                if generation != self._generation:
+                    if pil is not None:
+                        pil.close()
+                    continue
+                callbacks = self._pending.pop(path, [])
+            self._cache[path] = pil
+            while len(self._cache) > self.MAX_CACHED:
+                self._cache.pop(next(iter(self._cache)))
+            for callback in callbacks:
+                if not self._running or generation != self._generation:
+                    break
+                try:
+                    callback(path, pil)
+                except Exception:
+                    log.exception('Cover callback failed')
+        with self._lock:
+            if self._queue:
+                self._wake.set()
+        self._delivering = False
+        if self._running:
+            busy = self._cached_callbacks or self._pending or not self._completed.empty()
+            self._poll = self._root.after(20 if busy else 100, self._deliver)
 
     def _worker(self):
         while self._running:
             item = None
             with self._lock:
-                if self._queue:
+                if not self._running:
+                    return
+                if self._queue and self._completed.qsize() < self.DELIVERY_BATCH * 2:
                     item = self._queue.popleft()
+                    generation = self._generation
+                    self._inflight[item] = generation
+                else:
+                    self._wake.clear()
             if item:
                 path = item
                 pil = self._load(path)
-                self._cache[path] = pil
                 with self._lock:
-                    callbacks = self._pending.pop(path, [])
-                if self._root.winfo_exists():
-                    for callback in callbacks:
-                        self._root.after(0, lambda p=path, i=pil, cb=callback: cb(p, i))
+                    if not self._running or generation != self._generation:
+                        if pil is not None:pil.close()
+                        if self._inflight.get(path) == generation:
+                            self._inflight.pop(path)
+                        continue
+                    self._completed.put((path, generation, pil))
             else:
-                time.sleep(0.02)
+                self._wake.wait()
 
     def _load(self, path):
         cache_file = _cover_cache_path(path)
         if os.path.exists(cache_file):
             try:
-                return Image.open(cache_file).convert("RGB")
+                with Image.open(cache_file) as source:
+                    source.thumbnail((CAPA_W, CAPA_H), Image.BILINEAR)
+                    return source.convert("RGB")
             except Exception:
                 pass
         try:
             data = extract_cover_only(path)
-            img = Image.open(io.BytesIO(data)).convert("RGB")
-            img.thumbnail((CAPA_W, CAPA_H), Image.BILINEAR)
+            with Image.open(io.BytesIO(data)) as source:
+                source.draft('RGB', (CAPA_W, CAPA_H))
+                source.thumbnail((CAPA_W, CAPA_H), Image.BILINEAR)
+                img = source.convert('RGB')
             bg_hex = THEME["surface_alt"].lstrip("#")
             bg_rgb = tuple(int(bg_hex[i:i+2], 16) for i in (0, 2, 4))
             bg = Image.new("RGB", (CAPA_W, CAPA_H), bg_rgb)
@@ -785,6 +910,8 @@ class CoverLoader:
             except Exception:
                 pass
             return result
+        except FileNotFoundError:
+            return None
         except Exception as e:
             log.warning("Não foi possível carregar a capa de %s: %s", path, e)
             return None

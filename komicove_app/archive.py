@@ -32,8 +32,14 @@ def run_7zip(executable, arguments):
     return result.stdout
 def natural_key(value): return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(value))]
 class ArchiveBackend:
-    def __init__(self,path): self.path=path; self.kind=None; self.names=[]; self._pdf_doc=None; self._detect()
+    def __init__(self,path):
+        self.path=path; self.kind=None; self.names=[]; self._pdf_doc=None
+        self._zip_source = None
+        self._read_lock = threading.RLock()
+        self._closed = False
+        self._detect()
     def _detect(self):
+        os.stat(self.path)
         self._seven_zip = find_7zip()
         suffix=Path(self.path).suffix.lower()
         if suffix == '.epub':
@@ -59,16 +65,30 @@ class ArchiveBackend:
     @property
     def count(self): return len(self.names)
     def read_page(self,index):
+        with self._read_lock:
+            if self._closed:
+                raise ValueError('Archive is closed')
+            if self.kind not in ('rar', '7zip'):
+                return self._read_page(index)
+        # These formats open an independent source for each read.
+        return self._read_page(index)
+    def _read_page(self,index):
         if not 0<=index<self.count: raise IndexError(index)
         if self.kind=="zip":
-            with zipfile.ZipFile(self.path) as source:return source.read(self.names[index])
+            if self._zip_source is None:
+                self._zip_source = zipfile.ZipFile(self.path)
+            return self._zip_source.read(self.names[index])
         if self.kind=="rar":
             with rarfile.RarFile(self.path) as source:return source.read(self.names[index])
         if self.kind=="7zip":
             return run_7zip(self._seven_zip,["x","-so","-spd","--",str(Path(self.path).resolve()),self.names[index]])
         page=self._pdf_doc.load_page(index); return page.get_pixmap(matrix=fitz.Matrix(2,2)).tobytes("png")
     def close(self):
-        if self._pdf_doc: self._pdf_doc.close(); self._pdf_doc=None
+        with self._read_lock:
+            self._closed = True
+            if self._zip_source:
+                self._zip_source.close(); self._zip_source = None
+            if self._pdf_doc: self._pdf_doc.close(); self._pdf_doc=None
 def extract_cover_only(path):
     backend=ArchiveBackend(path)
     try:

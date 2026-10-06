@@ -33,7 +33,7 @@ final class PanelEditorView extends View {
         selectedFill.setColor(0x22ff2741);handleOuter.setColor(Color.WHITE);handleInner.setColor(Ui.RED);
         handleRadius=Ui.dp(c,10);touchRadius=Ui.dp(c,36);
         setMinimumHeight(Ui.dp(c,440));setFocusable(true);
-        setContentDescription("Editor de quadros. Toque em um quadro para selecionar e arraste as alças para redimensionar.");
+        setContentDescription(I18n.t(c,"Editor de quadros. Toque em um quadro para selecionar e arraste as alças para redimensionar."));
     }
 
     @Override protected void onDraw(Canvas c){

@@ -8,7 +8,7 @@ import komicove_app.publishing_views as _publishing_views
 import komicove_app.moderation_views as _moderation_views
 import komicove_app.library_widgets as _library_widgets
 from komicove_app.auth_views import AuthWindow
-from komicove_app.reader_views import LangWindow, ReaderWindow
+from komicove_app.reader_views import LangWindow, EmbeddedReader
 from komicove_app.publishing_views import PublishDialog
 from komicove_app.community_views import CommunityTab, CommunityWindow
 from komicove_app.moderation_views import ModerationWindow
@@ -30,6 +30,7 @@ from komicove_app.monitored_folders import FolderIndex, FolderWatcher
 from komicove_app.storage import preserve_renamed_book, sync_snapshot, unregister_change_listener, flush_progress
 from komicove_app.sync import apply_sync_response, seed_content_index
 from komicove_app.folder_views import render_folders, update_folders
+from komicove_app.library_grid import LibraryGrid
 from PIL import ImageOps, ImageEnhance, ImageDraw
 from urllib.parse import urlparse
 
@@ -54,11 +55,22 @@ class LibraryWindow(tk.Tk):
         self._status_filter= "all"
         self._search_query = ""
         self._card_map     = {}
+        self._library_grid = None
+        self._library_prepare_cancel = threading.Event()
+        self._library_restore_scroll = None
+        self._library_preparing = False
         self._cover_loader = None
+        self._embedded_reader = None
+        self._closing_app = False
+        self._scheduled = set()
+        self._reader_return_state = None
+        self._reader_collection = None
+        self._opening_cancel = None
+        self._opening_poll = None
+        self._opening_handoff = None
         self._search_bubble= None
         self._meta_tooltip = None
         self._sync_job = None
-        self._closing_app = False
         self._sync_running = False
         self._sync_events = queue.SimpleQueue()
         self._sync_poll = self.after(100, self._poll_sync)
@@ -830,8 +842,7 @@ class LibraryWindow(tk.Tk):
         self._moderation_status.config(text=ui('Download concluído.', 'Download completed.'), fg=THEME["text_dim"])
         if open_after:
             try:
-                loader = SmartPageLoader(destination)
-                ReaderWindow(self, destination, loader)
+                self._open(destination)
             except Exception as exc:
                 messagebox.showerror(ui('Leitura', 'Reading'), ui(f"Não foi possível abrir o arquivo: {exc}", f"Could not open the file: {exc}"), parent=self)
 
@@ -905,6 +916,16 @@ class LibraryWindow(tk.Tk):
         self._check_updates(data)
 
     def _build_shell(self):
+        self._cancel_reader_open()
+        if self._resize_job is not None:
+            self.after_cancel(self._resize_job)
+            self._resize_job=None
+        if self._embedded_reader is not None:
+            self._embedded_reader._return=None
+            self._embedded_reader._close()
+            self._embedded_reader=None
+            self._reader_return_state=None
+            self._cover_loader=CoverLoader(self,self._capa_cache)
         for w in self.winfo_children():
             w.destroy()
         self._notifications_nav_item = None
@@ -1269,9 +1290,17 @@ class LibraryWindow(tk.Tk):
         item.pack(padx=8, pady=1)
         return item
 
-    def _refresh_library(self):
+    def _refresh_library(self, preserve_scroll=False):
+        if self._embedded_reader is not None:
+            return
         self._active_tab = "library"
         c = THEME
+        scroll = (self._lib_canvas.yview()[0] if preserve_scroll
+                  and hasattr(self, '_lib_canvas') and self._lib_canvas.winfo_exists() else None)
+        self._library_prepare_cancel.set()
+        if self._library_grid:
+            self._library_grid.close()
+            self._library_grid = None
         self._card_map.clear()
         if self._cover_loader: self._cover_loader.clear_queue()
         if self._search_bubble:
@@ -1325,24 +1354,32 @@ class LibraryWindow(tk.Tk):
         self._lib_canvas = tk.Canvas(sf, bg=c["bg"], highlightthickness=0)
         self._lib_canvas.pack(side="left", fill="both", expand=True)
         sb = ttk.Scrollbar(sf, orient="vertical", command=self._lib_canvas.yview)
+        self._lib_scrollbar = sb
         sb.pack(side="right", fill="y")
         self._lib_canvas.configure(yscrollcommand=sb.set)
         self._lib_content = tk.Frame(self._lib_canvas, bg=c["bg"])
         self._lib_win_id = self._lib_canvas.create_window((0, 0), window=self._lib_content, anchor="nw")
 
         def _update_scroll(e=None):
+            if self._library_grid:
+                return
             self._lib_canvas.configure(scrollregion=(0, 0, self._lib_canvas.winfo_width(),
                 max(self._lib_canvas.winfo_height(), self._lib_content.winfo_height())))
         self._lib_content.bind("<Configure>", _update_scroll)
         self._lib_canvas.bind("<Configure>", lambda e: (
             self._lib_canvas.itemconfig(self._lib_win_id, width=e.width), _update_scroll()))
-        def _on_wheel(e): self._lib_canvas.yview_scroll(-int(e.delta/120), "units")
+        def _on_wheel(e): self._lib_canvas.yview_scroll(-int(e.delta/120) * 3, "units")
         self._lib_canvas.bind("<Enter>", lambda e: self._lib_canvas.bind_all("<MouseWheel>", _on_wheel))
         self._lib_canvas.bind("<Leave>", lambda e: self._lib_canvas.unbind_all("<MouseWheel>"))
 
+        if scroll is not None:
+            self._library_restore_scroll = scroll
         self._populate_library_grid()
 
+        library_host=self._main
         def _on_resize(e):
+            if self._active_tab!='library' or self._main is not library_host:
+                return
             if self._resize_job: self.after_cancel(self._resize_job)
             self._resize_job = self.after(350, self._check_ncols)
         self._main.bind("<Configure>", _on_resize)
@@ -1408,56 +1445,109 @@ class LibraryWindow(tk.Tk):
         tk.Button(dialog, text=ui('Aplicar filtros', 'Apply filters'), command=apply).pack(pady=12)
         tk.Button(dialog, text=ui('Limpar filtros', 'Clear filters'), command=lambda: apply(True)).pack(pady=(0, 12))
 
-    def _populate_library_grid(self):
+    def _populate_library_grid(self, preserve_scroll=False):
+        if (self._embedded_reader is not None or self._closing_app
+                or getattr(self,'_active_tab',None)!='library'
+                or not hasattr(self,'_lib_content') or not self._lib_content.winfo_exists()):
+            return
         c = THEME
+        scroll = self._lib_canvas.yview()[0] if preserve_scroll else self._library_restore_scroll
+        self._library_restore_scroll = None
+        self._library_prepare_cancel.set()
+        cancel = self._library_prepare_cancel = threading.Event()
+        self._library_preparing = True
+        if self._library_grid:
+            self._library_grid.close()
+            self._library_grid = None
+        if self._cover_loader:
+            self._cover_loader.clear_queue()
         for w in self._lib_content.winfo_children():
             w.destroy()
         self._card_map.clear()
-
-        arquivos = self._scan()
-
-        for field in ("series", "writer"):
-            selected = getattr(self, "_metadata_filter_" + field, "")
-            if selected:
-                arquivos = [path for path in arquivos if get_comic_info(path).get(field, "") == selected]
-
-        prog = load_progress()
-        continuar = []
-        for p in arquivos:
-            entry = prog.get(p)
-            if entry is not None:
-                ts = entry.get("ts", 0) if isinstance(entry, dict) else 0
-                continuar.append((ts, p))
-        continuar.sort(reverse=True)
-        continuar = [p for _, p in continuar[:6]]
-
         q = self._search_query.strip().lower()
-        if q:
-            def _match(p):
-                if q in Path(p).stem.lower(): return True
-                info = get_comic_info(p)
-                return any(q in info.get(f, "").lower()
-                           for f in ("title", "series", "writer", "publisher", "genre"))
-            arquivos = [p for p in arquivos if _match(p)]
+        status, mode = self._status_filter, self._book_sort
+        fields = {field: getattr(self, '_metadata_filter_' + field, '') for field in ('series', 'writer')}
+        has_active_filter = bool(q or status != 'all' or any(fields.values()))
+        host = self._lib_content
+        loading = tk.Label(host, text=ui('Carregando biblioteca...', 'Loading library...'),
+                           bg=c['bg'], fg=c['text_dim'], font=FSMALL)
+        loading.pack(padx=CONTENT_PADDING, pady=24, anchor='w')
+        completed = queue.SimpleQueue()
 
-        if self._status_filter == "favorites":
-            arquivos = [p for p in arquivos if is_favorite(p)]
-        elif self._status_filter != "all":
-            arquivos = [p for p in arquivos if self._status_of(p) == self._status_filter]
+        def prepare():
+            try:
+                paths = self._scan()
+                overrides = _library_widgets.book_metadata.json_load(_library_widgets.book_metadata.FILE, {})
+                metadata, titles = {}, {}
+                # Warm metadata away from Tk, including title/series sorting.
+                for path in paths:
+                    if cancel.is_set():
+                        return
+                    metadata[path] = get_comic_info(path, overrides)
+                    titles[path] = comic_display_title(path, overrides)
+                for field, selected in fields.items():
+                    if selected:
+                        paths = [p for p in paths if metadata[p].get(field, '') == selected]
+                prog = load_progress()
+                recent = [(entry.get('ts', 0) if isinstance(entry, dict) else 0, p)
+                          for p in paths if (entry := prog.get(p)) is not None]
+                recent.sort(reverse=True)
+                continuar = [p for _, p in recent[:6]]
+                if q:
+                    paths = [p for p in paths if q in Path(p).stem.lower() or any(
+                        q in metadata[p].get(f, '').lower()
+                        for f in ('title', 'series', 'writer', 'publisher', 'genre'))]
+                if status == 'favorites':
+                    favorites = set(load_favorites())
+                    paths = [p for p in paths if p in favorites]
+                elif status != 'all':
+                    paths = [p for p in paths if self._status_of(p) == status]
+                paths = sort_comics(paths, mode, prog, titles=titles, metadata=metadata)
+                if not cancel.is_set():
+                    completed.put((paths, continuar, titles, metadata, None))
+            except Exception as error:
+                completed.put(([], [], {}, {}, error))
 
-        arquivos = sort_comics(arquivos, self._book_sort, prog)
+        def finish():
+            if (cancel.is_set() or self._closing_app or self._active_tab != 'library'
+                    or self._lib_content is not host or not host.winfo_exists()):
+                cancel.set()
+                return
+            try:
+                paths, continuar, titles, metadata, error = completed.get_nowait()
+            except queue.Empty:
+                self.after(25, finish)
+                return
+            if error is not None:
+                log.error('Library preparation failed: %s', error)
+                loading.configure(text=ui('Não foi possível carregar a biblioteca.',
+                                          'Could not load the library.'))
+                self._library_preparing = False
+                return
+            loading.destroy()
+            self._render_library_grid(paths, continuar, titles, metadata, has_active_filter, scroll)
+            self._library_preparing = False
 
-        has_active_filter = bool(q or self._status_filter != "all" or any(
-            getattr(self, "_metadata_filter_" + field, "") for field in ("series", "writer")
-        ))
+        threading.Thread(target=prepare, daemon=True, name='library-metadata').start()
+        self.after(25, finish)
+
+    def _render_library_grid(self, arquivos, continuar, titles, metadata, has_active_filter, scroll):
+        c = THEME
+        self._last_ncols = max(2, (self._main.winfo_width() - CONTENT_PADDING * 2) // (156 + GPAD))
         if not arquivos and (not continuar or has_active_filter):
             self._show_empty(self._lib_content, no_results=has_active_filter)
+            self.update_idletasks()
+            self._lib_canvas.yview_moveto(scroll if scroll is not None else 0)
             return
 
         self.update_idletasks()
         avail = self._main.winfo_width() - CONTENT_PADDING * 2
         if avail < 50:
-            self.after(200, self._populate_library_grid); return
+            cancel, host = self._library_prepare_cancel, self._lib_content
+            self.after(200, lambda: self._render_library_grid(
+                arquivos, continuar, titles, metadata, has_active_filter, scroll)
+                if not cancel.is_set() and self._active_tab == 'library' and host.winfo_exists() else None)
+            return
         card_w = 156 + GPAD
         ncols = max(2, avail // card_w)
         self._last_ncols = ncols
@@ -1472,15 +1562,32 @@ class LibraryWindow(tk.Tk):
                  font=design_caption(10, bold=True), bg=c["bg"], fg=c["text"], anchor="w").pack(side="left")
         self._book_sort_controls(section, self._refresh_library, side="right")
 
-        gf = tk.Frame(self._lib_content, bg=c["bg"])
-        gf.pack(padx=CONTENT_PADDING - GPAD // 2, pady=(8, GPAD), anchor="nw")
-        for placed, path in enumerate(arquivos):
-            row, col = placed // ncols, placed % ncols
-            card = ComicCard(gf, path, None, self._open, self,
-                             label_override=comic_display_title(path), compact=True)
-            card.grid(row=row, column=col, padx=GPAD//2, pady=GPAD//2)
+        if not arquivos:
+            return
+
+        def create(path):
+            card = CanvasComicCard(self._lib_canvas, path, None, self._open, self,
+                             label_override=titles[path], compact=True)
             self._card_map[path] = card
-            self._wire_card(card, path)
+            self._wire_card(card, path, metadata[path])
+            return card
+
+        def release(card, path):
+            if self._meta_tooltip:
+                self._meta_tooltip.hide()
+            if self._card_map.get(path) is card:
+                self._card_map.pop(path)
+            if self._cover_loader and hasattr(self._cover_loader, 'cancel'):
+                self._cover_loader.cancel(path, card._cover_callback)
+            card.destroy()
+
+        self.update_idletasks()
+        self._library_grid = LibraryGrid(self._lib_canvas, self._lib_scrollbar,
+            self._lib_content, arquivos, ncols, 156, GPAD, CONTENT_PADDING,
+            create, release)
+        self.update_idletasks()
+        self._lib_canvas.yview_moveto(scroll if scroll is not None else 0)
+        self._library_grid.refresh()
 
     def _render_library_hero(self, parent, paths):
         c = THEME
@@ -1653,15 +1760,18 @@ class LibraryWindow(tk.Tk):
                 button.bind('<Button-1>', lambda _e, step=direction: move(step))
                 hero.create_window(x, 13, window=button, anchor='nw')
 
-    def _wire_card(self, card, path):
-        custom_cover = get_comic_info(path).get('cover')
+    def _wire_card(self, card, path, info=None):
+        custom_cover = (get_comic_info(path) if info is None else info).get('cover')
         if self._meta_tooltip:
             tt = self._meta_tooltip
             card.cv.bind("<Enter>",  lambda e, p=path, w=card.cv: tt.show(w, p), add="+")
             card.cv.bind("<Leave>",  lambda e: tt.hide(), add="+")
-            card.lbl.bind("<Enter>", lambda e, p=path, w=card.cv: tt.show(w, p), add="+")
-            card.lbl.bind("<Leave>", lambda e: tt.hide(), add="+")
+            if card.lbl is not card.cv:
+                card.lbl.bind("<Enter>", lambda e, p=path, w=card.cv: tt.show(w, p), add="+")
+                card.lbl.bind("<Leave>", lambda e: tt.hide(), add="+")
         def _on_loaded(p, pil, _card=card):
+            if not getattr(_card, '_alive', True) or not _card.frame.winfo_exists():
+                return
             if custom_cover:
                 try:
                     with Image.open(custom_cover) as source:
@@ -1669,16 +1779,21 @@ class LibraryWindow(tk.Tk):
                 except (OSError, ValueError): pass
             try: _card.set_image(pil)
             except Exception: pass
+        card._cover_callback = _on_loaded
         self._cover_loader.request(path, _on_loaded)
 
     def _check_ncols(self):
         self._resize_job = None
+        if (self._embedded_reader is not None or self._closing_app or self._library_preparing
+                or getattr(self,'_active_tab',None)!='library'
+                or not hasattr(self,'_lib_content') or not self._lib_content.winfo_exists()):
+            return
         avail = self._main.winfo_width() - CONTENT_PADDING * 2
         if avail < 50: return
         card_w = 156 + GPAD
         nc = max(2, avail // card_w)
         if nc != self._last_ncols:
-            self._populate_library_grid()
+            self._populate_library_grid(preserve_scroll=True)
 
     def _show_empty(self, parent, no_results=False):
         c = THEME
@@ -1757,13 +1872,6 @@ class LibraryWindow(tk.Tk):
             messagebox.showwarning("Komicove", ui("HQ indisponível. Atualize a pasta ou restaure o arquivo. Seu progresso foi mantido.",
                                                  "Comic unavailable. Refresh the folder or restore the file. Your progress was kept."))
             return
-        try:
-            loader = SmartPageLoader(path)
-        except Exception as e:
-            messagebox.showerror(TEXTS[LANG]["error"], str(e)); return
-        if loader.count == 0:
-            messagebox.showerror(TEXTS[LANG]["error"], ui('Sem imagens.', 'No images.')); return
-
         if sibling_list is None:
             sibling_list = self._siblings_of(path)
 
@@ -1782,7 +1890,170 @@ class LibraryWindow(tk.Tk):
         except ValueError:
             pass
 
-        ReaderWindow(self, path, loader, on_finish=on_finish if has_next else None)
+        self._cancel_reader_open()
+        cancel=threading.Event()
+        self._opening_cancel=cancel
+        completed=queue.SimpleQueue()
+        handoff_lock=threading.Lock()
+        self._opening_handoff=(handoff_lock,completed)
+        self.configure(cursor='watch')
+        page=get_progress_page(path)
+        existing=self._embedded_reader
+        if existing is not None and existing._path==path:
+            page=existing._idx
+        def prepare():
+            loader=None
+            try:
+                loader=SmartPageLoader(path)
+                if cancel.is_set():
+                    loader.close()
+                    return
+                if loader.count==0:
+                    raise ValueError(ui('Sem imagens.','No images.'))
+                # Archive listing, content hashing and first decode must not
+                # run inside the mouse callback which owns the desktop window.
+                seed_content_index(self._folder_index.snapshot()["books"])
+                key=content_id(path)
+                if cancel.is_set():
+                    loader.close()
+                    return
+                index=page if isinstance(page,int) and 0<=page<loader.count else 0
+                loader.get_pil(index)
+                state=load_reader_state(key)
+                if state.get('double') and index>0 and index+1<loader.count:
+                    loader.get_pil(index+1)
+                with handoff_lock:
+                    if not cancel.is_set():
+                        completed.put((loader,None))
+                        loader=None
+                if loader is not None:loader.close()
+            except Exception as error:
+                if loader is not None:loader.close()
+                with handoff_lock:
+                    if not cancel.is_set():completed.put((None,error))
+        threading.Thread(target=prepare,name='reader-open',daemon=True).start()
+        def finish():
+            self._opening_poll=None
+            if cancel.is_set() or self._closing_app:return
+            try:loader,error=completed.get_nowait()
+            except queue.Empty:
+                self._opening_poll=self.after(25,finish)
+                return
+            self._opening_cancel=None
+            self._opening_handoff=None
+            self.configure(cursor='')
+            if error is not None:
+                log.warning('Reader preparation failed: %s',type(error).__name__)
+                messagebox.showerror(TEXTS[LANG]['error'],ui(
+                    'Não foi possível abrir a HQ. Verifique se o arquivo está disponível, íntegro e sem senha.',
+                    'Could not open the comic. Make sure the file is available, intact and not password-protected.'),parent=self)
+                return
+            self._present_reader(path,loader,on_finish=on_finish if has_next else None)
+        self._opening_poll=self.after(25,finish)
+
+    def _cancel_reader_open(self):
+        if self._opening_cancel is not None:
+            self._opening_cancel.set()
+            self._opening_cancel=None
+        if self._opening_handoff is not None:
+            lock,completed=self._opening_handoff
+            self._opening_handoff=None
+            with lock:
+                try:loader,_error=completed.get_nowait()
+                except queue.Empty:loader=None
+            if loader is not None:loader.close()
+        if self._opening_poll is not None:
+            self.after_cancel(self._opening_poll)
+            self._opening_poll=None
+        self.configure(cursor='')
+
+    def _reader_scroll_canvas(self):
+        main=getattr(self,'_main',None)
+        if main is None or not main.winfo_exists():
+            return None
+        def find(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,tk.Canvas) and child.cget('yscrollcommand'):
+                    return child
+                found=find(child)
+                if found is not None:
+                    return found
+        return find(main)
+
+    def _present_reader(self,path,loader,on_finish=None):
+        previous=self._embedded_reader
+        if previous is not None:
+            # Switch book without rebuilding the library between readers.
+            previous._return=None
+            previous._close()
+            self._embedded_reader=None
+        else:
+            canvas=self._reader_scroll_canvas()
+            self._reader_return_state=dict(tab=getattr(self,'_active_tab','library'),
+                scroll=canvas.yview()[0] if canvas is not None else 0.,
+                collection=self._reader_collection)
+            if self._resize_job:
+                self.after_cancel(self._resize_job);self._resize_job=None
+            if self._cover_loader:
+                self._cover_loader.stop();self._cover_loader.clear_queue()
+                self._cover_loader=None
+            if self._meta_tooltip:
+                self._meta_tooltip.hide()
+            self.unbind_all('<MouseWheel>')
+            self._active_tab='reader'
+            for name in ('_sb','_main'):
+                widget=getattr(self,name,None)
+                if widget is not None and widget.winfo_exists():
+                    widget.destroy()
+            self._card_map.clear()
+            self._capa_cache.clear()
+            for name in ('_library_hero_photo','_library_hero_cover_photos',
+                         '_empty_library_illustration','_empty_collection_illustration',
+                         '_moderation_images','logo_tk'):
+                if hasattr(self,name):setattr(self,name,None)
+            self._notifications_nav_item=None
+        try:
+            self._embedded_reader=EmbeddedReader(self,path,loader,
+                on_finish=on_finish,on_close=self._reader_closed)
+            self._embedded_reader.pack(fill='both',expand=True)
+            self._embedded_reader.focus_set()
+        except Exception:
+            loader.close()
+            self._embedded_reader=None
+            self._reader_closed()
+            raise
+
+    def _reader_closed(self):
+        self._embedded_reader=None
+        if self._closing_app:
+            return
+        state=self._reader_return_state or dict(tab='library',scroll=0.,collection=None)
+        self._reader_return_state=None
+        self._sync_shared_settings()
+        self._active_tab=state['tab']
+        self._cover_loader=CoverLoader(self,self._capa_cache)
+        self._build_shell()
+        route={
+            'collections':self._show_collections,'folders':self._show_folders,
+            'discovery':self._open_discovery,'submissions':self._open_my_publications,
+            'moderation':self._render_moderation_tab,'downloads':self._open_downloads,
+            'statistics':self._open_statistics,'notifications':self._open_notifications,
+            'profile':self._open_profile,
+        }.get(state['tab'],self._refresh_library)
+        if state['tab']=='collections' and state['collection'] is not None:
+            self._show_collection_detail(state['collection'])
+        else:
+            if state['tab'] == 'library':
+                self._library_restore_scroll = state['scroll']
+            route()
+        self.update_idletasks()
+        canvas=self._reader_scroll_canvas()
+        if canvas is not None:
+            canvas.yview_moveto(state['scroll'])
+            def restore():
+                if self._embedded_reader is None and canvas.winfo_exists():
+                    canvas.yview_moveto(state['scroll'])
+            self.after(80,restore)
 
     def _siblings_of(self, path):
         pass
@@ -1856,22 +2127,49 @@ class LibraryWindow(tk.Tk):
                     if active == "folders":
                         update_folders(self, THEME)
                     elif active == "library" and report["changed"]:
-                        self._refresh_library()
+                        self._refresh_library(preserve_scroll=True)
         except queue.Empty:
             pass
         self.after(250, self._poll_folders)
 
     def destroy(self):
+        if self._closing_app:
+            return
         self._closing_app=True
+        self._library_prepare_cancel.set()
+        if self._library_grid:
+            self._library_grid.close()
         if self._sync_poll is not None:
             self.after_cancel(self._sync_poll)
         if self._sync_job is not None:
             self.after_cancel(self._sync_job)
         unregister_change_listener(self._schedule_sync)
         flush_progress()
+        self._cancel_reader_open()
+        for identifier in list(self._scheduled):
+            self.after_cancel(identifier)
+        if self._embedded_reader is not None:
+            self._embedded_reader._close()
+        if self._cover_loader:
+            self._cover_loader.stop()
         if hasattr(self, "_folder_watcher"):
             self._folder_watcher.close()
         super().destroy()
+
+    def after(self,ms,func=None,*args):
+        if self._closing_app:return None
+        if func is None:return tk.Misc.after(self,ms)
+        identifier=None
+        def invoke():
+            self._scheduled.discard(identifier)
+            if not self._closing_app:func(*args)
+        identifier=tk.Misc.after(self,ms,invoke)
+        self._scheduled.add(identifier)
+        return identifier
+
+    def after_cancel(self,identifier):
+        self._scheduled.discard(identifier)
+        return tk.Misc.after_cancel(self,identifier)
 
     def _add_monitored_folder(self):
         p = filedialog.askdirectory(title=TEXTS[LANG]["choose_library_folder"],
@@ -1887,6 +2185,7 @@ class LibraryWindow(tk.Tk):
             self._show_folders()
 
     def _show_collections(self):
+        self._reader_collection=None
         if self._search_bubble:
             try: self._search_bubble.destroy()
             except Exception as _e: log.debug("silenced: %s", _e)
@@ -2082,6 +2381,7 @@ class LibraryWindow(tk.Tk):
             self._show_collections()
 
     def _show_collection_detail(self, collection):
+        self._reader_collection=collection
         c = THEME
         try: self._main.unbind("<Configure>")
         except Exception as _e: log.debug("silenced: %s", _e)

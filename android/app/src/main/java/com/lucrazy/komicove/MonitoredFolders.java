@@ -26,13 +26,13 @@ final class MonitoredFolders {
     synchronized void add(Uri root)throws Exception{context.getContentResolver().takePersistableUriPermission(root,Intent.FLAG_GRANT_READ_URI_PERMISSION);JSONArray rows=folders();for(int i=0;i<rows.length();i++)if(root.toString().equals(rows.getJSONObject(i).getString("uri")))return;rows.put(folder(root.toString()));persist(rows);}
     synchronized void configure(String uri,String name,Boolean enabled,boolean remove)throws Exception{JSONArray result=new JSONArray(),rows=folders();for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);if(uri.equals(row.getString("uri"))){if(remove)continue;if(name!=null&&!name.trim().isEmpty())row.put("name",name.trim());if(enabled!=null)row.put("enabled",enabled);}result.put(row);}persist(result);}
     List<LibraryStore.Book> visibleBooks(){
-        Set<String> disabled=new HashSet<>();JSONArray registry;
-        try{registry=new JSONArray(prefs.getString("registry","[]"));}catch(JSONException error){android.util.Log.w("Komicove","Folder visibility preferences could not be read");return store.all();}
-        for(int i=0;i<registry.length();i++){JSONObject row=registry.optJSONObject(i);if(row!=null&&!row.optBoolean("enabled",true))disabled.add(row.optString("uri"));}
+        Set<String> active=new HashSet<>();JSONArray registry;
+        try{registry=folders();}catch(JSONException error){android.util.Log.w("Komicove","Folder visibility preferences could not be read");return store.all();}
+        for(int i=0;i<registry.length();i++){JSONObject row=registry.optJSONObject(i);if(row!=null&&row.optBoolean("enabled",true))active.add(row.optString("uri"));}
         List<LibraryStore.Book> result=new ArrayList<>();
         for(LibraryStore.Book book:store.all()){
             boolean visible=book.uri.isEmpty()||book.sources.length()==0;
-            for(int i=0;!visible&&i<book.sources.length();i++){JSONObject source=book.sources.optJSONObject(i);if(source!=null&&!disabled.contains(source.optString("folder")))visible=true;}
+            for(int i=0;!visible&&i<book.sources.length();i++){JSONObject source=book.sources.optJSONObject(i);if(source!=null&&active.contains(source.optString("folder")))visible=true;}
             if(visible)result.add(book);
         }
         return result;

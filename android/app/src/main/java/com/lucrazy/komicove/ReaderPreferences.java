@@ -11,8 +11,13 @@ import android.widget.*;
 final class ReaderPreferences {
     private static final int[][] SWITCH_STATES={{android.R.attr.state_checked},{-android.R.attr.state_checked}};
 
-    static void show(Activity activity,Runnable changed) {
-        SharedPreferences prefs=activity.getSharedPreferences("reader",0);
+    static void migrate(SharedPreferences prefs) {
+        if(!prefs.contains("persist_position"))
+            prefs.edit().putBoolean("persist_position",prefs.getBoolean("persist_zoom",true)).apply();
+    }
+
+    static Dialog show(Activity activity,Runnable changed) {
+        SharedPreferences prefs=activity.getSharedPreferences("reader",0);migrate(prefs);
         int savedBrightness=Math.max(10,prefs.getInt("brightness",100));
         String[] selectedTheme={prefs.getString("theme","default")};
         Dialog dialog=new Dialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -29,7 +34,8 @@ final class ReaderPreferences {
 
         sheet.addView(Ui.sectionTitle(activity,"Leitura e navegação",R.drawable.lucide_book_open),Ui.margin(-1,-2,activity,0,0,0,8));
         LinearLayout navigation=Ui.card(activity);navigation.setPadding(0,0,0,0);
-        Switch persist=readerSwitch(activity,prefs.getBoolean("persist_zoom",true));navigation.addView(toggleRow(activity,R.drawable.lucide_zoom_in,"Persistir zoom e deslocamento","Mantém o nível de zoom e a posição entre páginas.",persist,false));
+        Switch persist=readerSwitch(activity,prefs.getBoolean("persist_zoom",true));navigation.addView(toggleRow(activity,R.drawable.lucide_zoom_in,"Manter nível de zoom","Mantém o nível de zoom ao trocar de página.",persist,true));
+        Switch positionSwitch=readerSwitch(activity,prefs.getBoolean("persist_position",true));navigation.addView(toggleRow(activity,R.drawable.lucide_focus,"Manter posição","Mantém a área visualizada ao trocar de página.",positionSwitch,true));
         Switch fit=readerSwitch(activity,prefs.getBoolean("auto_fit",true));navigation.addView(toggleRow(activity,R.drawable.lucide_focus,"Ajustar à tela automaticamente","Redimensiona cada página para o melhor enquadramento.",fit,true));
         Switch guided=readerSwitch(activity,prefs.getBoolean("guided",false));navigation.addView(toggleRow(activity,R.drawable.lucide_book_open,"Leitura guiada (experimental)","Destaca os quadros na ordem de leitura.",guided,true));
         Switch animate=readerSwitch(activity,prefs.getBoolean("animate_guided",true));navigation.addView(toggleRow(activity,R.drawable.lucide_columns,"Transições suaves entre quadros","Anima a passagem entre os quadros detectados.",animate,true));
@@ -50,11 +56,12 @@ final class ReaderPreferences {
         refreshThemes.run();sheet.addView(themes,Ui.margin(-1,-2,activity,0,0,0,14));
 
         TextView note=Ui.text(activity,"A leitura guiada funciona nos modos Página única e Mangá. Use o editor manual quando a detecção automática não reconhecer os quadros corretamente.",13,Ui.MUTED);note.setPadding(Ui.dp(activity,12),Ui.dp(activity,8),Ui.dp(activity,12),Ui.dp(activity,14));sheet.addView(note);
-        Button save=Ui.primaryButton(activity,"Salvar preferências",()->{prefs.edit().putBoolean("persist_zoom",persist.isChecked()).putBoolean("auto_fit",fit.isChecked()).putBoolean("guided",guided.isChecked()).putBoolean("animate_guided",animate.isChecked()).putInt("brightness",Math.max(10,brightness.getProgress())).putString("theme",selectedTheme[0]).apply();if(changed!=null)changed.run();dialog.dismiss();});
+        Button save=Ui.primaryButton(activity,"Salvar preferências",()->{prefs.edit().putBoolean("persist_zoom",persist.isChecked()).putBoolean("persist_position",positionSwitch.isChecked()).putBoolean("auto_fit",fit.isChecked()).putBoolean("guided",guided.isChecked()).putBoolean("animate_guided",animate.isChecked()).putInt("brightness",Math.max(10,brightness.getProgress())).putString("theme",selectedTheme[0]).apply();if(changed!=null)changed.run();dialog.dismiss();});
         save.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_save,0,0,0);save.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));save.setCompoundDrawablePadding(Ui.dp(activity,9));sheet.addView(save,new LinearLayout.LayoutParams(-1,Ui.dp(activity,54)));
 
         ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(true);scroll.addView(sheet);dialog.setContentView(scroll);dialog.show();
         Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);WindowManager.LayoutParams lp=window.getAttributes();lp.width=WindowManager.LayoutParams.MATCH_PARENT;lp.height=WindowManager.LayoutParams.WRAP_CONTENT;lp.gravity=Gravity.BOTTOM;lp.dimAmount=.62f;window.setAttributes(lp);}
+        return dialog;
     }
 
     private static ImageView icon(Context context,int resource,int tint){ImageView icon=new ImageView(context);icon.setImageResource(resource);icon.setColorFilter(tint);icon.setPadding(Ui.dp(context,11),Ui.dp(context,11),Ui.dp(context,11),Ui.dp(context,11));icon.setBackground(Ui.bordered(context,Ui.SURFACE_ALT,Ui.BORDER,Ui.RADIUS_MEDIUM));icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);return icon;}

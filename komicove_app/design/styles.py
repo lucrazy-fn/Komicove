@@ -68,6 +68,17 @@ class KomicoveButton(tk.Canvas):
         if self.enabled and self.command:
             self.command()
 
+    def set_text(self, text):
+        if self.text == text:
+            return
+        self.text = text
+        font = caption(10, bold=True)
+        measure = tkfont.Font(family=font[0], size=font[1], weight=font[2])
+        width = measure.measure(text) + (25 if self.icon_name else 0) + (18 if self._compact else 38)
+        self._width = max(self._width, width)
+        self.configure(width=self._width)
+        self._draw(False)
+
     def _press(self, _event):
         if self.enabled:
             self._pressed = True

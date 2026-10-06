@@ -20,9 +20,15 @@ android {
             ndk { abiFilters.addAll(abis) }
         }
         manifestPlaceholders = [appLabel: 'Komicove']
-        testInstrumentationRunner providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
+        testInstrumentationRunner providers.gradleProperty('fullscreenTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderFullscreenInstrumentation' : providers.gradleProperty('authLanguageTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.AuthLanguageInstrumentation' : providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderPhase4Instrumentation' : providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
     }
     buildFeatures { buildConfig true }
+    // Match the compact guided-reading APK; Android extracts native libraries at install time.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = providers.gradleProperty('compactApk').getOrElse('true').toBoolean()
+        }
+    }
     signingConfigs {
         if (releaseSigning.values().every { it }) {
             release {
@@ -36,7 +42,15 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes {
         debug {
-            manifestPlaceholders = [appLabel: 'Komicove']
+            if (providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) {
+                applicationIdSuffix '.phase4test'
+                manifestPlaceholders = [appLabel: 'Komicove Fase 4 Teste']
+            }
+            if (!providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) manifestPlaceholders = [appLabel: 'Komicove']
+            if (providers.gradleProperty('guidedAiTest').getOrElse('false').toBoolean()) {
+                applicationIdSuffix '.aitest'
+                manifestPlaceholders = [appLabel: 'Komicove IA Teste']
+            }
             if (providers.gradleProperty('readerBenchmark').getOrElse('false').toBoolean()) {
                 applicationIdSuffix providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? '.phase2test' : '.phase1test'
                 manifestPlaceholders = [appLabel: providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'Komicove Fase 2 Teste' : 'Komicove Teste']
@@ -49,6 +63,9 @@ android {
     }
     testOptions { unitTests.includeAndroidResources = true }
     sourceSets.androidTest.java.srcDir(layout.buildDirectory.dir('generated/phase1Baseline'))
+    if (providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) {
+        sourceSets.androidTest.manifest.srcFile('src/androidTest/AndroidManifest-phase4.xml')
+    }
 }
 
 tasks.register('copyNamedDebugApk', Copy) {
@@ -59,6 +76,10 @@ tasks.register('copyNamedDebugApk', Copy) {
 }
 
 dependencies {
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.30.0'
+    if (providers.gradleProperty('guidedAiNativeTest').getOrElse('false').toBoolean()) {
+        testRuntimeOnly 'com.microsoft.onnxruntime:onnxruntime:1.30.0'
+    }
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.apache.commons:commons-compress:1.27.1'
     implementation 'org.tukaani:xz:1.10'
@@ -66,4 +87,41 @@ dependencies {
     implementation 'me.zhanghai.android.libarchive:library:1.1.6'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
+}
+
+// Use the same verified local model as the reference APK in normal builds.
+// Weights remain outside version control; distribution requires their license review.
+// -PguidedAiModel=none explicitly builds without the model.
+def guidedAiModel = providers.gradleProperty('guidedAiModel').getOrElse('../local_models/inkwell.onnx')
+if (providers.gradleProperty('guidedAiNativeTest').getOrElse('false').toBoolean()) {
+    tasks.withType(Test).configureEach { systemProperty 'komicove.nativeAI', 'true' }
+}
+if (guidedAiModel != 'none') {
+    def localAbis = providers.gradleProperty('guidedAiAbis').getOrNull()
+    if (localAbis) {
+        def abis = localAbis.split(',').toList()
+        if (!abis.every { it in ['arm64-v8a','armeabi-v7a','x86','x86_64'] }) throw new GradleException('Unsupported local AI test ABI.')
+        android.buildTypes.debug.ndk.abiFilters.addAll(abis)
+    }
+    def sourceModel = rootProject.file(guidedAiModel)
+    def generatedAssets = layout.buildDirectory.dir('generated/guidedAiAssets')
+    android.sourceSets.main.assets.srcDir(generatedAssets)
+    def stageModel = tasks.register('stageLocalGuidedAiModel', Copy) {
+        from(sourceModel)
+        into(generatedAssets.map { it.dir('guided-ai') })
+        rename { 'inkwell.onnx' }
+        doFirst {
+            if (!sourceModel.isFile() || sourceModel.length() != 12256396L) throw new GradleException('Invalid local AI model size.')
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            sourceModel.withInputStream { stream ->
+                byte[] chunk = new byte[65536]
+                int count
+                while ((count = stream.read(chunk)) != -1) digest.update(chunk, 0, count)
+            }
+            if (digest.digest().encodeHex().toString() != 'f240e1296efd048126b26ea4ffeddc97d7c3aa667a37e3127c2afc6d5e9b9578') throw new GradleException('Local AI model checksum mismatch.')
+        }
+    }
+    tasks.configureEach { task ->
+        if (task.name == 'preBuild') task.dependsOn(stageModel)
+    }
 }
