@@ -70,6 +70,14 @@ banco já configurado. `init_db()` cria automaticamente `contributor_invites` e
 existente; não há renomeação de IDs ou alteração de contas, sessões, biblioteca
 ou convites administrativos antigos. A inicialização repetida é idempotente.
 
+No Render, mantenha o banco, as variáveis e o serviço existentes. O comando
+`pip install -r requirements.txt` também inclui agora `markdown-it-py`.
+Implante o commit mais recente da branch configurada no serviço
+`panel-api-tr1a`; aguarde a conclusão antes de recarregar `/moderators`.
+Valide `/updates` com HTTP 200, a versão 0.2.1 em `/openapi.json` e as abas
+Contribuidores/Atualizações. Se a implantação falhar, consulte o primeiro
+erro nos logs; recarregar a página não troca o código em execução.
+
 Não é necessária chave do GitHub: importações usam GETs públicos. A nova versão
 da API deve ser implantada antes de distribuir os apps e painel com os novos
 controles. Apps antigos continuam usando os endpoints existentes; apps novos

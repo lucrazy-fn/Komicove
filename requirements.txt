@@ -7,3 +7,4 @@ Pillow>=10,<13
 rarfile>=4,<5
 PyMuPDF>=1.24,<2
 requests>=2.32,<3
+markdown-it-py>=3,<5
