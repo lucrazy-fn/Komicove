@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from komicove_backend.db import Base
@@ -127,6 +127,37 @@ class AdminAuditLog(Base):
     action: Mapped[str] = mapped_column(String(48), index=True)
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now, index=True)
+
+
+class ContributorInvite(Base):
+    __tablename__ = "contributor_invites"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_username: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    used_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    used_by_username: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class AppUpdate(Base):
+    __tablename__ = "app_updates"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String(150))
+    version: Mapped[str] = mapped_column(String(64), index=True)
+    notes: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16))
+    source_repository: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_release_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_release_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    download_destination: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    download_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_username: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now, index=True)
 
 class Notification(Base):

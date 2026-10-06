@@ -11,8 +11,14 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 36
-        versionCode 10720
-        versionName '0.2.0'
+        versionCode 10721
+        versionName '0.2.1'
+        def selectedAbis = providers.gradleProperty('komicoveAbis').getOrNull()
+        if (selectedAbis) {
+            def abis = selectedAbis.split(',').collect { it.trim() }
+            if (!abis.every { it in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] }) throw new GradleException('Unsupported Android ABI.')
+            ndk { abiFilters.addAll(abis) }
+        }
         manifestPlaceholders = [appLabel: 'Komicove']
         testInstrumentationRunner providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
     }

@@ -127,6 +127,7 @@ def _role_label(role):
         "owner": ui("Dono", "Owner"),
         "admin": ui("Admin", "Admin"),
         "moderator": ui("Moderador", "Moderator"),
+        "contributor": ui("Contribuidor", "Contributor"),
         "user": ui("Usuário", "User"),
     }.get(role or "user", role or ui("Usuário", "User"))
 
@@ -256,6 +257,34 @@ def render_profile(container, root, user, api, theme, fonts, on_updated):
             return
 
     _run_async(root, lambda: api.profile_avatar(user.token), remote_avatar_loaded)
+
+    if user is not None and getattr(user, "role", "user") == "user":
+        redemption_pending = False
+        def redeem_contributor():
+            nonlocal redemption_pending
+            if redemption_pending:
+                return
+            invitation = simpledialog.askstring(ui("Token de Contribuidor", "Contributor token"),
+                ui("Cole o token de Contribuidor:", "Paste your Contributor token:"), parent=root, show="•")
+            if not invitation:
+                return
+            redemption_pending = True
+            status.config(text=ui("Resgatando token…", "Redeeming token…"), fg=c["text_dim"])
+            def finished(data, error):
+                nonlocal redemption_pending
+                redemption_pending = False
+                if getattr(root, "current_user", user) is not user:
+                    return
+                if error:
+                    from komicove_app.translations import text
+                    from komicove_app import runtime
+                    if status.winfo_exists():
+                        status.config(text=text(error, runtime.LANG), fg=c["accent2"])
+                else:
+                    on_updated(data)
+            _run_async(root, lambda: api.redeem_contributor(user.token, invitation.strip()), finished)
+        _pill_button(container, ui("Resgatar token de Contribuidor", "Redeem Contributor token"),
+            redeem_contributor, theme, font=small, variant="ghost").pack(anchor="w", padx=30, pady=(8, 0))
 
     if getattr(user, "role", "user") == "user":
         def use_setup_token():

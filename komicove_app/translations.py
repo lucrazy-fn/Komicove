@@ -188,6 +188,11 @@ PT_EN = {
     "Quantidade de páginas inválida no EPUB.": "Invalid number of pages in EPUB.",
 }
 
+PT_EN.update({
+    "Contribuidor": "Contributor",
+    "Token de Contribuidor inválido, expirado, revogado ou utilizado.": "Invalid, expired, revoked or used Contributor token.",
+    "Esta conta já possui um cargo. O token não foi consumido.": "This account already has a role. The token was not consumed.",
+})
 EN_PT = {value: key for key, value in PT_EN.items()}
 _DIALOGS_INSTALLED = False
 

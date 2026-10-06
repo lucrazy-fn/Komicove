@@ -44,6 +44,29 @@ final class PanelApi {
         public int read(byte[] b,int o,int len)throws IOException {while(transfer.paused&&!transfer.cancelled){try{Thread.sleep(100);}catch(InterruptedException e){throw new InterruptedIOException();}}if(transfer.cancelled)throw new IOException("Download cancelado.");int n=super.read(b,o,len);if(n>0)transfer.received+=n;return n;}
     }){return store.importStream(in,filename);}}}
     void upload(String id,File file)throws Exception {RequestBody data=new MultipartBody.Builder().setType(MultipartBody.FORM).addFormDataPart("file",file.getName(),RequestBody.create(file,MediaType.get("application/octet-stream"))).build();try(Response r=client.newCall(request("/publications/"+id+"/file").put(data).build()).execute()){check(r);}}
-    JSONObject checkAndroidUpdate()throws Exception {Request r=new Request.Builder().url("https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/latest").header("Accept","application/vnd.github+json").build();try(Response response=client.newCall(r).execute()){if(!response.isSuccessful()||response.body()==null)throw new IOException("Não foi possível verificar atualizações.");return new JSONObject(response.body().string());}}
+    private JSONObject githubLatest(String repository)throws Exception {
+        String url="https://api.github.com/repos/"+repository+"/releases/latest";
+        OkHttpClient github=client.newBuilder().readTimeout(10,TimeUnit.SECONDS).build();
+        for(int redirect=0;redirect<4;redirect++){
+            Request request=new Request.Builder().url(url).header("Accept","application/vnd.github+json").build();
+            try(Response response=github.newCall(request).execute()){
+                if(response.code()==404)return null;
+                if(response.code()==301||response.code()==302||response.code()==307||response.code()==308){
+                    String next=response.header("Location");if(next==null)throw new IOException("Não foi possível verificar atualizações.");
+                    HttpUrl parsed=HttpUrl.get(url).resolve(next);if(parsed==null||!parsed.isHttps()||!parsed.host().equals("api.github.com"))throw new IOException("Não foi possível verificar atualizações.");url=parsed.toString();continue;
+                }
+                if(!response.isSuccessful()||response.body()==null)throw new IOException("Não foi possível verificar atualizações.");
+                return new JSONObject(response.body().string());
+            }
+        }throw new IOException("Não foi possível verificar atualizações.");
+    }
+    JSONArray updates()throws Exception {
+        java.util.List<JSONObject> found=new java.util.ArrayList<>();int successes=0;
+        for(String repository:AppUpdates.REPOSITORIES){try{JSONObject release=githubLatest(repository);successes++;JSONObject item=AppUpdates.release(release,repository,BuildConfig.VERSION_NAME);if(item!=null)found.add(item);}catch(Exception ignored){}}
+        try{JSONArray messages=(JSONArray)json("GET","/updates",null);successes++;for(int i=0;i<messages.length();i++)found.add(AppUpdates.announcement(messages.getJSONObject(i)));}catch(Exception ignored){}
+        if(successes==0)throw new IOException("Não foi possível verificar atualizações.");
+        return AppUpdates.merge(found,BuildConfig.VERSION_NAME);
+    }
+    JSONObject checkAndroidUpdate()throws Exception {return AppUpdates.automatic(updates(),BuildConfig.VERSION_NAME,java.util.Collections.emptySet());}
     static final class Transfer {volatile long received,total;volatile boolean paused,cancelled,finished;volatile String error="";String title;}
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 
@@ -160,6 +160,78 @@ class ModeratorInviteSummary(BaseModel):
     created_at: datetime
 
 
+class ContributorInviteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    valid_hours: int = Field(default=120, ge=1, le=8760)
+
+
+class ContributorClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=20, max_length=160)
+
+
+class ContributorInvitePublic(BaseModel):
+    id: str
+    status: Literal["available", "used", "revoked", "expired"]
+    created_by_username: str
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+    used_at: datetime | None
+    used_by_user_id: str | None
+    used_by_username: str | None
+
+
+class ContributorInviteCreated(ContributorInvitePublic):
+    secret: str
+
+
+class AppUpdateCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["manual", "github"] = "manual"
+    title: str | None = Field(default=None, min_length=1, max_length=150)
+    version: str | None = Field(default=None, min_length=3, max_length=64)
+    notes: str | None = Field(default=None, max_length=50000)
+    repository: Literal["lucrazy-fn/PANEL-ComicBookReader", "lucrazy-fn/Komicove"] | None = None
+    release_id: int | None = Field(default=None, gt=0, le=2**63-1)
+    download_destination: Literal["github", "site"] | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        from komicove_client.releases import version_key
+        if self.source == "manual":
+            if not self.title or not self.title.strip() or not self.notes or not self.notes.strip() or version_key(self.version) is None:
+                raise ValueError("Informe título, versão e changelog válidos.")
+            if self.repository is not None or self.release_id is not None:
+                raise ValueError("Mensagem manual não tem release de origem.")
+        elif self.repository is None or self.release_id is None:
+            raise ValueError("Selecione o repositório e a release.")
+        elif any(value is not None for value in (self.title, self.version, self.notes)):
+            raise ValueError("O conteúdo importado é lido no GitHub pelo servidor.")
+        return self
+
+
+class AppUpdatePreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    notes: str = Field(max_length=50000)
+
+
+class AppUpdatePublic(BaseModel):
+    id: str
+    title: str
+    version: str
+    notes: str
+    notes_html: str
+    source: str
+    source_repository: str | None
+    source_release_id: int | None
+    source_release_url: str | None
+    download_destination: str | None
+    download_url: str | None
+    created_by_username: str
+    created_at: str
+
+
 class ManagedUserPublic(BaseModel):
     last_seen_at: datetime | None = None
     id: str
@@ -177,7 +249,7 @@ class ManagedUserPublic(BaseModel):
 
 class ManagedUserUpdate(BaseModel):
     action: Literal["set_role", "suspend", "ban", "clear_punishment", "revoke_sessions"]
-    role: Literal["user", "moderator"] | None = None
+    role: Literal["user", "contributor", "moderator"] | None = None
     duration_hours: int | None = Field(default=None, ge=1, le=24 * 365)
     reason: str | None = Field(default=None, max_length=255)
 

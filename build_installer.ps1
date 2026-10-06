@@ -19,5 +19,5 @@ try {
     if (-not $CompilerPath -or -not (Test-Path -LiteralPath $CompilerPath)) { throw "Executavel pronto. Instale Inno Setup 6 para gerar o instalador." }
     & $CompilerPath installer\Komicove.iss
     if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar instalador." }
-    Write-Host "Instalador: dist\installer\Komicove-Setup-0.2.0.exe"
+    Write-Host "Instalador: dist\installer\Komicove-Setup-0.2.1.exe"
 } finally { Pop-Location }

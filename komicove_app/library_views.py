@@ -247,9 +247,19 @@ class LibraryWindow(tk.Tk):
         )
 
     def _profile_updated(self, data):
-        self.current_user.display_name = data.get("display_name") or self.current_user.display_name
+        get = data.get if isinstance(data, dict) else lambda key, default=None: getattr(data, key, default)
+        previous_role = self.current_user.role
+        self.current_user.display_name = get("display_name") or self.current_user.display_name
         if hasattr(self.current_user, "email"):
-            self.current_user.email = data.get("email")
+            self.current_user.email = get("email")
+        if get("role"):
+            self.current_user.role = get("role")
+            self.current_user.is_moderator = bool(get("is_moderator", False))
+            user = self.current_user
+            session_store.save_session(session_store.LocalSession(token=user.token, user_id=user.user_id,
+                username=user.username, display_name=user.display_name, is_moderator=user.is_moderator, role=user.role))
+        if previous_role != self.current_user.role:
+            self._open_profile()
 
     def _open_notifications(self):
         self._active_tab = "notifications"
@@ -863,36 +873,36 @@ class LibraryWindow(tk.Tk):
     def _check_updates_background(self):
         if getattr(self, "_update_check_started", False): return
         self._update_check_started = True
-        def worker():
-            try: result = updater.check()
-            except Exception: result = None
-            if result: self.after(0, lambda: self._show_update_notice(result))
-        threading.Thread(target=worker, daemon=True).start()
+        from komicove_app.account_views import _run_async
+        _run_async(self, lambda: updater.check(load_prefs().get("update_seen_messages", [])),
+            lambda result, error: self._show_update_notice(result) if result and not error else None)
 
     def _release_notes(self, data):
-        if _runtime.LANG == "en":
-            return "A new Komicove release is available with reader fixes and stability improvements. Open the download page to read the complete release notes."
-        return (data.get("notes") or ui('Sem notas publicadas.', 'No release notes published.')).strip()
+        return updater.plain_notes(data.get("notes")) or ui('Sem notas publicadas.', 'No release notes published.')
 
     def _show_update_notice(self, data):
         if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): return
         dialog=tk.Toplevel(self); self._update_notice=dialog
-        dialog.title(ui('Atualização disponível', 'Update available')); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
+        dialog.title(ui('Atualização disponível', 'Update available') if updater.is_newer(data) else ui('Mensagem de atualização', 'Update message')); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
         dialog.transient(self); dialog.attributes("-topmost", True)
         card=tk.Frame(dialog,bg=THEME["surface"],highlightthickness=1,highlightbackground=THEME["accent"]); card.pack(padx=2,pady=2)
-        tk.Label(card,text=ui(f"Komicove {data['version']} disponível 🎉", f"Komicove {data['version']} available 🎉"),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=22,pady=(18,4))
+        tk.Label(card,text=data.get("title") or f"Komicove {data['version']}",font=FTITLE,bg=THEME["surface"],fg=THEME["text"],wraplength=390).pack(anchor="w",padx=22,pady=(18,4))
+        tk.Label(card,text=f"{data['version']} · {updater.display_date(data.get('created_at'))}",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=22,pady=(0,8))
         notes=self._release_notes(data)
         summary=notes.split("\n\n",1)[0][:220]
         tk.Label(card,text=summary,font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=390,justify="left").pack(anchor="w",padx=22,pady=(0,14))
         actions=tk.Frame(card,bg=THEME["surface"]);actions.pack(fill="x",padx=18,pady=(0,16))
         make_pill(actions,ui("Depois", "Later"),dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
-        make_pill(actions,ui('Baixar', 'Download'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
+        if data.get("url"):
+            make_pill(actions,ui('Baixar', 'Download'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
+        if data.get("source") == "panel":
+            save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [data["id"]]))[-100:])
         make_pill(actions,ui('Ver novidades', "See what's new"),lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
         dialog.protocol("WM_DELETE_WINDOW",dialog.destroy)
 
     def _open_update_details(self, data):
         if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): self._update_notice.destroy()
-        self._check_updates()
+        self._check_updates(data)
 
     def _build_shell(self):
         for w in self.winfo_children():
@@ -1078,31 +1088,47 @@ class LibraryWindow(tk.Tk):
         self._main = tk.Frame(self, bg=c["bg"])
         self._main.pack(side="right", fill="both", expand=True)
 
-    def _check_updates(self):
+    def _check_updates(self, initial_data=None):
         dialog=tk.Toplevel(self); dialog.title(ui('Atualizações do Komicove', 'Komicove updates')); dialog.configure(bg=THEME["bg"])
-        dialog.geometry("560x420"); dialog.resizable(False,False); dialog.transient(self); grab_when_visible(dialog)
+        dialog.geometry("560x500"); dialog.minsize(460,360); dialog.transient(self); grab_when_visible(dialog)
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
         tk.Label(head,text=ui('✦  Atualizações', '✦  Updates'),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.2.0",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.2.1",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         status=tk.Label(dialog,text=ui('Verificando versões…', 'Checking versions…'),font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
+        selection = ttk.Combobox(dialog, state="readonly")
+        selection.pack(fill="x", padx=24, pady=(0,8))
+        date_label = tk.Label(dialog, text="", font=FSMALL, bg=THEME["bg"], fg=THEME["text_dim"])
+        date_label.pack(anchor="w", padx=24)
         notes=tk.Text(dialog,height=11,bg=THEME["surface_alt"],fg=THEME["text"],insertbackground=THEME["text"],relief="flat",wrap="word",font=FSMALL)
         notes.pack(fill="both",expand=True,padx=24,pady=4); notes.configure(state="disabled")
         actions=tk.Frame(dialog,bg=THEME["bg"]); actions.pack(fill="x",padx=24,pady=16)
         make_pill(actions,ui('Fechar', 'Close'),dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
-        def worker():
-            try: data=updater.check(); error=None
-            except Exception as exc: data=None; error=exc
-            def done():
-                if not dialog.winfo_exists(): return
-                if error:
-                    status.config(text=ui('Não foi possível verificar agora. A leitura local continua disponível.', 'Could not check right now. Local reading remains available.'),fg=THEME["accent2"]); return
-                if not data:
-                    status.config(text=ui('Você já está usando a versão mais recente.', 'You are already using the latest version.'),fg=THEME["read_badge_text"]); return
-                status.config(text=ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}"),fg=THEME["read_badge_text"])
-                notes.configure(state="normal"); notes.insert("1.0",self._release_notes(data)); notes.configure(state="disabled")
-                make_pill(actions,ui('Abrir downloads', 'Open downloads'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=8)
-            self.after(0,done)
-        threading.Thread(target=worker,daemon=True).start()
+        download = KomicoveButton(actions, ui('Baixar', 'Download'), lambda: None, THEME, kind="primary", compact=True)
+        def selected(items):
+            data = items[selection.current()]
+            if data.get("source") == "panel":
+                save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [data["id"]]))[-100:])
+            status.config(text=(ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}")
+                if updater.is_newer(data) else ui("Mensagem de atualização", "Update message")), fg=THEME["read_badge_text"])
+            date_label.config(text=f"{data['version']} · {updater.display_date(data.get('created_at'))}")
+            notes.configure(state="normal"); notes.delete("1.0", "end"); notes.insert("1.0", self._release_notes(data)); notes.configure(state="disabled")
+            download.pack_forget()
+            if data.get("url"):
+                download.command = lambda: webbrowser.open(updater.safe_url(data["url"]))
+                download.pack(side="right", padx=8)
+        def done(items, error):
+            if error and initial_data:
+                items = [initial_data]
+            elif error:
+                status.config(text=ui('Não foi possível verificar agora. A leitura local continua disponível.', 'Could not check right now. Local reading remains available.'),fg=THEME["accent2"]); return
+            if not items:
+                status.config(text=ui('Você já está usando a versão mais recente.', 'You are already using the latest version.'),fg=THEME["read_badge_text"]); return
+            selection.configure(values=[f"{data['title']} ({data['version']})" for data in items])
+            selection.current(0)
+            selection.bind("<<ComboboxSelected>>", lambda event: selected(items))
+            selected(items)
+        from komicove_app.account_views import _run_async
+        _run_async(dialog, updater.fetch, done)
 
     def _copy_diagnostics(self):
         api_url = getattr(api_client, "BASE_URL", "")
@@ -1113,7 +1139,7 @@ class LibraryWindow(tk.Tk):
             "Komicove: Safe diagnostics\n",
         ) + (
             f"Windows: {updater.CURRENT_VERSION}\n"
-            + "Android: 0.2.0\n"
+            + "Android: 0.2.1\n"
             +
             ui(f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n",
                f"System: {platform.system()} {platform.release()} ({platform.machine()})\n")

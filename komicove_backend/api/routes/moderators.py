@@ -4,7 +4,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from komicove_backend.accounts import audit
@@ -40,6 +40,12 @@ def _can_manage(actor: User, target: User):
 
 @router.get("/moderators", response_class=HTMLResponse, include_in_schema=False)
 def page(): return HTMLResponse(_PAGE.read_text(encoding="utf-8"))
+
+@router.get("/moderators/{asset}", include_in_schema=False)
+def panel_asset(asset: str):
+    if asset not in {"moderators-i18n.js", "moderators-features.js"}:
+        raise HTTPException(404, "Arquivo não encontrado.")
+    return FileResponse(_PAGE.parent / asset, media_type="text/javascript")
 
 @router.get("/api/moderators/dashboard", response_model=ModeratorDashboard)
 def dashboard(_actor: User = Depends(require_admin), db: Session = Depends(get_db)):
@@ -85,7 +91,7 @@ def update(user_id: str, body: ManagedUserUpdate, actor: User = Depends(require_
     if body.action == "set_role":
         if actor.role != "owner": raise HTTPException(403, "Somente o dono pode alterar cargos.")
         if not body.role: raise HTTPException(422, "Informe o novo cargo.")
-        old = target.role; target.role = body.role; target.is_moderator = body.role != "user"
+        old = target.role; target.role = body.role; target.is_moderator = body.role in {"moderator", "admin", "owner"}
         if not target.is_moderator: _revoke(db, target)
         audit.record(db, actor, "role_changed", target=target, details=f"{old} -> {target.role}")
     elif body.action == "suspend":

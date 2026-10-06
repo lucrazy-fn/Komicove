@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "komicove"
-version = "0.2.0"
+version = "0.2.1"
 description = "Leitor de quadrinhos local com biblioteca e API opcional."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 build = ["pyinstaller>=6,<7"]
 server = [
+  "markdown-it-py>=3,<5",
   "fastapi>=0.115,<1",
   "sqlalchemy>=2,<3",
   "psycopg[binary]>=3.2,<4",
@@ -43,3 +44,6 @@ include = ["komicove_app*", "komicove_backend*", "komicove_client*"]
 
 [tool.setuptools]
 py-modules = ["panel_backend"]
+
+[tool.setuptools.package-data]
+komicove_backend = ["web/*.html", "web/*.js"]

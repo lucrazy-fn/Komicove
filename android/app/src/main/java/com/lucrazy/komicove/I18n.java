@@ -238,6 +238,15 @@ final class I18n {
         put("A identidade antiga já pertence a outra HQ.","The legacy identity already belongs to another comic.");
     }
     private static void put(String pt,String en){EN.put(pt,en);}
+    static {
+        put("Contribuidor","Contributor");put("Token de Contribuidor","Contributor token");
+        put("Resgatar token de Contribuidor","Redeem Contributor token");put("Resgatar","Redeem");
+        put("Cole o token de Contribuidor:","Paste your Contributor token:");put("Resgatando token…","Redeeming token…");
+        put("Token de Contribuidor inválido, expirado, revogado ou utilizado.","Invalid, expired, revoked or used Contributor token.");
+        put("Esta conta já possui um cargo. O token não foi consumido.","This account already has a role. The token was not consumed.");
+        put("Mensagem de atualização","Update message");put("Nova versão disponível","New version available");
+        put("Sem notas publicadas.","No release notes published.");put("Não foi possível verificar atualizações.","Could not check for updates.");
+    }
     static String language(Context c){android.content.SharedPreferences current=c.getSharedPreferences("komicove_ui",0);return current.contains("language")?current.getString("language","pt"):c.getSharedPreferences("panel_ui",0).getString("language","pt");}
     static void language(Context c,String value){c.getSharedPreferences("komicove_ui",0).edit().putString("language",value).apply();}
     static String t(Context c,String value){

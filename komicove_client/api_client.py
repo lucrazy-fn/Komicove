@@ -123,6 +123,11 @@ def claim_moderator(token: str, setup_token: str) -> AuthResponse:
 
 claim_admin = claim_moderator
 
+
+def redeem_contributor(token: str, invitation: str) -> dict:
+    return _request_json("POST", "/account/contributor-token", token=token,
+        payload={"token": invitation}, auth_statuses=(401, 403), feature_name="contributor-token")
+
 def update_profile(token: str, display_name: str, email: str | None,
                    bio: str | None = None) -> dict:
     data = _request_json("PATCH", "/account/profile", token=token,

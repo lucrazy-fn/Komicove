@@ -18,6 +18,8 @@ import java.util.concurrent.*;
 
 public final class MainActivity extends Activity {
     private final ExecutorService work=Executors.newSingleThreadExecutor(),images=Executors.newFixedThreadPool(2);
+    private final ExecutorService updateWork=Executors.newSingleThreadExecutor();
+    private boolean updateChecking;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private LibraryStore store;private volatile PanelApi api;private LinearLayout root,body,bottomNav;private TextView banner;private ProfileAvatarView headerAvatar,profileAvatar;
     private String seriesFilter="",authorFilter="";private String statusFilter="Todos";private String tab="Biblioteca",filter="",sortMode="recent";private String collectionKind="all",collectionSort="name";private CollectionGroups.Group activeCollection;private boolean favorites,selectMode,authPending;private final Set<String> selected=new HashSet<>();private int visibleLimit=80;private int screen;private volatile boolean dead,busy;private Runnable collectionSearchTask;
@@ -295,13 +297,15 @@ public final class MainActivity extends Activity {
         p.addView(Ui.text(this,"E-mail",14,Ui.MUTED));
         EditText email=profileInput("E-mail",R.drawable.lucide_mail);email.setText(j.isNull("email")?"":j.optString("email"));p.addView(email,Ui.margin(-1,Ui.dp(this,60),this,0,4,0,18));
         p.addView(profileAction("Salvar perfil",R.drawable.lucide_save,true,()->async("Salvando…",()->{JSONObject result=(JSONObject)api.json("PATCH","/account/profile",new JSONObject().put("display_name",name.getText().toString().trim()).put("email",email.getText().length()==0?JSONObject.NULL:email.getText().toString().trim()).put("bio",j.isNull("bio")?JSONObject.NULL:j.optString("bio")));api.updateCachedUser(result);},this::profile)),Ui.margin(-1,Ui.dp(this,58),this,0,0,0,10));
+        if("user".equals(api.user.optString("role","user")))p.addView(profileAction("Resgatar token de Contribuidor",R.drawable.lucide_shield,false,this::redeemContributor),Ui.margin(-1,Ui.dp(this,58),this,0,0,0,10));
         p.addView(profileAction("Confirmar e-mail",R.drawable.lucide_mail,false,this::verifyEmail),Ui.margin(-1,Ui.dp(this,58),this,0,0,0,10));
         p.addView(profileAction("Segurança da conta",R.drawable.lucide_shield,false,this::accountSecurity),Ui.margin(-1,Ui.dp(this,58),this,0,0,0,10));
         p.addView(profileAction("Trocar senha",R.drawable.lucide_lock,false,this::changePassword),Ui.margin(-1,Ui.dp(this,58),this,0,0,0,10));
         p.addView(profileAction("Sair da conta",R.drawable.lucide_log_out,false,this::logoutAndroid),Ui.margin(-1,Ui.dp(this,58),this,0,8,0,0));
         Ui.enter(p);syncRemoteAvatar();
     }
-    private String roleLabel(String role){if("owner".equals(role))return "Dono";if("admin".equals(role))return "Admin";if("moderator".equals(role))return "Moderador";return "Usuário";}
+    private String roleLabel(String role){if("owner".equals(role))return "Dono";if("admin".equals(role))return "Admin";if("moderator".equals(role))return "Moderador";if("contributor".equals(role))return "Contribuidor";return "Usuário";}
+    private void redeemContributor(){EditText token=Ui.input(this,"Cole o token de Contribuidor:",false);new AlertDialog.Builder(this).setTitle("Token de Contribuidor").setView(token).setPositiveButton("Resgatar",(dialog,which)->async("Resgatando token…",()->{JSONObject user=(JSONObject)api.json("POST","/account/contributor-token",new JSONObject().put("token",token.getText().toString().trim()));api.updateCachedUser(user);},this::profile)).setNegativeButton("Cancelar",null).show();}
     private EditText profileInput(String hint,int icon){EditText field=Ui.input(this,hint,false);field.setCompoundDrawablesWithIntrinsicBounds(icon,0,R.drawable.lucide_edit,0);field.setCompoundDrawablePadding(Ui.dp(this,12));field.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));field.setBackground(Ui.bordered(this,0xeb121820,Ui.BORDER,Ui.RADIUS_LARGE));return field;}
     private Button profileAction(String label,int icon,boolean primary,Runnable action){Button button=primary?Ui.primaryButton(this,label,action):Ui.button(this,label,action);button.setGravity(Gravity.CENTER_VERTICAL);button.setCompoundDrawablesWithIntrinsicBounds(icon,0,R.drawable.lucide_chevron_right,0);button.setCompoundDrawablePadding(Ui.dp(this,12));button.setPadding(Ui.dp(this,18),0,Ui.dp(this,16),0);return button;}
     private void changePassword(){LinearLayout f=Ui.column(this);Ui.pad(f,18);EditText old=Ui.input(this,"Senha atual",true),next=Ui.input(this,"Nova senha",true);f.addView(old);f.addView(next);new AlertDialog.Builder(this).setTitle("Trocar senha").setView(f).setPositiveButton("Salvar",(d,w)->async("Alterando senha…",()->{api.json("POST","/account/password",new JSONObject().put("current_password",old.getText().toString()).put("new_password",next.getText().toString()));api.clear();getSharedPreferences("auth_state",0).edit().remove("mode").apply();},()->startActivityForResult(new Intent(this,AuthActivity.class),AUTH))).setNegativeButton("Cancelar",null).show();}
@@ -344,23 +348,27 @@ public final class MainActivity extends Activity {
     private void moderate(JSONObject item,String decision,String reason){async("Salvando decisão…",()->api.json("POST","/moderation/"+item.optString("record_id")+"/decision",new JSONObject().put("decision",decision).put("reason",reason)),()->catalog(false,true));}
     private void checkAndroidUpdates(){checkAndroidUpdates(false);}
     private void checkAndroidUpdates(boolean silent){
-        async("Verificando atualizacoes...",()->{
-            JSONObject release=api.checkAndroidUpdate();
-            String releaseVersion=release.optString("tag_name","").replaceFirst("^[vV]","");
-            if(!releaseVersion.startsWith("0.")){if(!silent)runOnUiThread(()->Toast.makeText(this,"Você já está usando a versão mais recente.",Toast.LENGTH_SHORT).show());return;}
-            String notes=release.optString("body","");
-            java.util.regex.Matcher match=java.util.regex.Pattern.compile("(?im)^[ \\t]*(?:[-*#]+[ \\t]*)?android[ \\t]*(?:version[ \\t]*)?([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)").matcher(notes);
-            String tag=match.find()?match.group(1):releaseVersion;
-            if(tag.isEmpty()||!isNewer(tag,BuildConfig.VERSION_NAME)){if(!silent)runOnUiThread(()->Toast.makeText(this,"Voce ja esta usando a versao mais recente.",Toast.LENGTH_SHORT).show());return;}
-            runOnUiThread(()->{
-                String url=release.optString("html_url","https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases");
-                String clean=notes.replaceAll("(?m)^#{1,6}\\s*","").replaceAll("`([^`]*)`","$1").replaceAll("\\*\\*([^*]+)\\*\\*","$1").trim();
-                String message="en".equals(I18n.language(this))?"A new Komicove release is available with reader fixes and stability improvements. Open the download page to read the complete release notes.":(clean.isEmpty()?"Novidades e correcoes para o leitor.":clean);
-                new AlertDialog.Builder(this).setTitle("Komicove Android "+tag+" disponivel").setMessage(message).setPositiveButton("Baixar",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)))).setNegativeButton("Depois",null).show();
-            });
-        },null);
+        if(dead||updateChecking)return;updateChecking=true;int ticket=screen;
+        updateWork.execute(()->{try{JSONArray items=api.updates();handler.post(()->{
+            updateChecking=false;if(dead||!syncActive||(!silent&&ticket!=screen))return;
+            if(silent){Set<String> seen=getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet());JSONObject item=AppUpdates.automatic(items,BuildConfig.VERSION_NAME,seen);if(item!=null)showUpdate(item);return;}
+            if(items.length()==0){I18n.toast(this,"Você já está usando a versão mais recente.",Toast.LENGTH_SHORT);return;}
+            if(items.length()==1){showUpdate(items.optJSONObject(0));return;}
+            String[] titles=new String[items.length()];for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);titles[i]=item.optString("title")+" ("+item.optString("version")+")";}
+            new AlertDialog.Builder(this).setTitle("Atualizações").setItems(titles,(dialog,index)->showUpdate(items.optJSONObject(index))).setNegativeButton("Fechar",null).show();
+        });}catch(Exception error){handler.post(()->{updateChecking=false;if(!dead&&!silent&&ticket==screen)I18n.toast(this,"Não foi possível verificar atualizações.",Toast.LENGTH_LONG);});}});
     }
-    private boolean isNewer(String remote,String current){try{String[] a=remote.split("\\."),b=current.split("\\.");for(int i=0;i<3;i++){int x=i<a.length?Integer.parseInt(a[i].replaceAll("[^0-9].*","")):0,y=i<b.length?Integer.parseInt(b[i].replaceAll("[^0-9].*","")):0;if(x!=y)return x>y;}return false;}catch(Exception e){return false;}}
+    private void showUpdate(JSONObject item){
+        if(item==null||dead)return;ScrollView scroll=new ScrollView(this);LinearLayout content=Ui.column(this);Ui.pad(content,18);scroll.addView(content);
+        TextView title=Ui.title(this,"",21);title.setText(item.optString("title"));content.addView(title);
+        content.addView(Ui.text(this,item.optString("version")+" · "+AppUpdates.date(item.optString("created_at")),14,Ui.MUTED));
+        TextView notes=Ui.text(this,"",16,Ui.TEXT);String html=item.optString("notes_html");
+        if("panel".equals(item.optString("source"))&&!html.isEmpty())notes.setText(Html.fromHtml(html,Html.FROM_HTML_MODE_LEGACY));
+        else {String plain=AppUpdates.plainNotes(item.optString("notes"));notes.setText(plain.isEmpty()?I18n.t(this,"Sem notas publicadas."):plain);}notes.setTextIsSelectable(true);content.addView(notes);
+        android.app.AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle(AppUpdates.newer(item.optString("version"),BuildConfig.VERSION_NAME)?"Nova versão disponível":"Mensagem de atualização").setView(scroll).setNegativeButton("Fechar",null);
+        String url=AppUpdates.safeUrl(item.optString("url"));if(!url.isEmpty())dialog.setPositiveButton("Baixar",(closed,which)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url))));dialog.show();
+        if("panel".equals(item.optString("source"))){Set<String> seen=new LinkedHashSet<>(getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet()));seen.add(item.optString("id"));while(seen.size()>100)seen.remove(seen.iterator().next());getSharedPreferences("updates",0).edit().putStringSet("seen_messages",seen).apply();}
+    }
     private void diagnostics(){String report="Komicove Android "+BuildConfig.VERSION_NAME+"\nAPI configurada: sim\nConta conectada: "+(api.signedIn()?"sim":"não")+"\nDispositivo: "+Build.MANUFACTURER+" "+Build.MODEL+"\nAndroid: "+Build.VERSION.RELEASE+"\nLivros locais: "+store.all().size();new AlertDialog.Builder(this).setTitle("Diagnóstico seguro").setMessage(report).setPositiveButton("Copiar",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("Diagnóstico Komicove",report));Toast.makeText(this,"Diagnóstico copiado sem dados sensíveis.",Toast.LENGTH_SHORT).show();}).setNegativeButton("Fechar",null).show();}
-    @Override protected void onDestroy(){dead=true;getSharedPreferences("library",0).unregisterOnSharedPreferenceChangeListener(syncListener);syncWork.shutdownNow();handler.removeCallbacksAndMessages(null);folderWatching=false;if(folderFuture!=null)folderFuture.cancel(true);folderWork.shutdownNow();work.shutdown();images.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){dead=true;getSharedPreferences("library",0).unregisterOnSharedPreferenceChangeListener(syncListener);syncWork.shutdownNow();updateWork.shutdownNow();handler.removeCallbacksAndMessages(null);folderWatching=false;if(folderFuture!=null)folderFuture.cancel(true);folderWork.shutdownNow();work.shutdown();images.shutdown();super.onDestroy();}
 }

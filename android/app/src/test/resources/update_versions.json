@@ -1,0 +1,5 @@
+{
+  "ordered_pairs": [["0.2.9", "0.2.10"], ["v0.2.1", "0.3.0"], ["0.2.2-rc.2", "0.2.2-rc.10"], ["0.2.2-rc.10", "0.2.2"], ["0.2.2-alpha", "0.2.2-beta"]],
+  "equal_versions": [["v0.2.2", "0.2.2+build"], ["0.2", "0.2.0"]],
+  "notes": "# Changes\n\nAndroid version 0.2.4\n\nDesktop release 0.2.3"
+}
