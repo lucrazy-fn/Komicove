@@ -16,6 +16,7 @@ finish-args:
   - --device=dri
   - --filesystem=home
   - --env=KOMICOVE_APPDATA_DIR=
+  - --env=KOMICOVE_PANEL_MODEL=/app/local_models/inkwell.onnx
 
 cleanup:
   - /include
@@ -141,10 +142,69 @@ modules:
   # publicar, ou use "type: dir" com "path: ../.." para empacotar a partir
   # do checkout local em vez do GitHub.
   # ---------------------------------------------------------------------
+  - name: sevenzip
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 7zz ${FLATPAK_DEST}/bin/7zz
+      - install -Dm644 License.txt ${FLATPAK_DEST}/share/licenses/7zip/License.txt
+    sources:
+      - type: archive
+        url: https://www.7-zip.org/a/7z2604-linux-x64.tar.xz
+        sha256: fc0327ba27e89bd086cf426dff17d77de582953cdbbc10a6576540a06853ffcd
+        strip-components: 0
+        only-arches: [x86_64]
+      - type: archive
+        url: https://www.7-zip.org/a/7z2604-linux-arm64.tar.xz
+        sha256: 5b0ac3aa91c1e3499f011d6af69d7f6b4de3ef2f011d9e2ff44c58ebd04aa388
+        strip-components: 0
+        only-arches: [aarch64]
+
+  - name: python3-local-ai
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation flatbuffers==25.12.19 numpy==2.5.3 packaging==26.3 protobuf==7.36.2 onnxruntime==1.30.0
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/e8/2d/d2a548598be01649e2d46231d151a6c56d10b964d94043a335ae56ea2d92/flatbuffers-25.12.19-py2.py3-none-any.whl
+        sha256: 7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+      - type: file
+        url: https://files.pythonhosted.org/packages/73/85/735720d04ec197c5dcfacdfc9922667c7f1f5f496a279b7ba4d7c74c4cc7/numpy-2.5.3-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+        sha256: c76d5dde9f445058f83d0c02af00557a4db91de9a9a57c0df87d1535001d654b
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/3a/1b/3b16a9bc514a440a7a0883684111dcb1ef1aee960af2ca95da8fc775f124/numpy-2.5.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+        sha256: a5fa86b80fd24bcd1aff83ad23be44ea323de3f787be8f8b15d4a65621e25321
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/89/06/e603c71f43f4fe3fd156a053af79cbed6e27a2c649f0988a67d97fedd39f/onnxruntime-1.30.0-cp313-cp313-manylinux_2_28_aarch64.whl
+        sha256: 5327cf6aa15a02bad805fac8bd6882a62571e8b72f6f2938a8f37e6bd1966ce9
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/f1/a1/ede48ab5dc54907a2999362777f541e132639fb06628ded1932058aa8a36/onnxruntime-1.30.0-cp313-cp313-manylinux_2_28_x86_64.whl
+        sha256: 86f940afc801ea9681a4da8af84fbe95e1d9ea7d80903952cc1bfad54faad38f
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl
+        sha256: d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+      - type: file
+        url: https://files.pythonhosted.org/packages/b6/ea/91fdf7c2b8bbd49cde056f00a9df6773532987e1c00fe2830b895af95c7e/protobuf-7.36.2-cp310-abi3-manylinux2014_aarch64.whl
+        sha256: e11e1f0180583a2af89db6a2ecd9e8dc40aa6d2988ca175bfd0e6d12ea72d74e
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/db/f3/3996583dd2906297a637af12114deddf7658af6e683fedb83be061983fb5/protobuf-7.36.2-cp310-abi3-manylinux2014_x86_64.whl
+        sha256: 89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/e4/04/d52c7016b04b6c5108f26691f9d33ec82a9b65d041f1a9c771137693d618/protobuf-7.36.2-py3-none-any.whl
+        sha256: bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e
+
   - name: komicove
     buildsystem: simple
     build-commands:
       - pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-build-isolation .
+      - install -Dm644 local_models/inkwell.onnx ${FLATPAK_DEST}/local_models/inkwell.onnx
+      - install -Dm644 installer/inkwell/AGPL-3.0.txt ${FLATPAK_DEST}/local_models/AGPL-3.0.txt
+      - install -Dm644 installer/inkwell/NOTICE.txt ${FLATPAK_DEST}/local_models/NOTICE.txt
       - mkdir -p ${FLATPAK_DEST}/Icons
       - cp -r Icons/* ${FLATPAK_DEST}/Icons/
       - cp -r assets_redesign ${FLATPAK_DEST}/assets_redesign
@@ -164,6 +224,13 @@ modules:
         path: ..
         skip:
           - .git
+          - android
+          - local_models
+          - __pycache__
+          - tests
+          - tools
+          - docs
+          - .github
           - .flatpak-builder
           - build-dir
           - build
@@ -177,3 +244,7 @@ modules:
           - komicove_storage
           - komicove.db
           - docs/security-audit
+      - type: file
+        path: ../local_models/inkwell.onnx
+        dest: local_models
+        sha256: f240e1296efd048126b26ea4ffeddc97d7c3aa667a37e3127c2afc6d5e9b9578
