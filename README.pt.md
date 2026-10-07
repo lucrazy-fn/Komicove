@@ -8,29 +8,27 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · Licença MIT**
+**Windows 0.2.1.1 · Android 0.2.1.1 · Linux 0.2.1.1 · Licença MIT**
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
-## Atualização antecipada: 0.2.0
+## Versão mais recente: 0.2.1.1
 
-Como as atualizações estavam demorando mais do que eu gostaria, decidi disponibilizar as melhorias que já estavam prontas em vez de esperar por todas as mudanças planejadas. O desenvolvimento continua, e ainda virão mais novidades, ajustes e correções nas próximas versões.
+Esta revisão melhora o controle de brilho durante a leitura no Windows, Linux e Android.
 
-### Novidades em relação à 0.1.0
+### Novidades
 
-- Interface redesenhada no desktop e Android, com ícones padronizados, cantos arredondados e brilho sutil.
-- Revisão das telas de conta, perfil e das opções do leitor.
-- **Android:** controles do leitor minimizáveis, liberando mais espaço para a página.
-- **Android:** melhorias no carregamento de arquivos compactados, cache, uso de memória e reaproveitamento da preparação da HQ ao girar o aparelho.
-- Pastas monitoradas com cadastro persistente, detecção de novas HQs e atualização manual.
-- Opção de ativar ou desativar pastas, ocultando suas HQs sem apagar o progresso.
-- Duplicatas ignoradas silenciosamente e um resumo final da importação.
-- Arquivos removidos ficam indisponíveis sem perder os dados de leitura; movimentos e renomeações são tratados quando identificáveis.
-- Correções na rolagem e preservação da posição da biblioteca ao usar **Mostrar mais**.
+- Escolha **Usar brilho das preferências** para aplicar o nível configurado no Komicove.
+- Escolha **Usar brilho do sistema** para respeitar a configuração do dispositivo ou sistema operacional.
+- O modo selecionado e o nível manual de brilho são salvos e restaurados ao abrir o aplicativo.
+- O controle manual fica claramente desativado enquanto o brilho do sistema está selecionado.
+- A troca do modo de brilho preserva todas as outras preferências do leitor.
+- No Android, cancelar a prévia das preferências restaura a configuração de brilho salva.
+- O atualizador agora reconhece versões com quatro números, como `0.2.1.1`.
 
-A detecção automática funciona com o aplicativo em uso ou ao retomar a biblioteca. Não há monitoramento permanente com o app fechado.
+A versão 0.2.1.1 está disponível como instalador e pacote portátil para Windows, pacotes `tar.gz` e Flatpak para Linux e APK universal para Android.
 
 ## Conheça a interface
 
@@ -105,7 +103,7 @@ Na primeira abertura da nova versão para desktop, os dados locais da antiga pas
 - Biblioteca com capas, busca, favoritos, progresso salvo e ordem alfanumérica no Android.
 - Coleções para organizar seu acervo, com seleção de várias HQs no Android.
 - Leitor com zoom, marcadores, página dupla, modo mangá e leitura vertical.
-- Preferências de persistência do zoom e encaixe automático.
+- Preferências de modo de brilho, persistência do zoom e encaixe automático.
 - Leitura guiada experimental no Windows e no Android.
 - Botões de navegação e retorno à biblioteca com área de clique ampliada.
 - Pastas monitoradas com atualização manual e opção de ativar ou desativar.

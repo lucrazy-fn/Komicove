@@ -8,29 +8,27 @@
 
 A free, open-source comic book reader for Windows, Linux, and Android. Organize your collection, track your progress, and read your local files with no account and no internet connection.
 
-**Windows 0.2.0 · Android 0.2.0 · Linux 0.2.0 · MIT License**
+**Windows 0.2.1.1 · Android 0.2.1.1 · Linux 0.2.1.1 · MIT License**
 
 [Website](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Work in progress. The features described here match the current code; older versions may not include them.
 
-## Early update: 0.2.0
+## Latest version: 0.2.1.1
 
-Since updates were taking longer than I would like, I decided to release the improvements that were already ready instead of waiting for all the planned changes. Development continues, and more features, tweaks, and fixes are coming in future versions.
+This revision improves brightness control while reading on Windows, Linux, and Android.
 
-### What's new compared to 0.1.0
+### What's new
 
-- Redesigned interface on desktop and Android, with consistent icons, rounded corners, and a subtle glow.
-- Revised account, profile, and reader options screens.
-- **Android:** collapsible reader controls, freeing up more room for the page.
-- **Android:** improvements to loading compressed files, caching, memory usage, and reusing the comic's preparation when rotating the device.
-- Watched folders with persistent registration, detection of new comics, and manual refresh.
-- Option to enable or disable folders, hiding their comics without deleting progress.
-- Duplicates are silently ignored, with a summary at the end of each import.
-- Removed files become unavailable without losing reading data; moves and renames are handled when they can be identified.
-- Fixes for scrolling and for preserving the library position when using **Show more**.
+- Choose **Use preference brightness** to apply the level configured in Komicove.
+- Choose **Use system brightness** to respect the device or operating system setting.
+- The selected mode and manual brightness level are saved and restored when the app opens.
+- The manual control is clearly disabled while system brightness is selected.
+- Switching brightness modes preserves every other reader preference.
+- On Android, cancelling the preferences preview restores the saved brightness setting.
+- The update checker now recognizes four-component versions such as `0.2.1.1`.
 
-Automatic detection works while the app is in use or when you return to the library. There is no permanent monitoring while the app is closed.
+Version 0.2.1.1 is available as a Windows installer and portable package, Linux `tar.gz` and Flatpak packages, and a universal Android APK.
 
 ## Take a look at the interface
 
@@ -105,7 +103,7 @@ The first time you open the new desktop version, local data from the old `Panel`
 - Library with covers, search, favorites, saved progress, and alphanumeric ordering on Android.
 - Collections to organize your library, with multi-comic selection on Android.
 - Reader with zoom, bookmarks, double-page mode, manga mode, and vertical reading.
-- Preferences for zoom persistence and automatic fit.
+- Preferences for brightness mode, zoom persistence, and automatic fit.
 - Experimental guided reading on Windows and Android.
 - Navigation and return-to-library buttons with enlarged click areas.
 - Watched folders with manual refresh and the option to enable or disable them.
