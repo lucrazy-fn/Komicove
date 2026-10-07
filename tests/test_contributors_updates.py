@@ -163,7 +163,7 @@ def test_import_is_read_only_and_server_resolves_official_release(backend, monke
         return [raw] if '?' in endpoint else raw
     monkeypatch.setattr(releases, 'github_get', get)
     rows = client.get('/api/moderators/releases', params={'repository': releases.REPOSITORIES[1]}, headers=sessions['moderator']).json()
-    assert rows[0]['version'] == 'v0.2.3'
+    assert rows[0]['version'] == 'v0.2.3' and '<strong>Official</strong>' in rows[0]['notes_html']
     payload = {'source': 'github', 'repository': releases.REPOSITORIES[1], 'release_id': 17, 'download_destination': 'github'}
     response = client.post('/api/moderators/updates', headers=sessions['moderator'], json=payload)
     assert response.status_code == 201
@@ -174,6 +174,25 @@ def test_import_is_read_only_and_server_resolves_official_release(backend, monke
     assert calls == [(releases.REPOSITORIES[1], '?per_page=30'), (releases.REPOSITORIES[1], '/17')]
     for invalid in ({'repository': 'attacker/repo'}, {'title': 'spoofed'}, {'download_url': 'https://github.com/attacker/repo/releases/latest'}):
         assert client.post('/api/moderators/updates', headers=sessions['admin'], json=dict(payload, **invalid)).status_code == 422
+
+
+def test_automatic_github_release_can_be_selected_and_is_persisted(backend, monkeypatch):
+    client, sessions, factory = backend
+    raw = {'id': 29, 'tag_name': 'v0.2.4', 'name': 'Automatic fixture', 'body': '**Automatic** notes',
+        'html_url': 'https://github.com/lucrazy-fn/Komicove/releases/tag/v0.2.4'}
+    calls = []
+    monkeypatch.setattr(releases, 'github_get', lambda repository, endpoint: calls.append((repository, endpoint)) or raw)
+    response = client.put('/api/moderators/updates/auto-1-29/selection', headers=sessions['moderator'])
+    assert response.status_code == 200
+    selected = response.json()
+    assert selected['title'] == 'Automatic fixture' and selected['selected'] is True
+    assert selected['source_repository'] == releases.REPOSITORIES[1] and selected['source_release_id'] == 29
+    assert client.get('/updates').json()[0]['id'] == selected['id']
+    assert client.put('/api/moderators/updates/auto-1-29/selection', headers=sessions['admin']).json()['id'] == selected['id']
+    assert client.put('/api/moderators/updates/auto-9-29/selection', headers=sessions['moderator']).status_code == 404
+    with factory() as db:
+        assert len(db.scalars(select(AppUpdate)).all()) == 1
+    assert calls == [(releases.REPOSITORIES[1], '/29')]
 
 
 def test_contributor_does_not_gain_legacy_moderation_flag(backend):

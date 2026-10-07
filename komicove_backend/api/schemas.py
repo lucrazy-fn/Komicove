@@ -232,6 +232,7 @@ class AppUpdatePublic(BaseModel):
     created_at: str
     selected: bool = False
     selection_token: str | None = None
+    automatic: bool = False
 
 
 class ManagedUserPublic(BaseModel):
