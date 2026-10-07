@@ -60,7 +60,7 @@ This document contains equivalent Brazilian Portuguese and English versions. If 
 - Mudanças arquiteturais devem responder a uma necessidade explícita do escopo, identificar os consumidores afetados e preservar contratos, entradas, persistência e comportamento. Para mudanças maiores, siga a orientação do README de descrever a proposta em uma Issue antes de implementar.
 - Preserve `ComicReader.py`, `panel_backend.py`, o comando `panel-reader`, fallbacks `PANEL_*` existentes e migrações de dados antigos enquanto houver consumidores compatíveis. Uma troca de nome visual não justifica removê-los.
 - Não altere versões, identificadores de pacote, assinatura, endpoints públicos, esquema ou formato de backup como efeito colateral. Não execute scripts de commit, publicação, migração ou restauração incidentalmente.
-- Quando o usuário pedir commit ou envio ao GitHub sem indicar o remoto, use sempre `public` (`https://github.com/lucrazy-fn/Komicove.git`). Só envie para `origin` quando o usuário pedir explicitamente o repositório privado.
+- Quando o usuário pedir commit ou envio ao GitHub sem indicar o remoto, use sempre `public` (`https://github.com/lucrazy-fn/PANEL-ComicBookReader.git`). Só envie para `origin` quando o usuário pedir explicitamente o repositório privado.
 
 ### 5. UI/UX e identidade visual
 
@@ -269,7 +269,7 @@ Execute os comandos na raiz deste repositório, salvo indicação. Use o Python 
 - Architectural changes must address an explicit need within scope, identify affected consumers and preserve contracts, entry points, persistence and behavior. For larger changes, follow the README guidance to describe the proposal in an Issue before implementing.
 - Preserve `ComicReader.py`, `panel_backend.py`, the `panel-reader` command, existing `PANEL_*` fallbacks and legacy data migrations while compatible consumers remain. A visual rename does not justify removing them.
 - Do not change versions, package identifiers, signing, public endpoints, schema or backup format as a side effect. Do not incidentally run commit, publishing, migration or restore scripts.
-- When the user requests a commit or GitHub push without naming a remote, always use `public` (`https://github.com/lucrazy-fn/Komicove.git`). Only push to `origin` when the user explicitly requests the private repository.
+- When the user requests a commit or GitHub push without naming a remote, always use `public` (`https://github.com/lucrazy-fn/PANEL-ComicBookReader.git`). Only push to `origin` when the user explicitly requests the private repository.
 
 ### 5. UI/UX and visual identity
 
