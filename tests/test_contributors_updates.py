@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from komicove_backend.accounts import contributor_invites
-from komicove_backend.accounts.models import User, ContributorInvite, AdminAuditLog, AppUpdate, _now
+from komicove_backend.accounts.models import User, ContributorInvite, AdminAuditLog, AppUpdate, AppUpdateSelection, _now
 from komicove_backend.api.app import app
 from komicove_backend.api.deps import get_db
 from komicove_backend.db import Base
@@ -70,6 +70,7 @@ def test_non_moderators_cannot_administer_tokens_or_updates(backend, role):
         assert client.get(path, headers=sessions[role]).status_code == 403
     for path, payload in [('/api/contributor-tokens', {}), ('/api/moderators/updates/preview', {'notes': 'fixture'}), ('/api/moderators/updates', message())]:
         assert client.post(path, headers=sessions[role], json=payload).status_code == 403
+    assert client.put('/api/moderators/updates/unknown/selection', headers=sessions[role]).status_code == 403
     assert client.delete('/api/contributor-tokens/unknown', headers=sessions[role]).status_code == 403
 
 
@@ -130,6 +131,27 @@ def test_manual_update_preview_permissions_history_and_public_feed(backend):
         assert len(db.scalars(select(AppUpdate)).all()) == 1
     for values in ({'assets': []}, {'version': 'invalid'}, {'download_url': 'https://evil.invalid/download'}, {'download_destination':'github','download_url':'javascript:alert(1)'}):
         assert client.post('/api/moderators/updates', headers=sessions['admin'], json=message(**values)).status_code == 422
+
+
+def test_selected_update_is_the_only_public_item_and_history_is_preserved(backend):
+    client, sessions, factory = backend
+    first = client.post('/api/moderators/updates', headers=sessions['moderator'], json=message(version='0.2.1', title='First')).json()
+    second = client.post('/api/moderators/updates', headers=sessions['moderator'], json=message(version='0.2.1.1', title='Second')).json()
+    public = client.get('/updates').json()
+    assert [item['id'] for item in public] == [second['id']]
+    assert public[0]['selected'] is True and public[0]['selection_token']
+    history = client.get('/api/moderators/updates', headers=sessions['moderator']).json()
+    assert [item['id'] for item in history] == [second['id'], first['id']]
+    assert [item['selected'] for item in history] == [True, False]
+    changed = client.put(f"/api/moderators/updates/{first['id']}/selection", headers=sessions['admin'])
+    assert changed.status_code == 200 and changed.json()['selected'] is True
+    assert [item['id'] for item in client.get('/updates').json()] == [first['id']]
+    history = client.get('/api/moderators/updates', headers=sessions['owner']).json()
+    assert [item['selected'] for item in history] == [False, True]
+    assert client.put('/api/moderators/updates/unknown/selection', headers=sessions['moderator']).status_code == 404
+    with factory() as db:
+        assert db.get(AppUpdateSelection, 1).update_id == first['id']
+        assert any(row.action == 'app_update_selected' for row in db.scalars(select(AdminAuditLog)))
 
 
 def test_import_is_read_only_and_server_resolves_official_release(backend, monkeypatch):
@@ -199,7 +221,7 @@ def test_incremental_migration_preserves_existing_account_and_library(tmp_path, 
         invite_id = invite.id
     monkeypatch.setattr(database, '_engine', engine)
     database.init_db(); database.init_db()
-    assert {'app_updates','contributor_invites'} <= set(inspect(engine).get_table_names())
+    assert {'app_updates','app_update_selection','contributor_invites'} <= set(inspect(engine).get_table_names())
     with factory() as db:
         assert db.get(User, user_id).role == 'admin' and db.get(User, user_id).is_moderator
         assert db.get(SessionToken, 'fixture-old-session').is_valid()

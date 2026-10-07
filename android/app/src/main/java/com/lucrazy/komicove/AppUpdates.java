@@ -50,7 +50,8 @@ final class AppUpdates {
         List<JSONObject> sorted=new ArrayList<>(unique.values());sorted.sort((a,b)->{boolean ac=compatible(a.optString("version"),current),bc=compatible(b.optString("version"),current);return ac!=bc?(ac?-1:1):version(b.optString("version")).compareTo(version(a.optString("version")));});
         JSONArray result=new JSONArray();for(JSONObject item:sorted)result.put(item);return result;
     }
-    static JSONObject automatic(JSONArray items,String current,Set<String> seen){for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);if(item==null)continue;if(newer(item.optString("version"),current)||("panel".equals(item.optString("source"))&&!seen.contains(item.optString("id"))&&compatible(item.optString("version"),current)))return item;}return null;}
+    static String messageId(JSONObject item){String token=item.optString("selection_token");return token.isEmpty()?item.optString("id"):token;}
+    static JSONObject automatic(JSONArray items,String current,Set<String> seen){for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);if(item==null)continue;if(newer(item.optString("version"),current)||("panel".equals(item.optString("source"))&&!seen.contains(messageId(item))&&compatible(item.optString("version"),current)))return item;}return null;}
     static String date(String value){try{return OffsetDateTime.parse(value).atZoneSameInstant(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));}catch(Exception ignored){return "";}}
     static String plainNotes(String notes){return (notes==null?"":notes).replaceAll("(?m)^#{1,6}\\s*","").replaceAll("!\\[([^\\]]*)\\]\\([^)]*\\)","$1").replaceAll("\\[([^\\]]+)\\]\\(([^)]+)\\)","$1 ($2)").replaceAll("`+|\\*\\*","").trim();}
 }

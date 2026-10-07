@@ -61,6 +61,17 @@ def test_messages_for_installed_version_are_visible_once_without_new_version_cla
     assert not updater.is_newer(message)
 
 
+def test_server_selection_overrides_github_and_reselection_has_a_new_identity(monkeypatch):
+    selected={'id':'selected','selection_token':'selected:2','title':'Chosen update','version':'0.2.1.1',
+        'notes':'Chosen notes','download_url':None,'source':'manual'}
+    monkeypatch.setattr(updater, 'CURRENT_VERSION', '0.2.1.1')
+    wire(monkeypatch, release('0.2.9', releases.REPOSITORIES[0]), release('0.2.8', releases.REPOSITORIES[1]), [selected])
+    items=updater.fetch()
+    assert len(items)==1 and items[0]['title']=='Chosen update'
+    assert updater.check(['selected:1'])['selection_token']=='selected:2'
+    assert updater.check(['selected:2']) is None
+
+
 def test_shared_version_order_and_android_marker_contract():
     contract=json.loads((Path(__file__).parents[1]/'android/app/src/test/resources/update_versions.json').read_text())
     for older,newer in contract['ordered_pairs']:

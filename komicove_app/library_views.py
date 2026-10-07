@@ -907,7 +907,7 @@ class LibraryWindow(tk.Tk):
         if data.get("url"):
             make_pill(actions,ui('Baixar', 'Download'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
         if data.get("source") == "panel":
-            save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [data["id"]]))[-100:])
+            save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [updater.message_id(data)]))[-100:])
         make_pill(actions,ui('Ver novidades', "See what's new"),lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
         dialog.protocol("WM_DELETE_WINDOW",dialog.destroy)
 
@@ -1128,7 +1128,7 @@ class LibraryWindow(tk.Tk):
         def selected(items):
             data = items[selection.current()]
             if data.get("source") == "panel":
-                save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [data["id"]]))[-100:])
+                save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [updater.message_id(data)]))[-100:])
             status.config(text=(ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}")
                 if updater.is_newer(data) else ui("Mensagem de atualização", "Update message")), fg=THEME["read_badge_text"])
             date_label.config(text=f"{data['version']} · {updater.display_date(data.get('created_at'))}")

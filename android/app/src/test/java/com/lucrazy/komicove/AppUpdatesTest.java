@@ -28,12 +28,12 @@ public class AppUpdatesTest {
         assertEquals("0.2.2",AppUpdates.release(release("0.2.2",AppUpdates.REPOSITORIES[0]).put("name",""),AppUpdates.REPOSITORIES[0],"0.2.1").getString("title"));
     }
     @Test public void repositoriesAreMergedAndPanelDownloadOverridesMatchingRelease()throws Exception{
-        JSONObject panel=AppUpdates.announcement(new JSONObject().put("id","notice").put("title","Fixture message").put("version","0.2.2").put("notes","Fixture changelog").put("download_url",AppUpdates.SITE));
+        JSONObject panel=AppUpdates.announcement(new JSONObject().put("id","notice").put("selection_token","notice:2").put("title","Fixture message").put("version","0.2.2").put("notes","Fixture changelog").put("download_url",AppUpdates.SITE));
         JSONArray rows=AppUpdates.merge(Arrays.asList(AppUpdates.release(release("v0.2.2",AppUpdates.REPOSITORIES[0]),AppUpdates.REPOSITORIES[0],"0.2.1"),AppUpdates.release(release("0.2.2",AppUpdates.REPOSITORIES[1]),AppUpdates.REPOSITORIES[1],"0.2.1"),panel),"0.2.1");
         assertEquals(1,rows.length());assertEquals(AppUpdates.SITE,rows.getJSONObject(0).getString("url"));
         assertEquals("Fixture message",AppUpdates.automatic(rows,"0.2.1",Collections.emptySet()).getString("title"));
-        assertNull(AppUpdates.automatic(rows,"0.2.2",Collections.singleton("notice")));
-        assertNotNull(AppUpdates.automatic(rows,"0.2.2",Collections.emptySet()));
+        assertNull(AppUpdates.automatic(rows,"0.2.2",Collections.singleton("notice:2")));
+        assertNotNull(AppUpdates.automatic(rows,"0.2.2",Collections.singleton("notice:1")));
     }
     @Test public void linksStayOnOfficialDestinationsAndMessagesAreTranslated(){
         assertEquals("",AppUpdates.safeUrl("javascript:alert(1)"));assertEquals("",AppUpdates.safeUrl("https://github.com/attacker/releases"));
@@ -61,6 +61,8 @@ public class AppUpdatesTest {
         });
         JSONArray rows=api.updates();assertEquals(1,rows.length());assertEquals("Panel message",rows.getJSONObject(0).getString("title"));
         assertEquals(Arrays.asList("/repos/lucrazy-fn/PANEL-ComicBookReader/releases/latest","/repos/lucrazy-fn/Komicove/releases/latest","/updates"),paths);
+        http(api,chain->{Request request=chain.request();if(request.url().host().equals("api.github.com"))return response(request,200,"{\"tag_name\":\"0.2.9\",\"name\":\"GitHub\"}");return response(request,200,"[{\"id\":\"chosen\",\"version\":\"0.2.2\",\"title\":\"Chosen by admin\",\"notes\":\"Selected\"}]");});
+        JSONArray selected=api.updates();assertEquals(1,selected.length());assertEquals("Chosen by admin",selected.getJSONObject(0).getString("title"));
         http(api,chain->{Request request=chain.request();if(request.url().encodedPath().contains("/Komicove/"))return response(request,200,"{\"tag_name\":\"0.2.3\"}");return response(request,503,"{}");});
         assertEquals("0.2.3",api.updates().getJSONObject(0).getString("version"));assertTrue(api.signedIn());
     }

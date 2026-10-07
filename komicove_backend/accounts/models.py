@@ -160,6 +160,14 @@ class AppUpdate(Base):
     created_by_username: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=_now, index=True)
 
+
+class AppUpdateSelection(Base):
+    __tablename__ = "app_update_selection"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    update_id: Mapped[str] = mapped_column(ForeignKey("app_updates.id"), unique=True)
+    selected_at: Mapped[datetime] = mapped_column(DateTime(), default=_now)
+
+
 class Notification(Base):
     __tablename__ = "notifications"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)

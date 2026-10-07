@@ -58,8 +58,9 @@ def fetch():
             rows = response.json()
             if not isinstance(rows, list):
                 raise ValueError("Invalid update feed")
-            for row in rows:
-                items.append(dict(row, source="panel", origin=row.get("source"), url=row.get("download_url")))
+            selected = [dict(row, source="panel", origin=row.get("source"), url=row.get("download_url")) for row in rows]
+            if selected:
+                items = selected
             succeeded += 1
     except (requests.RequestException, ValueError, TypeError, AttributeError) as error:
         errors.append(error)
@@ -73,10 +74,14 @@ def is_newer(data):
             and releases.version_key(data["version"]) > releases.version_key(CURRENT_VERSION))
 
 
+def message_id(data):
+    return data.get("selection_token") or data.get("id")
+
+
 def check(seen_messages=None):
     return next((data for data in fetch() if is_newer(data)
         or (seen_messages is not None and data.get("source") == "panel"
-            and data.get("id") not in seen_messages and releases.compatible(data["version"], CURRENT_VERSION))), None)
+            and message_id(data) not in seen_messages and releases.compatible(data["version"], CURRENT_VERSION))), None)
 
 
 def display_date(value):

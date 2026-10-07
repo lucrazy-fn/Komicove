@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from komicove_backend import updates
 from komicove_backend.accounts import audit
-from komicove_backend.accounts.models import AppUpdate, User
+from komicove_backend.accounts.models import AppUpdate, AppUpdateSelection, User, _now
 from komicove_backend.api.deps import get_db, require_moderator
 from komicove_backend.api.schemas import AppUpdateCreate, AppUpdatePreview, AppUpdatePublic
 from komicove_client import releases
@@ -12,22 +12,52 @@ from komicove_client import releases
 router = APIRouter(tags=["app-updates"])
 
 
-def public(item):
+def _selection(db):
+    selection = db.get(AppUpdateSelection, 1)
+    if selection:
+        item = db.get(AppUpdate, selection.update_id)
+        if item:
+            return item, f"{item.id}:{selection.selected_at.isoformat()}Z"
+    item = db.scalars(select(AppUpdate).order_by(AppUpdate.created_at.desc(), AppUpdate.id).limit(1)).first()
+    return (item, f"legacy:{item.id}") if item else (None, None)
+
+
+def _select(db, item):
+    selection = db.get(AppUpdateSelection, 1)
+    if selection is None:
+        selection = AppUpdateSelection(id=1, update_id=item.id)
+        db.add(selection)
+    else:
+        selection.update_id = item.id
+        selection.selected_at = _now()
+    db.flush()
+    return selection
+
+
+def public(item, selected_id=None, selection_token=None):
     return AppUpdatePublic(id=item.id, title=item.title, version=item.version, notes=item.notes,
         notes_html=updates.markdown(item.notes), source=item.source, source_repository=item.source_repository,
         source_release_id=item.source_release_id, source_release_url=item.source_release_url,
         download_destination=item.download_destination, download_url=item.download_url,
-        created_by_username=item.created_by_username, created_at=item.created_at.isoformat() + "Z")
+        created_by_username=item.created_by_username, created_at=item.created_at.isoformat() + "Z",
+        selected=item.id == selected_id,
+        selection_token=selection_token if item.id == selected_id else None)
 
 
 @router.get("/updates", response_model=list[AppUpdatePublic])
 def feed(db: Session = Depends(get_db), offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
-    return [public(i) for i in db.scalars(select(AppUpdate).order_by(AppUpdate.created_at.desc(), AppUpdate.id).offset(offset).limit(limit))]
+    if offset:
+        return []
+    item, token = _selection(db)
+    return [public(item, item.id, token)] if item else []
 
 
 @router.get("/api/moderators/updates", response_model=list[AppUpdatePublic])
 def history(actor: User = Depends(require_moderator), db: Session = Depends(get_db), offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
-    return feed(db, offset, limit)
+    selected, token = _selection(db)
+    selected_id = selected.id if selected else None
+    return [public(item, selected_id, token) for item in db.scalars(
+        select(AppUpdate).order_by(AppUpdate.created_at.desc(), AppUpdate.id).offset(offset).limit(limit))]
 
 
 @router.get("/api/moderators/releases")
@@ -69,5 +99,18 @@ def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), 
         created_by_user_id=actor.id, created_by_username=actor.username)
     db.add(item)
     db.flush()
+    _select(db, item)
     audit.record(db, actor, "app_update_published", details=f"atualização {item.id}, {item.version}, {item.source}, {item.download_destination or 'none'}")
-    return public(item)
+    _, token = _selection(db)
+    return public(item, item.id, token)
+
+
+@router.put("/api/moderators/updates/{update_id}/selection", response_model=AppUpdatePublic)
+def select_for_apps(update_id: str, actor: User = Depends(require_moderator), db: Session = Depends(get_db)):
+    item = db.get(AppUpdate, update_id)
+    if item is None:
+        raise HTTPException(404, "Atualização não encontrada.")
+    selection = _select(db, item)
+    audit.record(db, actor, "app_update_selected", details=f"atualização {item.id}, {item.version}")
+    token = f"{item.id}:{selection.selected_at.isoformat()}Z"
+    return public(item, item.id, token)

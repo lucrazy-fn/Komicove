@@ -63,7 +63,7 @@ final class PanelApi {
     JSONArray updates()throws Exception {
         java.util.List<JSONObject> found=new java.util.ArrayList<>();int successes=0;
         for(String repository:AppUpdates.REPOSITORIES){try{JSONObject release=githubLatest(repository);successes++;JSONObject item=AppUpdates.release(release,repository,BuildConfig.VERSION_NAME);if(item!=null)found.add(item);}catch(Exception ignored){}}
-        try{JSONArray messages=(JSONArray)json("GET","/updates",null);successes++;for(int i=0;i<messages.length();i++)found.add(AppUpdates.announcement(messages.getJSONObject(i)));}catch(Exception ignored){}
+        try{JSONArray messages=(JSONArray)json("GET","/updates",null);successes++;if(messages.length()>0)found.clear();for(int i=0;i<messages.length();i++)found.add(AppUpdates.announcement(messages.getJSONObject(i)));}catch(Exception ignored){}
         if(successes==0)throw new IOException("Não foi possível verificar atualizações.");
         return AppUpdates.merge(found,BuildConfig.VERSION_NAME);
     }

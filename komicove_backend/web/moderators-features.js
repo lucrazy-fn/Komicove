@@ -1,4 +1,4 @@
-let contributorRows=[], updateRows=[], importedReleases=[];
+let contributorRows=[], updateRows=[], importedReleases=[], updateIndex=0;
 let releasePage=0;
 const tokenStatuses={available:'Disponível',used:'Utilizado',revoked:'Revogado',expired:'Expirado'};
 async function loadContributors(more=false) {
@@ -73,15 +73,40 @@ $('updatePublish').onclick=async()=>{
       if(!$('releaseChoice').value)throw Error(t('Selecione uma Release antes de publicar.'));
       payload.repository=$('releaseRepository').value;payload.release_id=$('releaseChoice').value;
     } else {payload.title=$('updateTitle').value;payload.version=$('updateVersion').value;payload.notes=$('updateNotes').value;}
-    await api('/api/moderators/updates',{method:'POST',body:JSON.stringify(payload)});
-    msg('updateMsg',t('Mensagem publicada nos apps.'));await loadUpdates();
+    const created=await api('/api/moderators/updates',{method:'POST',body:JSON.stringify(payload)});
+    msg('updateMsg',t('Mensagem publicada nos apps.'));await loadUpdates(created.id);
   }catch(error){msg('updateMsg',error.message,true);}finally{button.disabled=false;}
 };
-async function loadUpdates(more=false) {
+function renderUpdateHistory() {
+  const controls=$('updateHistoryControls');
+  controls.classList.toggle('hidden',updateRows.length===0);
+  if(!updateRows.length){$('updateRows').innerHTML=`<p>${t('Nenhuma atualização publicada.')}</p>`;return;}
+  updateIndex=Math.max(0,Math.min(updateIndex,updateRows.length-1));
+  const choice=$('updateHistoryChoice');
+  choice.replaceChildren(...updateRows.map((item,index)=>new Option(`${item.title} (${item.version})${index===0?` · ${t('Mais recente')}`:''}${item.selected?` · ${t('Exibida nos aplicativos')}`:''}`,item.id)));
+  choice.value=updateRows[updateIndex].id;
+  $('updatePrevious').disabled=updateIndex>=updateRows.length-1;
+  $('updateNext').disabled=updateIndex<=0;
+  const item=updateRows[updateIndex];
+  $('updateRows').innerHTML=`<article class="update-log${item.selected?' selected':''}"><div class="update-log-head"><div><h3>${esc(item.title)}</h3><span class="badge">${esc(item.version)}</span>${updateIndex===0?`<span class="badge">${t('Mais recente')}</span>`:''}${item.selected?`<span class="badge update-selected-badge">${t('Exibida nos aplicativos')}</span>`:''}</div>${item.selected?`<button class="btn secondary" disabled>${t('Exibida nos aplicativos')}</button>`:`<button class="btn" data-select-update="${esc(item.id)}">${t('Exibir nos aplicativos')}</button>`}</div><small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small><small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)} · #${esc(item.source_release_id)}`:''}</small><small>${t('Destino')}: ${t(item.download_destination==='site'?'Site do Komicove':item.download_destination==='github'?'GitHub':'Sem botão Baixar')}</small>${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`;
+  const selectButton=document.querySelector('[data-select-update]');
+  if(selectButton)selectButton.onclick=async()=>{
+    selectButton.disabled=true;
+    try{await api(`/api/moderators/updates/${encodeURIComponent(item.id)}/selection`,{method:'PUT'});msg('updateMsg',t('Atualização selecionada para os aplicativos.'));await loadUpdates(item.id);}
+    catch(error){msg('updateMsg',error.message,true);selectButton.disabled=false;}
+  };
+}
+async function loadUpdates(preferredId=null) {
   try {
-    const rows=await api(`/api/moderators/updates?offset=${more?updateRows.length:0}&limit=50`);updateRows=more?updateRows.concat(rows):rows;
-    $('updateRows').innerHTML=updateRows.map(item=>`<article class="update-log"><h3>${esc(item.title)}</h3><span class="badge">${esc(item.version)}</span><small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small><small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)} · #${esc(item.source_release_id)}`:''}</small><small>${t('Destino')}: ${t(item.download_destination==='site'?'Site do Komicove':item.download_destination==='github'?'GitHub':'Sem botão Baixar')}</small>${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`).join('')||`<p>${t('Nenhuma atualização publicada.')}</p>`;
-    $('updatesMore').classList.toggle('hidden',rows.length<50);
+    const currentId=preferredId||(updateRows[updateIndex]&&updateRows[updateIndex].id);let rows=[],page=[];
+    do{page=await api(`/api/moderators/updates?offset=${rows.length}&limit=100`);rows=rows.concat(page);}while(page.length===100);
+    updateRows=rows;
+    const requested=updateRows.findIndex(item=>item.id===currentId),selected=updateRows.findIndex(item=>item.selected);
+    updateIndex=requested>=0?requested:selected>=0?selected:0;
+    renderUpdateHistory();
   }catch(error){msg('updateMsg',error.message,true);}
 }
-$('updatesRefresh').onclick=()=>loadUpdates();$('updatesMore').onclick=()=>loadUpdates(true);
+$('updateHistoryChoice').onchange=()=>{const index=updateRows.findIndex(item=>item.id===$('updateHistoryChoice').value);if(index>=0){updateIndex=index;renderUpdateHistory();}};
+$('updatePrevious').onclick=()=>{if(updateIndex<updateRows.length-1){updateIndex++;renderUpdateHistory();}};
+$('updateNext').onclick=()=>{if(updateIndex>0){updateIndex--;renderUpdateHistory();}};
+$('updatesRefresh').onclick=()=>loadUpdates();
