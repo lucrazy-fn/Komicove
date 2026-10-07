@@ -80,6 +80,15 @@ def test_changelog_is_not_replaced_in_english_and_role_is_translated(monkeypatch
     assert _role_label('contributor') == 'Contributor'
 
 
+def test_revision_release_is_recognized_and_android_marker_keeps_four_numbers(monkeypatch):
+    assert releases.platform_version('v0.2.1.1', 'Android version 0.2.1.1', 'android') == '0.2.1.1'
+    monkeypatch.setattr(updater, 'CURRENT_VERSION', '0.2.1')
+    wire(monkeypatch, release('v0.2.1.1', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]))
+    assert updater.check()['version'] == '0.2.1.1'
+    monkeypatch.setattr(updater, 'CURRENT_VERSION', '0.2.1.1')
+    assert updater.check() is None
+
+
 def test_legacy_manifest_override_is_preserved_with_second_source(monkeypatch):
     calls=[]
     class Response:

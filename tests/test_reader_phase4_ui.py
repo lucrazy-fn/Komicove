@@ -184,3 +184,59 @@ def test_reader_pill_releases_font_on_ui_thread(gui, monkeypatch):
     assert not font.delete_font
     with ThreadPoolExecutor(max_workers=1) as worker:
         worker.submit(font.__del__).result(timeout=2)
+
+
+@pytest.mark.parametrize('lang', ['pt', 'en'])
+@pytest.mark.parametrize('dark', [False, True])
+def test_brightness_preferences_save_cancel_and_reopen(tmp_path, gui, lang, dark, monkeypatch):
+    from komicove_app import reader_views
+    monkeypatch.setattr(storage, 'PREFS_FILE', str(tmp_path / 'brightness-ui.json'))
+    monkeypatch.setattr(runtime, 'LANG', lang)
+    if runtime.IS_DARK != dark: runtime.toggle_theme()
+    monkeypatch.setattr(reader_views, 'IS_DARK', dark)
+    storage.save_prefs(reader_brightness=.4, reader_brightness_mode='preferences',
+                       reader_guided=False, reader_persist_zoom=True, reader_persist_position=True)
+    path = tmp_path / 'brightness.cbz'; path.write_bytes(b'brightness-ui')
+    reader = ReaderWindow(gui, str(path), Loader()); pump(gui)
+    def dialog():
+        reader._reader_preferences(); pump(gui)
+        return next(w for w in reader.winfo_children() if isinstance(w, tk.Toplevel))
+    def select(window, value):
+        radio = next(w for w in children(window) if isinstance(w, tk.Radiobutton) and w.cget('value') == value)
+        radio.invoke(); pump(gui)
+    try:
+        first = dialog()
+        radios = [w for w in children(first) if isinstance(w, tk.Radiobutton)]
+        assert [w.cget('text') for w in radios] == (
+            ['Usar brilho das preferências', 'Usar brilho do sistema'] if lang == 'pt' else
+            ['Use preference brightness', 'Use system brightness'])
+        select(first, 'system')
+        slider = next(w for w in children(first) if isinstance(w, reader_views.ReaderSlider))
+        assert slider.cget('state') == 'disabled'
+        slider.set(.8, notify=True)
+        assert slider.value == .4
+        first.destroy(); pump(gui)
+        assert reader._brightness_mode == 'preferences'
+        second = dialog(); select(second, 'system')
+        save = next(w for w in children(second) if getattr(w, 'text', None) in ('Salvar preferências', 'Save preferences'))
+        save.command(); pump(gui)
+        assert reader._brightness_slider.cget('state') == 'disabled'
+        assert reader._processed_pil(0).getpixel((0, 0))[:3] == (255, 255, 255)
+        assert storage.load_prefs()['reader_brightness'] == .4
+        assert reader._persist_zoom and reader._persist_position
+        reader._toggle_theme(); pump(gui)
+        assert reader._brightness_slider.cget('state') == 'disabled'
+        reader._close(); pump(gui)
+        reader = ReaderWindow(gui, str(path), Loader()); pump(gui)
+        assert reader._brightness_mode == 'system'
+        third = dialog(); select(third, 'preferences')
+        save = next(w for w in children(third) if getattr(w, 'text', None) in ('Salvar preferências', 'Save preferences'))
+        if os.environ.get('KOMICOVE_BRIGHTNESS_QA'):
+            output = __import__('pathlib').Path(os.environ['KOMICOVE_BRIGHTNESS_QA']); output.mkdir(parents=True, exist_ok=True)
+            third.attributes('-topmost', True); third.lift(); pump(gui)
+            ImageGrab.grab(bbox=(third.winfo_rootx(), third.winfo_rooty(), third.winfo_rootx()+third.winfo_width(), third.winfo_rooty()+third.winfo_height())).save(output / f'brightness-{lang}-{dark}.png')
+        save.command(); pump(gui)
+        assert reader._brightness_slider.cget('state') == 'normal'
+        assert reader._processed_pil(0).getpixel((0, 0))[:3] == (102, 102, 102)
+    finally:
+        reader._close(); clear_icon_cache()

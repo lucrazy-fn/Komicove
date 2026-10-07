@@ -93,3 +93,41 @@ def test_reopen_honors_each_preference(reader, zoom_on, position_on):
         assert reader._offset == pytest.approx([-120*z/1.5, -160*z/1.5])
     else:
         assert reader._offset == pytest.approx([max(0,(1000*z-320)/2),max(0,(1600*z-480)/2)])
+
+
+def test_brightness_modes_restore_pixels_and_keep_manual_level(reader, monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, 'PREFS_FILE', str(tmp_path / 'brightness-prefs.json'))
+    storage.save_prefs(lang='en', reader_persist_zoom=False, reader_persist_position=True,
+                       reader_auto_fit=False, reader_animate_guided=False, unknown=42)
+    reader._set_brightness(.4)
+    assert reader._processed_pil(0).getpixel((0, 0))[:3] == (102, 102, 102)
+    original = reader._loader.get_pil(0)
+    reader._set_brightness_mode('system')
+    assert reader._processed_pil(0) is original
+    assert reader._compose_pages().getpixel((0, 0))[:3] == (255, 255, 255)
+    reader._set_brightness(.9)
+    reader._slider_brightness('.8')
+    assert reader._brightness == .4
+    prefs = storage.load_prefs()
+    assert prefs['reader_brightness_mode'] == 'system'
+    assert prefs['reader_brightness'] == .4
+    for key, value in {'lang': 'en', 'reader_persist_zoom': False,
+                       'reader_persist_position': True, 'reader_auto_fit': False,
+                       'reader_animate_guided': False, 'unknown': 42}.items():
+        assert prefs[key] == value
+    reopened = type(reader)(None, reader._path, reader._loader)
+    try:
+        assert reopened._brightness_mode == 'system'
+        assert reopened._brightness == .4
+        assert reopened._processed_pil(0) is original
+        reopened._set_brightness_mode('preferences')
+        assert reopened._processed_pil(0).getpixel((0, 0))[:3] == (102, 102, 102)
+    finally:
+        reopened._page_executor.shutdown(wait=True)
+        reopened._detection_executor.shutdown(wait=True)
+        reopened._guide_cache.close()
+
+
+def test_legacy_reader_keeps_manual_brightness_default(reader):
+    assert reader._brightness_mode == 'preferences'
+    assert reader._effective_brightness() == 1.0

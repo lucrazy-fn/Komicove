@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import requests
 from komicove_client import releases, api_client
 
-CURRENT_VERSION = "0.2.1"
+CURRENT_VERSION = "0.2.1.1"
 RELEASES_URL = f"https://github.com/{releases.REPOSITORIES[0]}/releases"
 API_URL = f"https://api.github.com/repos/{releases.REPOSITORIES[0]}/releases/latest"
 SECOND_API_URL = f"https://api.github.com/repos/{releases.REPOSITORIES[1]}/releases/latest"

@@ -4,7 +4,7 @@
 
 [Setup]
 AppId={{45B7906A-4DE9-4C45-90C0-6E43D8A48A40}
-AppVerName=Komicove 0.2.1
+AppVerName=Komicove 0.2.1.1
 AppPublisher=lucrazy-fn
 AppPublisherURL=https://github.com/lucrazy-fn/PANEL-ComicBookReader
 PrivilegesRequired=lowest
@@ -13,10 +13,10 @@ UninstallDisplayIcon={app}\Komicove.exe
 LicenseFile=..\LICENSE
 OutputDir=..\dist\installer
 AppName=Komicove
-AppVersion=0.2.1
+AppVersion=0.2.1.1
 DefaultDirName={localappdata}\Programs\Komicove
 DefaultGroupName=Komicove
-OutputBaseFilename=Komicove-Setup-0.2.1
+OutputBaseFilename=Komicove-Setup-0.2.1.1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

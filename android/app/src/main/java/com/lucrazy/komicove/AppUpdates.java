@@ -12,12 +12,12 @@ import org.json.*;
 final class AppUpdates {
     static final String[] REPOSITORIES={"lucrazy-fn/PANEL-ComicBookReader","lucrazy-fn/Komicove"};
     static final String SITE="https://lucrazy-fn.github.io/Komicove/#downloads";
-    private static final Pattern VERSION=Pattern.compile("[vV]?(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:-([0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?");
-    private static final Pattern ANDROID=Pattern.compile("^[ \\t]*(?:[-*#]+[ \\t]*)?android[ \\t]*(?:version[ \\t]*)?(\\d+\\.\\d+(?:\\.\\d+)?)",Pattern.CASE_INSENSITIVE|Pattern.MULTILINE);
+    private static final Pattern VERSION=Pattern.compile("[vV]?(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:-([0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?");
+    private static final Pattern ANDROID=Pattern.compile("^[ \\t]*(?:[-*#]+[ \\t]*)?android[ \\t]*(?:version[ \\t]*)?(\\d+\\.\\d+(?:\\.\\d+){0,2})",Pattern.CASE_INSENSITIVE|Pattern.MULTILINE);
     private static final class Version implements Comparable<Version> {
         final BigInteger[] numbers;final String suffix,key;
-        Version(Matcher match){numbers=new BigInteger[]{new BigInteger(match.group(1)),new BigInteger(match.group(2)),new BigInteger(match.group(3)==null?"0":match.group(3))};suffix=match.group(4);key=numbers[0]+"."+numbers[1]+"."+numbers[2]+(suffix==null?"":"-"+suffix);}
-        public int compareTo(Version other){for(int i=0;i<3;i++){int comparison=numbers[i].compareTo(other.numbers[i]);if(comparison!=0)return comparison;}if(suffix==null)return other.suffix==null?0:1;if(other.suffix==null)return -1;String[] a=suffix.split("\\."),b=other.suffix.split("\\.");for(int i=0;i<Math.min(a.length,b.length);i++){boolean an=a[i].matches("\\d+"),bn=b[i].matches("\\d+");int comparison=an&&bn?new BigInteger(a[i]).compareTo(new BigInteger(b[i])):an!=bn?(an?-1:1):a[i].compareTo(b[i]);if(comparison!=0)return comparison;}return Integer.compare(a.length,b.length);}
+        Version(Matcher match){numbers=new BigInteger[]{new BigInteger(match.group(1)),new BigInteger(match.group(2)),new BigInteger(match.group(3)==null?"0":match.group(3)),new BigInteger(match.group(4)==null?"0":match.group(4))};suffix=match.group(5);key=numbers[0]+"."+numbers[1]+"."+numbers[2]+(numbers[3].signum()==0?"":"."+numbers[3])+(suffix==null?"":"-"+suffix);}
+        public int compareTo(Version other){for(int i=0;i<4;i++){int comparison=numbers[i].compareTo(other.numbers[i]);if(comparison!=0)return comparison;}if(suffix==null)return other.suffix==null?0:1;if(other.suffix==null)return -1;String[] a=suffix.split("\\."),b=other.suffix.split("\\.");for(int i=0;i<Math.min(a.length,b.length);i++){boolean an=a[i].matches("\\d+"),bn=b[i].matches("\\d+");int comparison=an&&bn?new BigInteger(a[i]).compareTo(new BigInteger(b[i])):an!=bn?(an?-1:1):a[i].compareTo(b[i]);if(comparison!=0)return comparison;}return Integer.compare(a.length,b.length);}
     }
     private static Version version(String value){if(value==null||value.length()>64)return null;Matcher match=VERSION.matcher(value.trim());return match.matches()?new Version(match):null;}
     static boolean compatible(String remote,String current){Version a=version(remote),b=version(current);return a!=null&&b!=null&&(b.numbers[0].signum()!=0||a.numbers[0].signum()==0);}

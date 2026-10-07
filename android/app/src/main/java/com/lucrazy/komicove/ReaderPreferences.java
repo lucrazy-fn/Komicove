@@ -10,6 +10,25 @@ import android.widget.*;
 
 final class ReaderPreferences {
     private static final int[][] SWITCH_STATES={{android.R.attr.state_checked},{-android.R.attr.state_checked}};
+    static final String BRIGHTNESS_PREFERENCES="preferences",BRIGHTNESS_SYSTEM="system";
+
+    static String brightnessMode(SharedPreferences prefs) {
+        return BRIGHTNESS_SYSTEM.equals(prefs.getString("brightness_mode",BRIGHTNESS_PREFERENCES))?BRIGHTNESS_SYSTEM:BRIGHTNESS_PREFERENCES;
+    }
+
+    static void applyBrightness(Activity activity,SharedPreferences prefs) {
+        applyBrightness(activity,brightnessMode(prefs),prefs.getInt("brightness",100));
+    }
+
+    private static void applyBrightness(Activity activity,String mode,int value) {
+        applyBrightness(activity.getWindow(),mode,value);
+    }
+
+    private static void applyBrightness(Window window,String mode,int value) {
+        WindowManager.LayoutParams params=window.getAttributes();
+        params.screenBrightness=BRIGHTNESS_SYSTEM.equals(mode)?WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE:Math.max(.1f,Math.min(1f,value/100f));
+        window.setAttributes(params);
+    }
 
     static void migrate(SharedPreferences prefs) {
         if(!prefs.contains("persist_position"))
@@ -18,7 +37,8 @@ final class ReaderPreferences {
 
     static Dialog show(Activity activity,Runnable changed) {
         SharedPreferences prefs=activity.getSharedPreferences("reader",0);migrate(prefs);
-        int savedBrightness=Math.max(10,prefs.getInt("brightness",100));
+        int savedBrightness=Math.max(10,Math.min(100,prefs.getInt("brightness",100)));
+        String[] selectedBrightnessMode={brightnessMode(prefs)};
         String[] selectedTheme={prefs.getString("theme","default")};
         Dialog dialog=new Dialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout sheet=Ui.column(activity);sheet.setPadding(Ui.dp(activity,18),Ui.dp(activity,10),Ui.dp(activity,18),Ui.dp(activity,18));sheet.setBackground(Ui.bordered(activity,Ui.BG,Ui.BORDER,Ui.RADIUS_LARGE));
@@ -29,7 +49,7 @@ final class ReaderPreferences {
         LinearLayout header=Ui.row(activity);header.addView(icon(activity,R.drawable.lucide_sliders,Ui.RED_BRIGHT),new LinearLayout.LayoutParams(Ui.dp(activity,52),Ui.dp(activity,52)));
         LinearLayout heading=Ui.column(activity);heading.addView(Ui.title(activity,"Preferências do leitor",24));heading.addView(Ui.text(activity,"Personalize sua experiência de leitura",14,Ui.MUTED));
         header.addView(heading,Ui.margin(0,-2,activity,12,0,8,0));((LinearLayout.LayoutParams)heading.getLayoutParams()).weight=1;
-        ImageButton close=Ui.iconButton(activity,R.drawable.lucide_x,false,()->{previewBrightness(activity,savedBrightness);dialog.dismiss();});close.setContentDescription(I18n.t(activity,"Fechar"));header.addView(close,new LinearLayout.LayoutParams(Ui.dp(activity,48),Ui.dp(activity,48)));
+        ImageButton close=Ui.iconButton(activity,R.drawable.lucide_x,false,dialog::dismiss);close.setContentDescription(I18n.t(activity,"Fechar"));header.addView(close,new LinearLayout.LayoutParams(Ui.dp(activity,48),Ui.dp(activity,48)));
         sheet.addView(header,Ui.margin(-1,-2,activity,0,0,0,16));
 
         sheet.addView(Ui.sectionTitle(activity,"Leitura e navegação",R.drawable.lucide_book_open),Ui.margin(-1,-2,activity,0,0,0,8));
@@ -45,8 +65,23 @@ final class ReaderPreferences {
         LinearLayout appearance=Ui.card(activity);LinearLayout brightnessTitle=Ui.row(activity);brightnessTitle.addView(icon(activity,R.drawable.lucide_sun,Ui.RED_BRIGHT),new LinearLayout.LayoutParams(Ui.dp(activity,46),Ui.dp(activity,46)));
         LinearLayout brightnessText=Ui.column(activity);brightnessText.addView(Ui.title(activity,"Brilho do leitor",16));brightnessText.addView(Ui.text(activity,"Ajusta o brilho somente durante a leitura.",13,Ui.MUTED));brightnessTitle.addView(brightnessText,Ui.margin(0,-2,activity,12,0,0,0));((LinearLayout.LayoutParams)brightnessText.getLayoutParams()).weight=1;
         TextView amount=Ui.title(activity,"",14);brightnessTitle.addView(amount);appearance.addView(brightnessTitle);
+        appearance.addView(Ui.title(activity,"Modo de brilho",15));
+        RadioGroup brightnessModes=new RadioGroup(activity);brightnessModes.setOrientation(LinearLayout.VERTICAL);
+        String[] brightnessLabels={"Usar brilho das preferências","Usar brilho do sistema"};
+        String[] brightnessValues={BRIGHTNESS_PREFERENCES,BRIGHTNESS_SYSTEM};
+        for(int i=0;i<brightnessValues.length;i++){
+            RadioButton choice=new RadioButton(activity);choice.setId(View.generateViewId());choice.setTag(brightnessValues[i]);choice.setText(I18n.t(activity,brightnessLabels[i]));choice.setTextColor(Ui.TEXT);choice.setTextSize(14);choice.setMinHeight(Ui.dp(activity,48));choice.setButtonTintList(new ColorStateList(SWITCH_STATES,new int[]{Ui.RED_BRIGHT,Ui.MUTED}));
+            brightnessModes.addView(choice,new RadioGroup.LayoutParams(-1,-2));
+            if(brightnessValues[i].equals(selectedBrightnessMode[0]))brightnessModes.check(choice.getId());
+        }
+        appearance.addView(brightnessModes);
+        appearance.addView(Ui.text(activity,"No modo sistema, o leitor respeita o brilho e o ajuste automático do dispositivo.",13,Ui.MUTED));
         SeekBar brightness=new SeekBar(activity);brightness.setMax(100);brightness.setMin(10);brightness.setProgress(savedBrightness);amount.setText(savedBrightness+"%");brightness.setProgressTintList(ColorStateList.valueOf(Ui.RED_BRIGHT));brightness.setThumbTintList(ColorStateList.valueOf(Ui.RED_BRIGHT));brightness.setProgressBackgroundTintList(ColorStateList.valueOf(Ui.BORDER));
-        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}public void onProgressChanged(SeekBar bar,int value,boolean fromUser){amount.setText(value+"%");if(fromUser)previewBrightness(activity,value);}});
+        brightness.setContentDescription(I18n.t(activity,"Brilho do leitor"));
+        Runnable refreshBrightness=()->{boolean manual=BRIGHTNESS_PREFERENCES.equals(selectedBrightnessMode[0]);brightness.setEnabled(manual);amount.setAlpha(manual?1f:.5f);};
+        brightnessModes.setOnCheckedChangeListener((group,id)->{RadioButton choice=group.findViewById(id);if(choice==null)return;selectedBrightnessMode[0]=(String)choice.getTag();refreshBrightness.run();previewBrightness(activity,dialog,selectedBrightnessMode[0],brightness.getProgress());});
+        refreshBrightness.run();
+        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}public void onProgressChanged(SeekBar bar,int value,boolean fromUser){amount.setText(value+"%");if(fromUser&&brightness.isEnabled())previewBrightness(activity,dialog,selectedBrightnessMode[0],value);}});
         appearance.addView(brightness,new LinearLayout.LayoutParams(-1,Ui.dp(activity,48)));sheet.addView(appearance,Ui.margin(-1,-2,activity,0,0,0,16));
 
         sheet.addView(Ui.sectionTitle(activity,"Tema de leitura",R.drawable.lucide_sun),Ui.margin(-1,-2,activity,0,0,0,8));
@@ -56,16 +91,18 @@ final class ReaderPreferences {
         refreshThemes.run();sheet.addView(themes,Ui.margin(-1,-2,activity,0,0,0,14));
 
         TextView note=Ui.text(activity,"A leitura guiada funciona nos modos Página única e Mangá. Use o editor manual quando a detecção automática não reconhecer os quadros corretamente.",13,Ui.MUTED);note.setPadding(Ui.dp(activity,12),Ui.dp(activity,8),Ui.dp(activity,12),Ui.dp(activity,14));sheet.addView(note);
-        Button save=Ui.primaryButton(activity,"Salvar preferências",()->{prefs.edit().putBoolean("persist_zoom",persist.isChecked()).putBoolean("persist_position",positionSwitch.isChecked()).putBoolean("auto_fit",fit.isChecked()).putBoolean("guided",guided.isChecked()).putBoolean("animate_guided",animate.isChecked()).putInt("brightness",Math.max(10,brightness.getProgress())).putString("theme",selectedTheme[0]).apply();if(changed!=null)changed.run();dialog.dismiss();});
+        Button save=Ui.primaryButton(activity,"Salvar preferências",()->{prefs.edit().putBoolean("persist_zoom",persist.isChecked()).putBoolean("persist_position",positionSwitch.isChecked()).putBoolean("auto_fit",fit.isChecked()).putBoolean("guided",guided.isChecked()).putBoolean("animate_guided",animate.isChecked()).putInt("brightness",Math.max(10,brightness.getProgress())).putString("brightness_mode",selectedBrightnessMode[0]).putString("theme",selectedTheme[0]).apply();if(changed!=null)changed.run();dialog.dismiss();});
         save.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_save,0,0,0);save.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));save.setCompoundDrawablePadding(Ui.dp(activity,9));sheet.addView(save,new LinearLayout.LayoutParams(-1,Ui.dp(activity,54)));
 
+        dialog.setOnDismissListener(ignored->{if(activity instanceof ReaderActivity)applyBrightness(activity,prefs);});
         ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(true);scroll.addView(sheet);dialog.setContentView(scroll);dialog.show();
         Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);WindowManager.LayoutParams lp=window.getAttributes();lp.width=WindowManager.LayoutParams.MATCH_PARENT;lp.height=WindowManager.LayoutParams.WRAP_CONTENT;lp.gravity=Gravity.BOTTOM;lp.dimAmount=.62f;window.setAttributes(lp);}
+        previewBrightness(activity,dialog,selectedBrightnessMode[0],brightness.getProgress());
         return dialog;
     }
 
     private static ImageView icon(Context context,int resource,int tint){ImageView icon=new ImageView(context);icon.setImageResource(resource);icon.setColorFilter(tint);icon.setPadding(Ui.dp(context,11),Ui.dp(context,11),Ui.dp(context,11),Ui.dp(context,11));icon.setBackground(Ui.bordered(context,Ui.SURFACE_ALT,Ui.BORDER,Ui.RADIUS_MEDIUM));icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);return icon;}
-    private static void previewBrightness(Activity activity,int value){if(!(activity instanceof ReaderActivity))return;WindowManager.LayoutParams params=activity.getWindow().getAttributes();params.screenBrightness=Math.max(.1f,Math.min(1f,value/100f));activity.getWindow().setAttributes(params);}
+    private static void previewBrightness(Activity activity,Dialog dialog,String mode,int value){if(activity instanceof ReaderActivity){applyBrightness(activity,mode,value);if(dialog.getWindow()!=null)applyBrightness(dialog.getWindow(),mode,value);}}
     private static Switch readerSwitch(Context context,boolean checked){Switch control=new Switch(context);control.setChecked(checked);control.setShowText(false);control.setMinWidth(Ui.dp(context,58));control.setThumbTintList(new ColorStateList(SWITCH_STATES,new int[]{Color.WHITE,0xffd6deeb}));control.setTrackTintList(new ColorStateList(SWITCH_STATES,new int[]{Ui.RED,0xff344152}));return control;}
     private static View toggleRow(Context context,int resource,String title,String description,Switch control,boolean divider){LinearLayout wrapper=Ui.column(context);LinearLayout row=Ui.row(context);row.setPadding(Ui.dp(context,14),Ui.dp(context,12),Ui.dp(context,12),Ui.dp(context,12));row.addView(icon(context,resource,Ui.RED_BRIGHT),new LinearLayout.LayoutParams(Ui.dp(context,46),Ui.dp(context,46)));LinearLayout copy=Ui.column(context);copy.addView(Ui.title(context,title,15));TextView secondary=Ui.text(context,description,12,Ui.MUTED);secondary.setMaxLines(2);copy.addView(secondary);row.addView(copy,Ui.margin(0,-2,context,12,0,8,0));((LinearLayout.LayoutParams)copy.getLayoutParams()).weight=1;row.addView(control);wrapper.addView(row);if(divider){View line=new View(context);line.setBackgroundColor(Ui.BORDER);wrapper.addView(line,Ui.margin(-1,Ui.dp(context,1),context,74,0,12,0));}return wrapper;}
 }

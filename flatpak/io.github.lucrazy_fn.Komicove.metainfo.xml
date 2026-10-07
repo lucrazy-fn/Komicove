@@ -13,5 +13,5 @@
   <project_license>MIT</project_license>
   <url type="homepage">https://github.com/lucrazy-fn/PANEL-ComicBookReader</url>
   <provides><binary>komicove</binary></provides>
-  <releases><release version="0.2.1" date="2026-10-06"/><release version="0.2.0" date="2026-09-28"/><release version="0.1.0" date="2026-09-24"/></releases>
+  <releases><release version="0.2.1.1" date="2026-10-07"/><release version="0.2.1" date="2026-10-06"/><release version="0.2.0" date="2026-09-28"/><release version="0.1.0" date="2026-09-24"/></releases>
 </component>

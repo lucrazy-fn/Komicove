@@ -11,8 +11,8 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 36
-        versionCode 10721
-        versionName '0.2.1'
+        versionCode 10722
+        versionName '0.2.1.1'
         def selectedAbis = providers.gradleProperty('komicoveAbis').getOrNull()
         if (selectedAbis) {
             def abis = selectedAbis.split(',').collect { it.trim() }

@@ -1114,7 +1114,7 @@ class LibraryWindow(tk.Tk):
         dialog.geometry("560x500"); dialog.minsize(460,360); dialog.transient(self); grab_when_visible(dialog)
         head=tk.Frame(dialog,bg=THEME["surface"],height=82); head.pack(fill="x"); head.pack_propagate(False)
         tk.Label(head,text=ui('✦  Atualizações', '✦  Updates'),font=FTITLE,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w",padx=24,pady=(18,0))
-        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.2.1",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
+        tk.Label(head,text=f"Windows/Linux {updater.CURRENT_VERSION}  ·  Android 0.2.1.1",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=26)
         status=tk.Label(dialog,text=ui('Verificando versões…', 'Checking versions…'),font=FLABEL,bg=THEME["bg"],fg=THEME["text_dim"]); status.pack(anchor="w",padx=24,pady=(20,8))
         selection = ttk.Combobox(dialog, state="readonly")
         selection.pack(fill="x", padx=24, pady=(0,8))
@@ -1160,7 +1160,7 @@ class LibraryWindow(tk.Tk):
             "Komicove: Safe diagnostics\n",
         ) + (
             f"Windows: {updater.CURRENT_VERSION}\n"
-            + "Android: 0.2.1\n"
+            + "Android: 0.2.1.1\n"
             +
             ui(f"Sistema: {platform.system()} {platform.release()} ({platform.machine()})\n",
                f"System: {platform.system()} {platform.release()} ({platform.machine()})\n")

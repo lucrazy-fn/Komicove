@@ -6,7 +6,7 @@ import requests
 REPOSITORIES = ("lucrazy-fn/PANEL-ComicBookReader", "lucrazy-fn/Komicove")
 SITE_DOWNLOAD_URL = "https://lucrazy-fn.github.io/Komicove/#downloads"
 HEADERS = {"Accept": "application/vnd.github+json"}
-VERSION_PATTERN = r"[vV]?(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?"
+VERSION_PATTERN = r"[vV]?(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?"
 
 
 def release_url(version):
@@ -20,10 +20,10 @@ def version_key(value):
     match = re.fullmatch(VERSION_PATTERN, str(value or "").strip())
     if not match:
         return None
-    major, minor, patch, prerelease = match.groups()
+    major, minor, patch, revision, prerelease = match.groups()
     suffix = tuple((0, int(part)) if part.isdecimal() else (1, part)
                    for part in (prerelease or "").split("."))
-    return (int(major), int(minor), int(patch or 0), 0 if prerelease else 1, suffix)
+    return (int(major), int(minor), int(patch or 0), int(revision or 0), 0 if prerelease else 1, suffix)
 
 
 def version_id(value):
@@ -31,13 +31,14 @@ def version_id(value):
     key = version_key(value)
     if key is None:
         return str(value)
-    suffix = str(value).split("-", 1)[1].split("+", 1)[0] if key[3] == 0 else ""
-    return ".".join(map(str, key[:3])) + ("-" + suffix if suffix else "")
+    suffix = str(value).split("-", 1)[1].split("+", 1)[0] if key[4] == 0 else ""
+    numbers = key[:4] if key[3] else key[:3]
+    return ".".join(map(str, numbers)) + ("-" + suffix if suffix else "")
 
 
 def platform_version(version, notes, platform="desktop"):
     if platform == "android":
-        match = re.search(r"(?im)^[ \t]*(?:[-*#]+[ \t]*)?android[ \t]*(?:version[ \t]*)?(\d+\.\d+(?:\.\d+)?)", notes or "")
+        match = re.search(r"(?im)^[ \t]*(?:[-*#]+[ \t]*)?android[ \t]*(?:version[ \t]*)?(\d+\.\d+(?:\.\d+){0,2})", notes or "")
         if match:
             return match.group(1)
     return str(version or "").lstrip("vV")

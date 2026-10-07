@@ -49,15 +49,17 @@ class ReaderSlider(tk.Canvas):
     def _draw(self):
         self.delete("all")
         c = THEME
+        accent = c["text_muted"] if self.cget("state") == "disabled" else c["accent"]
+        thumb = c["text_muted"] if self.cget("state") == "disabled" else c["accent2"]
         left, right, cy = 9, max(10, self.winfo_width() - 9), 17
         ratio = (self.value - self.minimum) / max(.0001, self.maximum - self.minimum)
         x = left + (right - left) * ratio
         self.create_line(left, cy, right, cy, fill=c["progress_bg"], width=5,
                          capstyle="round")
-        self.create_line(left, cy, x, cy, fill=c["accent"], width=5,
+        self.create_line(left, cy, x, cy, fill=accent, width=5,
                          capstyle="round")
         self.create_oval(x - 8, cy - 8, x + 8, cy + 8, fill=c["border_glow"], outline="")
-        self.create_oval(x - 5, cy - 5, x + 5, cy + 5, fill=c["accent2"], outline="#ffffff")
+        self.create_oval(x - 5, cy - 5, x + 5, cy + 5, fill=thumb, outline="#ffffff")
 
     def _move(self, event):
         left, right = 9, max(10, self.winfo_width() - 9)
@@ -65,6 +67,8 @@ class ReaderSlider(tk.Canvas):
         self.set(self.minimum + ratio * (self.maximum - self.minimum), notify=True)
 
     def set(self, value, notify=False):
+        if notify and self.cget("state") == "disabled":
+            return
         self.value = max(self.minimum, min(self.maximum, float(value)))
         self._draw()
         if notify and self.command:
@@ -314,6 +318,8 @@ class ReaderContent:
             self._statistics_metadata = {}
 
         prefs = load_prefs()
+        self._brightness = max(0.1, min(3.0, float(prefs.get("reader_brightness", 1.0))))
+        self._brightness_mode = "system" if prefs.get("reader_brightness_mode") == "system" else "preferences"
         self._animate_guided = bool(prefs.get("reader_animate_guided", True))
         self._guide_motion = None
         self._guide_animation = None
@@ -510,6 +516,7 @@ class ReaderContent:
                                  self._slider_brightness, width=88)
         bright_sl.pack(side="left")
         self._brightness_slider = bright_sl
+        self._sync_brightness_controls()
 
         self._guided_btn = self._pill(controls, ui('Guiada', 'Guided'), self._toggle_guided,
                                       icon_name="focus", variant="soft")
@@ -619,14 +626,15 @@ class ReaderContent:
         return cv
 
     def _processed_pil(self, idx):
-        key = (idx, self._rotation, self._brightness)
+        brightness = self._effective_brightness()
+        key = (idx, self._rotation, brightness)
         if getattr(self, '_processed_key', None) == key:
             return self._processed_image
         img = self._loader.get_pil(idx)
         if self._rotation:
             img = img.rotate(-self._rotation, expand=True, resample=Image.BICUBIC)
-        if abs(self._brightness - 1.0) > 0.01:
-            img = ImageEnhance.Brightness(img.convert("RGB")).enhance(self._brightness).convert("RGBA")
+        if abs(brightness - 1.0) > 0.01:
+            img = ImageEnhance.Brightness(img.convert("RGB")).enhance(brightness).convert("RGBA")
         self._processed_key, self._processed_image = key, img
         return img
 
@@ -651,7 +659,7 @@ class ReaderContent:
     def _show(self, reset=True, alpha=1.0):
         cw = self._cv.winfo_width() or 800
         ch = self._cv.winfo_height() or 600
-        frame_key = (self._idx, cw, ch, self._rotation, self._brightness,
+        frame_key = (self._idx, cw, ch, self._rotation, self._effective_brightness(),
                      self._double, self._manga, self._guided, self._zoom,
                      tuple(self._offset), self._guide_key, self._region_index,
                      self._guide_overview, self._guided_zoom, self._guide_motion,
@@ -1168,7 +1176,7 @@ class ReaderContent:
         key, index = self._guide_key, self._region_index
         target = self._regions[index]
         image = self._compose_pages()
-        preview_key = (key, self._brightness, self._cv.winfo_width(), self._cv.winfo_height())
+        preview_key = (key, self._effective_brightness(), self._cv.winfo_width(), self._cv.winfo_height())
         future = None
         if getattr(self, '_guide_preview_key', None) != preview_key:
             limit = min(2048, max(1024, int(max(preview_key[-2:]) * 1.25)))
@@ -1270,6 +1278,8 @@ class ReaderContent:
         animated = self._own_variable(tk.BooleanVar(master=self,value=self._animate_guided))
         manga = self._own_variable(tk.BooleanVar(master=self,value=self._manga))
         double = self._own_variable(tk.BooleanVar(master=self,value=self._double))
+        brightness_mode = self._own_variable(tk.StringVar(master=self,value=self._brightness_mode))
+        brightness = self._own_variable(tk.DoubleVar(master=self,value=self._brightness))
         columns = tk.Frame(body, bg=THEME["bg"]); columns.pack(fill="both", expand=True)
         columns.grid_columnconfigure(0, weight=1, uniform="reader-preferences")
         columns.grid_columnconfigure(1, weight=1, uniform="reader-preferences")
@@ -1316,6 +1326,38 @@ class ReaderContent:
         option(right, animated, ui('Transições suaves', 'Smooth transitions'),
                ui('Anima a passagem entre quadros.', 'Animates movement between panels.'))
 
+        section(right, ui('Modo de brilho', 'Brightness mode'), "sun")
+        appearance = KomicoveCard(right, THEME, height=190, radius=RADIUS_MEDIUM, padding=12)
+        appearance.pack(fill="x")
+        for value, label in (
+            ('preferences', ui('Usar brilho das preferências', 'Use preference brightness')),
+            ('system', ui('Usar brilho do sistema', 'Use system brightness')),
+        ):
+            tk.Radiobutton(appearance.content, text=label, variable=brightness_mode, value=value,
+                           command=lambda: refresh_brightness(), font=FSMALL, bg=THEME['surface'],
+                           fg=THEME['text'], selectcolor=THEME['surface_alt'], activebackground=THEME['surface'],
+                           activeforeground=THEME['text'], anchor='w').pack(fill='x')
+        tk.Label(appearance.content,
+                 text=ui('O modo sistema exibe as páginas sem ajuste de brilho do Komicove.',
+                         'System mode displays pages without Komicove brightness adjustment.'),
+                 font=("Segoe UI", 8), bg=THEME['surface'], fg=THEME['text_dim'],
+                 wraplength=330, justify='left').pack(anchor='w', pady=(4, 6))
+        brightness_row = tk.Frame(appearance.content, bg=THEME['surface']); brightness_row.pack(fill='x')
+        amount = tk.Label(brightness_row, font=FSMALL, bg=THEME['surface'], fg=THEME['text_dim'])
+        amount.pack(side='right')
+        def change_brightness(value):
+            brightness.set(float(value))
+            amount.config(text=f'{brightness.get():.0%}')
+        brightness_slider = ReaderSlider(brightness_row, brightness.get(), 0.1, 3.0, change_brightness, width=220)
+        brightness_slider.pack(side='left')
+        def refresh_brightness():
+            enabled = brightness_mode.get() == 'preferences'
+            brightness_slider.config(state='normal' if enabled else 'disabled',
+                                     cursor='hand2' if enabled else 'arrow', takefocus=int(enabled))
+            brightness_slider._draw()
+            amount.config(text=f'{brightness.get():.0%}')
+        refresh_brightness()
+
         tip = KomicoveCard(right, THEME, height=96, radius=RADIUS_MEDIUM, padding=12)
         tip.pack(fill="x", pady=(12, 0))
         tk.Label(tip.content, text=ui('Atalhos rápidos', 'Quick shortcuts'), font=FBTN,
@@ -1342,8 +1384,9 @@ class ReaderContent:
             self._guide_overview = False
             if self._guided:
                 self._double = False
+            self._brightness = max(0.1, min(3.0, brightness.get()))
             dialog.destroy()
-            self._show(reset=False)
+            self._set_brightness_mode(brightness_mode.get())
         footer = tk.Frame(dialog, bg=THEME["surface"]); footer.pack(fill="x", side="bottom")
         KomicoveButton(footer, ui('Salvar preferências', 'Save preferences'), apply, THEME,
                        kind="primary", min_width=210, fixed_height=46,
@@ -1397,17 +1440,35 @@ class ReaderContent:
         self._rotation = (self._rotation + 90) % 360
         self._show(reset=True)
 
-    def _set_brightness(self, val):
-        self._brightness = max(0.1, min(3.0, round(val, 2)))
+    def _effective_brightness(self):
+        # Desktop leaves device brightness untouched; system mode skips image adjustment.
+        return 1.0 if getattr(self, '_brightness_mode', 'preferences') == 'system' else self._brightness
+
+    def _sync_brightness_controls(self):
         if hasattr(self, "_bright_var"):
             self._bright_var.set(self._brightness)
         if hasattr(self, "_brightness_slider"):
+            enabled = self._brightness_mode == 'preferences'
+            self._brightness_slider.config(state='normal' if enabled else 'disabled',
+                                           cursor='hand2' if enabled else 'arrow', takefocus=int(enabled))
             self._brightness_slider.set(self._brightness)
+
+    def _set_brightness_mode(self, mode):
+        self._brightness_mode = 'system' if mode == 'system' else 'preferences'
+        save_prefs(reader_brightness_mode=self._brightness_mode, reader_brightness=self._brightness)
+        self._sync_brightness_controls()
+        self._show(reset=False)
+
+    def _set_brightness(self, val):
+        if self._brightness_mode == 'system':
+            return
+        self._brightness = max(0.1, min(3.0, round(val, 2)))
+        save_prefs(reader_brightness=self._brightness)
+        self._sync_brightness_controls()
         self._show(reset=False)
 
     def _slider_brightness(self, v):
-        self._brightness = float(v)
-        self._show(reset=False)
+        self._set_brightness(float(v))
 
     def _dialog_geometry(self, window, width, height):
         x = max(0, self.winfo_rootx() + (self.winfo_width() - width) // 2)

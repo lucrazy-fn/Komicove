@@ -61,11 +61,46 @@ public final class ReaderPhase4Instrumentation extends Instrumentation {
                 require(!prefs.getBoolean("persist_zoom",true)&&prefs.getBoolean("persist_position",false),"Independent UI save failed");close();
                 log.append("PASS preferences ").append(lang).append(" labels, switches and save\n");
             }
+            brightnessPreferences(prefs);
             result.putString("stream",log.toString());
         }catch(Throwable e){StringWriter trace=new StringWriter();e.printStackTrace(new PrintWriter(trace));code=Activity.RESULT_CANCELED;result.putString("stream",log+"FAIL "+trace);}
         finally{if(active!=null)close();if(book!=null)store.remove(book);}
         finish(code,result);
     }
+    private void brightnessPreferences(SharedPreferences prefs)throws Exception{
+        for(String lang:new String[]{"pt","en"}){
+            getTargetContext().getSharedPreferences("komicove_ui",0).edit().putString("language",lang).commit();
+            prefs.edit().clear().putInt("brightness",35).putBoolean("persist_zoom",false).putBoolean("persist_position",true).putBoolean("auto_fit",false).putBoolean("guided",false).commit();
+            book=store.get(book.id);book.mode="normal";store.save(book);open();ready(book.page);
+            require(Math.abs(active.getWindow().getAttributes().screenBrightness-.35f)<.001,"Manual brightness absent");
+            final Dialog[] dialog={null};runOnMainSync(()->dialog[0]=ReaderPreferences.show(active,null));waitForIdleSync();
+            View root=dialog[0].getWindow().getDecorView();
+            RadioButton system=find(root,RadioButton.class,lang.equals("pt")?"Usar brilho do sistema":"Use system brightness");
+            SeekBar slider=find(root,SeekBar.class,null);require(system!=null&&slider!=null,"Brightness controls missing");
+            runOnMainSync(system::performClick);waitForIdleSync();
+            require(system.isChecked()&&!slider.isEnabled(),"System mode selection failed");
+            require(active.getWindow().getAttributes().screenBrightness==WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE,"System policy not restored");
+            runOnMainSync(dialog[0]::cancel);waitForIdleSync();
+            require(Math.abs(active.getWindow().getAttributes().screenBrightness-.35f)<.001,"Cancel did not restore manual brightness");
+            runOnMainSync(()->dialog[0]=ReaderPreferences.show(active,null));waitForIdleSync();root=dialog[0].getWindow().getDecorView();
+            RadioButton choice=find(root,RadioButton.class,lang.equals("pt")?"Usar brilho do sistema":"Use system brightness");
+            runOnMainSync(choice::performClick);View saveRoot=root;
+            runOnMainSync(()->clickText(saveRoot,lang.equals("pt")?"Salvar preferências":"Save preferences"));waitForIdleSync();
+            require("system".equals(prefs.getString("brightness_mode",""))&&prefs.getInt("brightness",0)==35,"Mode or manual level was not saved");
+            require(!prefs.getBoolean("persist_zoom",true)&&prefs.getBoolean("persist_position",false)&&!prefs.getBoolean("auto_fit",true),"Other preferences changed");
+            close();open();ready(book.page);
+            require(active.getWindow().getAttributes().screenBrightness==WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE,"System mode was not restored on reopen");
+            runOnMainSync(()->dialog[0]=ReaderPreferences.show(active,null));waitForIdleSync();root=dialog[0].getWindow().getDecorView();
+            require(find(root,RadioButton.class,lang.equals("pt")?"Usar brilho do sistema":"Use system brightness").isChecked(),"Saved selection missing");
+            RadioButton manual=find(root,RadioButton.class,lang.equals("pt")?"Usar brilho das preferências":"Use preference brightness");
+            runOnMainSync(manual::performClick);waitForIdleSync();
+            require(Math.abs(active.getWindow().getAttributes().screenBrightness-.35f)<.001,"Manual level was not restored");
+            View finalRoot=root;runOnMainSync(()->clickText(finalRoot,lang.equals("pt")?"Salvar preferências":"Save preferences"));waitForIdleSync();
+            close();open();ready(book.page);require(Math.abs(active.getWindow().getAttributes().screenBrightness-.35f)<.001,"Manual mode was not restored on reopen");close();
+            log.append("PASS brightness ").append(lang).append(" system/manual, cancel, preservation and reopen\n");
+        }
+    }
+    private <T extends View> T find(View view,Class<T> type,String text){if(type.isInstance(view)&&(text==null||view instanceof TextView&&text.equals(((TextView)view).getText().toString())))return type.cast(view);if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){T result=find(((ViewGroup)view).getChildAt(i),type,text);if(result!=null)return result;}return null;}
     private void validate(boolean z,boolean p,String mode)throws Exception{
         ZoomPage v=(ZoomPage)field("pageView");float fit=Math.min((float)v.getWidth()/v.image.getWidth(),(float)v.getHeight()/v.image.getHeight());
         float zoom=z?3:Math.max(1,Math.min(6,1/fit));require(Math.abs(v.zoom-zoom)<.01,"Wrong zoom");

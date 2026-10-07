@@ -163,6 +163,10 @@ final class I18n {
         put("Leitura guiada (experimental)","Guided reading (experimental)"); put("Destaca os quadros na ordem de leitura.","Highlights panels in reading order.");
         put("Anima a passagem entre os quadros detectados.","Animates movement between detected panels.");
         put("Brilho do leitor","Reader brightness"); put("Ajusta o brilho somente durante a leitura.","Adjusts brightness only while reading.");
+        put("Modo de brilho","Brightness mode");
+        put("Usar brilho das preferências","Use preference brightness");
+        put("Usar brilho do sistema","Use system brightness");
+        put("No modo sistema, o leitor respeita o brilho e o ajuste automático do dispositivo.","In system mode, the reader respects the device brightness and automatic adjustment.");
         put("A leitura guiada funciona nos modos Página única e Mangá. Use o editor manual quando a detecção automática não reconhecer os quadros corretamente.","Guided reading works in Single page and Manga modes. Use the manual editor when automatic detection does not identify panels correctly.");
         put("Salvar preferências","Save preferences"); put("Ajuste a leitura sem sair da página","Adjust reading without leaving the page");
         put("Selecionar páginas","Select pages"); put("Veja miniaturas e vá direto para uma página.","View thumbnails and jump directly to a page.");
