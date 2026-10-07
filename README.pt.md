@@ -8,7 +8,7 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-**Windows 0.2.1.1 · Android 0.2.1.1 · Linux 0.2.1.1 · Licença MIT**
+<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.1.1</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.1.1</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.1.1</strong> · Licença MIT</p>
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
@@ -86,11 +86,11 @@ Obrigado a todo mundo que vem acompanhando, testando e apoiando o projeto até a
 
 ## Para começar
 
-- **Windows 10/11:** baixe o instalador na página de Releases. Não precisa instalar Python para usar o aplicativo.
-- **Linux x86_64:** há pacotes portátil (`.tar.gz`) e Flatpak experimental. Confira a disponibilidade na página de Releases. A compatibilidade pode variar entre distribuições.
-- **Android 8 ou superior:** baixe o APK na mesma página.
+- <img src="docs/assets/windows-10.svg" width="18" alt=""> **Windows 10/11:** baixe o instalador ou o pacote portátil na página de Releases. Não precisa instalar Python para usar o aplicativo.
+- <img src="docs/assets/linux-tux.svg" width="18" alt=""> **Linux x86_64:** há pacotes portátil (`.tar.gz`) e Flatpak experimental. Confira a disponibilidade na página de Releases. A compatibilidade pode variar entre distribuições.
+- <img src="docs/assets/android.svg" width="18" alt=""> **Android 8 ou superior:** baixe o APK universal na mesma página.
 
-Também testado no **Debian 13**, em ambiente WSL2. O pacote portátil Linux desta atualização foi compilado com glibc 2.41; a compatibilidade com distribuições mais antigas pode variar.
+Os pacotes Linux foram testados no **Ubuntu**, **Linux Mint** e **Debian 13**. O pacote portátil desta atualização foi compilado com glibc 2.41; a compatibilidade com distribuições mais antigas pode variar.
 
 Faça um backup antes de atualizar. No Android, o APK precisa ter uma assinatura compatível com a instalação existente; não desinstale o aplicativo para contornar incompatibilidades sem antes proteger seus dados.
 

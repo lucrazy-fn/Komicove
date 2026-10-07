@@ -8,7 +8,7 @@
 
 A free, open-source comic book reader for Windows, Linux, and Android. Organize your collection, track your progress, and read your local files with no account and no internet connection.
 
-**Windows 0.2.1.1 · Android 0.2.1.1 · Linux 0.2.1.1 · MIT License**
+<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.1.1</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.1.1</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.1.1</strong> · MIT License</p>
 
 [Website](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
@@ -86,11 +86,11 @@ Thank you to everyone who has been following, testing, and supporting the projec
 
 ## Getting started
 
-- **Windows 10/11:** download the installer from the Releases page. You don't need to install Python to use the app.
-- **Linux x86_64:** a portable package (`.tar.gz`) and an experimental Flatpak are available. Check availability on the Releases page. Compatibility may vary between distributions.
-- **Android 8 or higher:** download the APK from the same page.
+- <img src="docs/assets/windows-10.svg" width="18" alt=""> **Windows 10/11:** download the installer or portable package from the Releases page. You don't need to install Python to use the app.
+- <img src="docs/assets/linux-tux.svg" width="18" alt=""> **Linux x86_64:** a portable package (`.tar.gz`) and an experimental Flatpak are available. Check availability on the Releases page. Compatibility may vary between distributions.
+- <img src="docs/assets/android.svg" width="18" alt=""> **Android 8 or higher:** download the universal APK from the same page.
 
-Also tested on **Debian 13** in a WSL2 environment. The portable Linux package in this update was built with glibc 2.41; compatibility with older distributions may vary.
+The Linux packages were tested on **Ubuntu**, **Linux Mint**, and **Debian 13**. The portable package in this update was built with glibc 2.41; compatibility with older distributions may vary.
 
 Back up your data before updating. On Android, the APK must be signed with a key compatible with the existing installation; do not uninstall the app to work around incompatibilities without first protecting your data.
 
