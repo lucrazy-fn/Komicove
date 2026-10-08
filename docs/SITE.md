@@ -9,6 +9,9 @@ Existing technical documentation, release notes, and image assets are retained.
 - `design.css`: visual refinements, real app previews, language selector, platform downloads, and responsive layouts.
 - `translations.js`: shared English and Brazilian Portuguese messages.
 - `app.js`: translation, saved language preference, mobile navigation, gallery tabs, image fallback, dialog, and FAQ interactions.
+- `novidades.html`: short bilingual release page for version 0.2.1.1.
+- `news.js`: language handling for the release page.
+- `assets/social-card.png`: 1200 x 630 preview used when the site is shared.
 
 English is the default. The EN / PT-BR selector saves the preference in
 `localStorage` under `komicove.site.language`. If storage is unavailable,
@@ -16,6 +19,10 @@ switching still works for the current visit. Changes propagate to other open
 tabs. Titles, descriptions, image alternatives, and accessibility labels are
 translated alongside visible content. Original app screenshots retain their
 original language; this is explained beside the previews.
+
+Download totals come from the public GitHub Releases API. The site sums the
+assets for each platform and caches the result for 15 minutes in local storage.
+If the API is unavailable, the counters stay hidden or use the last cached value.
 
 For new interface copy, add the same message key in both dictionaries and use
 `data-i18n="key"`, `data-i18n-alt="key"`, or `data-i18n-aria-label="key"`.

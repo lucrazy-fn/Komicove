@@ -18,10 +18,62 @@ function translatePage() {
 }
 translatePage();
 const screens = {
-  biblioteca: {image: 'assets/biblioteca.png'},
-  leitor: {image: 'assets/leitor.png'},
-  colecoes: {image: 'assets/colecoes.png'}
+  biblioteca: {image: 'screenshots/desktop-biblioteca.png'},
+  leitor: {image: 'screenshots/desktop-leitor.png'},
+  pastas: {image: 'screenshots/desktop-pastas.png'}
 };
+const releaseDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/tags/v0.2.1.1';
+const downloadStatsCacheKey = 'komicove.downloads.v0.2.1.1';
+const downloadAssetGroups = {
+  windows: ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
+  linux: ['Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Linux-0.2.1.1-x86_64.flatpak'],
+  android: ['Komicove-Android-0.2.1.1.apk']
+};
+let downloadStats = null;
+
+function renderDownloadCounts() {
+  if (!downloadStats) return;
+  const formatter = new Intl.NumberFormat(language === 'pt-BR' ? 'pt-BR' : 'en');
+  const total = document.querySelector('#download-total');
+  total.querySelector('[data-download-total]').textContent = formatter.format(downloadStats.total);
+  total.querySelector('[data-download-total-label]').textContent = t(downloadStats.total === 1 ? 'downloads.totalSingle' : 'downloads.totalPlural');
+  total.hidden = false;
+  for (const [platform, count] of Object.entries(downloadStats.platforms)) {
+    const counter = document.querySelector(`[data-download-count="${platform}"]`);
+    counter.querySelector('strong').textContent = formatter.format(count);
+    counter.querySelector('span').textContent = t(count === 1 ? 'downloads.countSingle' : 'downloads.countPlural');
+    counter.hidden = false;
+  }
+}
+
+async function loadDownloadCounts() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(downloadStatsCacheKey)); } catch { /* Fetch current data when cache is unavailable. */ }
+  if (cached?.stats && Date.now() - cached.savedAt < 15 * 60 * 1000) {
+    downloadStats = cached.stats;
+    renderDownloadCounts();
+    return;
+  }
+  try {
+    const response = await fetch(releaseDownloadEndpoint);
+    if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
+    const release = await response.json();
+    const counts = Object.fromEntries(release.assets.map(asset => [asset.name, Number(asset.download_count) || 0]));
+    downloadStats = {
+      total: Object.values(counts).reduce((sum, count) => sum + count, 0),
+      platforms: Object.fromEntries(Object.entries(downloadAssetGroups).map(([platform, assets]) => [platform, assets.reduce((sum, asset) => sum + (counts[asset] || 0), 0)]))
+    };
+    try { localStorage.setItem(downloadStatsCacheKey, JSON.stringify({savedAt: Date.now(), stats: downloadStats})); } catch { /* Live values are still shown without cache. */ }
+    renderDownloadCounts();
+  } catch {
+    if (cached?.stats) {
+      downloadStats = cached.stats;
+      renderDownloadCounts();
+    }
+  }
+}
+
+loadDownloadCounts();
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 document.documentElement.classList.add('js');
 const menu = document.querySelector('#menu');
@@ -122,10 +174,58 @@ document.querySelector('#close-modal').addEventListener('click', () => lightbox.
 lightbox.addEventListener('click', e => {if(e.target === lightbox) {const r=lightbox.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) lightbox.close();}});
 lightbox.addEventListener('close', () => document.querySelector('#expand').focus());
 
+const supportDialog = document.querySelector('#support-dialog');
+const copyPix = document.querySelector('#copy-pix');
+const copyStatus = document.querySelector('#copy-status');
+const keyCopyStatus = document.querySelector('#key-copy-status');
+let supportTrigger = null;
+document.querySelectorAll('[data-open-support]').forEach(button => button.addEventListener('click', () => {
+  supportTrigger = button;
+  copyStatus.textContent = '';
+  keyCopyStatus.textContent = '';
+  if (button.closest('#menu')) setMenu(false);
+  supportDialog.showModal();
+  if (!reduced.matches) supportDialog.animate([{opacity:0,transform:'translateY(12px) scale(.98)'},{opacity:1,transform:'none'}],{duration:250,easing:'ease-out'});
+}));
+document.querySelector('#close-support').addEventListener('click', () => supportDialog.close());
+supportDialog.addEventListener('click', event => {
+  if (event.target !== supportDialog) return;
+  const rect = supportDialog.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) supportDialog.close();
+});
+supportDialog.addEventListener('close', () => supportTrigger?.focus());
+copyPix.addEventListener('click', async () => {
+  const code = document.querySelector('#pix-code').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    copyStatus.textContent = t('support.copied');
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector('#pix-code'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    copyStatus.textContent = t('support.copyError');
+  }
+});
+document.querySelector('#copy-key').addEventListener('click', async () => {
+  const key = document.querySelector('#pix-key').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(key);
+    keyCopyStatus.textContent = t('support.keyCopied');
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector('#pix-key'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    keyCopyStatus.textContent = t('support.copyError');
+  }
+});
+
 function changeLanguage(next, persist = true) {
   language = next === 'pt-BR' ? 'pt-BR' : 'en';
   if (persist) { try { localStorage.setItem(languageKey, language); } catch { /* Language switching still works without storage. */ } }
   translatePage();
+  renderDownloadCounts();
   setMenu(toggle.getAttribute('aria-expanded') === 'true');
   selectTab(selected);
   if (lightbox.open) {
