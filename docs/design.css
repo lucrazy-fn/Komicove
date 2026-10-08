@@ -135,8 +135,11 @@ body:has(dialog[open]) { overflow:hidden; }
 .downloads { border-top:1px solid var(--line); }
 .download-intro { max-width:335px; }
 .download-intro > p { margin:0; }
-.download-total { display:flex; align-items:baseline; gap:9px; margin-top:18px; padding-top:15px; border-top:1px solid var(--line); color:#aaa5ae; font-size:.76rem; }
-.download-total strong { color:#ff858c; font:800 1.45rem var(--heading); }
+.download-total { display:flex; flex-direction:column; align-items:flex-start; gap:4px; margin-top:18px; padding-top:15px; border-top:1px solid var(--line); color:#aaa5ae; font-size:.76rem; }
+.download-total > div { display:flex; align-items:baseline; gap:9px; }
+.download-total > div strong { color:#ff858c; font:800 2.4rem var(--heading); line-height:.9; }
+.download-total small { color:#8e8993; font-size:.7rem; }
+.download-total small strong { color:#c1bac4; font-weight:800; }
 .download-total[hidden],.download-count[hidden] { display:none; }
 .download-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
 .download-card { padding:30px; border:1px solid var(--line); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; align-items:start; position:relative; }

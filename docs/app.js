@@ -23,6 +23,7 @@ const screens = {
   pastas: {image: 'screenshots/desktop-pastas.png'}
 };
 const releaseDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/tags/v0.2.1.1';
+const allReleasesDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases?per_page=100';
 const downloadStatsCacheKey = 'komicove.downloads.v0.2.1.1';
 const downloadAssetGroups = {
   windows: ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
@@ -37,6 +38,9 @@ function renderDownloadCounts() {
   const total = document.querySelector('#download-total');
   total.querySelector('[data-download-total]').textContent = formatter.format(downloadStats.total);
   total.querySelector('[data-download-total-label]').textContent = t(downloadStats.total === 1 ? 'downloads.totalSingle' : 'downloads.totalPlural');
+  const allTotal = downloadStats.allTotal ?? downloadStats.total;
+  total.querySelector('[data-download-all-total]').textContent = formatter.format(allTotal);
+  total.querySelector('[data-download-all-count]').textContent = t(allTotal === 1 ? 'downloads.countSingle' : 'downloads.countPlural');
   total.hidden = false;
   for (const [platform, count] of Object.entries(downloadStats.platforms)) {
     const counter = document.querySelector(`[data-download-count="${platform}"]`);
@@ -55,12 +59,13 @@ async function loadDownloadCounts() {
     return;
   }
   try {
-    const response = await fetch(releaseDownloadEndpoint);
-    if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
-    const release = await response.json();
+    const [response, allResponse] = await Promise.all([fetch(releaseDownloadEndpoint), fetch(allReleasesDownloadEndpoint)]);
+    if (!response.ok || !allResponse.ok) throw new Error('GitHub API request failed');
+    const [release, allReleases] = await Promise.all([response.json(), allResponse.json()]);
     const counts = Object.fromEntries(release.assets.map(asset => [asset.name, Number(asset.download_count) || 0]));
     downloadStats = {
       total: Object.values(counts).reduce((sum, count) => sum + count, 0),
+      allTotal: allReleases.reduce((sum, item) => sum + item.assets.reduce((assetSum, asset) => assetSum + (Number(asset.download_count) || 0), 0), 0),
       platforms: Object.fromEntries(Object.entries(downloadAssetGroups).map(([platform, assets]) => [platform, assets.reduce((sum, asset) => sum + (counts[asset] || 0), 0)]))
     };
     try { localStorage.setItem(downloadStatsCacheKey, JSON.stringify({savedAt: Date.now(), stats: downloadStats})); } catch { /* Live values are still shown without cache. */ }
