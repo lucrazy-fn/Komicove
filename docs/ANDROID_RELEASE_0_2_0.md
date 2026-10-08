@@ -60,7 +60,8 @@ necessária antes de afirmar compatibilidade de runtime nessas configurações.
   permanente. Certificado do APK compatível e alinhamento foram verificados.
 - Não foi executada instalação limpa/atualização do release pessoal nesta
   execução: apenas geração, verificações e transferência. Testes USB da Fase 2
-  anteriores utilizaram pacote isolado; ver pendências em `PHASE2_FOLDERS.md`.
+  anteriores utilizaram pacote isolado; as pendências daquele ciclo continuam
+  consultáveis no histórico Git.
 - O usuário instalou Debian 13 no WSL2 sem remover o Ubuntu antigo. A suíte
   Linux passou: 91 testes, com um aviso de dependência; PyInstaller compilou
   e o binário confirmou `Komicove assets OK`. A interface foi aberta com
