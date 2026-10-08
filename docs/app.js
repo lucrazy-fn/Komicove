@@ -24,7 +24,7 @@ const screens = {
 };
 const releaseDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/tags/v0.2.1.1';
 const allReleasesDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases?per_page=100';
-const downloadStatsCacheKey = 'komicove.downloads.v0.2.1.1';
+const downloadStatsCacheKey = 'komicove.downloads.v0.2.1.1.v2';
 const downloadAssetGroups = {
   windows: ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
   linux: ['Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Linux-0.2.1.1-x86_64.flatpak'],
@@ -53,7 +53,8 @@ function renderDownloadCounts() {
 async function loadDownloadCounts() {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(downloadStatsCacheKey)); } catch { /* Fetch current data when cache is unavailable. */ }
-  if (cached?.stats && Date.now() - cached.savedAt < 15 * 60 * 1000) {
+  const hasCompleteCache = cached?.stats && Number.isFinite(cached.stats.allTotal);
+  if (hasCompleteCache && Date.now() - cached.savedAt < 15 * 60 * 1000) {
     downloadStats = cached.stats;
     renderDownloadCounts();
     return;
@@ -71,7 +72,7 @@ async function loadDownloadCounts() {
     try { localStorage.setItem(downloadStatsCacheKey, JSON.stringify({savedAt: Date.now(), stats: downloadStats})); } catch { /* Live values are still shown without cache. */ }
     renderDownloadCounts();
   } catch {
-    if (cached?.stats) {
+    if (hasCompleteCache) {
       downloadStats = cached.stats;
       renderDownloadCounts();
     }
