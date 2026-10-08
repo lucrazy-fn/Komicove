@@ -19,6 +19,18 @@ import java.util.concurrent.*;
 public final class MainActivity extends Activity {
     private final ExecutorService work=Executors.newSingleThreadExecutor(),images=Executors.newFixedThreadPool(2);
     private final ExecutorService updateWork=Executors.newSingleThreadExecutor();
+    private final ThreadPoolExecutor libraryWork=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new LinkedBlockingQueue<>());
+    private Future<?> libraryTask;
+    private Runnable librarySearchTask;
+    private int libraryGeneration;
+    private boolean libraryPreparing;
+    private LibraryQuery libraryQuery;
+    private String libraryItems,libraryFolders;
+    private LibraryCovers libraryCovers;
+    private LibraryQuery collectionIndex;
+    private List<CollectionGroups.Group> libraryGroups=Collections.emptyList(),matchedGroups=Collections.emptyList();
+    private final Map<String,List<CollectionGroups.Group>> collectionOrders=new HashMap<>();
+    private String collectionAliases;
     private boolean updateChecking;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private LibraryStore store;private volatile PanelApi api;private LinearLayout root,body,bottomNav;private TextView banner;private ProfileAvatarView headerAvatar,profileAvatar;
@@ -117,7 +129,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);try{if(state!=null)coverBookId=state.getString("coverBookId");store=new LibraryStore(this);getSharedPreferences("library",0).registerOnSharedPreferenceChangeListener(syncListener);folders=new MonitoredFolders(this,store);api=new PanelApi(this);String mode=getSharedPreferences("auth_state",0).getString("mode","");if(!api.signedIn()&&!mode.equals("guest")){authPending=true;startActivityForResult(new Intent(this,AuthActivity.class),AUTH);return;}shell();if(api.signedIn())validateSavedSession();handler.postDelayed(()->{if(!dead)checkAndroidUpdates(true);},1800);if(getIntent().getData()!=null&&Intent.ACTION_VIEW.equals(getIntent().getAction()))importFiles(Collections.singletonList(getIntent().getData()));}catch(Throwable error){showStartupFailure(error);}}
     private void showStartupFailure(Throwable error){LinearLayout fallback=new LinearLayout(this);fallback.setOrientation(LinearLayout.VERTICAL);fallback.setPadding(32,48,32,32);fallback.setBackgroundColor(0xff080b10);TextView title=new TextView(this);title.setText(I18n.t(this,"Komicove não conseguiu iniciar"));title.setTextColor(Color.WHITE);title.setTextSize(23);title.setTypeface(null,android.graphics.Typeface.BOLD);fallback.addView(title);TextView help=new TextView(this);help.setText(I18n.t(this,"Envie uma captura desta tela para corrigirmos o problema. Seus dados não foram apagados."));help.setTextColor(0xffaebbd0);help.setTextSize(15);help.setPadding(0,16,0,16);fallback.addView(help);StringWriter writer=new StringWriter();error.printStackTrace(new PrintWriter(writer));TextView details=new TextView(this);details.setText(writer.toString());details.setTextColor(0xffffc7cc);details.setTextSize(11);details.setTextIsSelectable(true);ScrollView scroll=new ScrollView(this);scroll.addView(details);fallback.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(fallback);}
     @Override protected void onResume(){super.onResume();if(!authPending&&body==null&&api!=null&&!api.signedIn()&&getSharedPreferences("auth_state",0).getString("mode","").isEmpty()){authPending=true;startActivityForResult(new Intent(this,AuthActivity.class),AUTH);return;}if(body!=null){if(foldersVisible)showFolders();else if(tab.equals("Biblioteca")||tab.equals("Coleções"))showLibrary();}folderWatching=true;refreshFolders(false);syncActive=true;scheduleSync();}
-    @Override protected void onPause(){syncActive=false;handler.removeCallbacks(automaticSync);folderWatching=false;handler.removeCallbacks(folderPoll);if(folderFuture!=null)folderFuture.cancel(true);super.onPause();}
+    @Override protected void onPause(){if(libraryCovers!=null){libraryCovers.close();libraryCovers=null;}screen++;libraryPreparing=false;libraryGeneration++;if(libraryTask!=null)libraryTask.cancel(true);syncActive=false;handler.removeCallbacks(automaticSync);folderWatching=false;handler.removeCallbacks(folderPoll);if(folderFuture!=null)folderFuture.cancel(true);super.onPause();}
     private void validateSavedSession(){work.execute(()->{try{api.validateSession();}catch(Exception ignored){if(!api.signedIn())runOnUiThread(()->{getSharedPreferences("auth_state",0).edit().remove("mode").apply();authPending=true;startActivityForResult(new Intent(this,AuthActivity.class),AUTH);});}});}
     private void shell(){Ui.configure(this);root=Ui.column(this);root.setBackgroundColor(Ui.BG);setContentView(root);Ui.insets(this,root);
         LinearLayout head=Ui.row(this);head.setPadding(Ui.dp(this,16),Ui.dp(this,8),Ui.dp(this,16),Ui.dp(this,4));ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.komicove_logo);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);logo.setContentDescription("Komicove");head.addView(logo,new LinearLayout.LayoutParams(Ui.dp(this,108),Ui.dp(this,72)));head.addView(new Space(this),new LinearLayout.LayoutParams(0,1,1));ImageButton bell=Ui.iconButton(this,R.drawable.lucide_bell,false,()->{if(api.signedIn())notifications();else I18n.toast(this,"Entre na sua conta para ver notificações.",Toast.LENGTH_SHORT);});head.addView(bell,Ui.margin(Ui.dp(this,46),Ui.dp(this,46),this,0,0,8,0));headerAvatar=createAvatar(46);headerAvatar.setOnClickListener(v->{if(api.signedIn())profile();else startActivityForResult(new Intent(this,AuthActivity.class),AUTH);});head.addView(headerAvatar,new LinearLayout.LayoutParams(Ui.dp(this,46),Ui.dp(this,46)));root.addView(head);
@@ -145,13 +157,55 @@ public final class MainActivity extends Activity {
     private void syncRemoteAvatar(){if(api==null||!api.signedIn())return;images.execute(()->{try{byte[] data=api.bytes("/account/avatar");File destination=avatarFile();try(OutputStream output=new FileOutputStream(destination)){output.write(data);}getSharedPreferences("profile_avatar",0).edit().putString(avatarPreferenceKey(),destination.getAbsolutePath()).apply();runOnUiThread(this::refreshAvatars);}catch(Exception ignored){}});}
     private void refreshBottomNavigation(){if(bottomNav==null)return;bottomNav.removeAllViews();String[] labels={"Biblioteca","Coleções","Comunidade","Ajustes"};int[] icons={R.drawable.lucide_library,R.drawable.lucide_folders,R.drawable.lucide_profile,R.drawable.lucide_settings};for(int i=0;i<labels.length;i++){String label=labels[i];Button b=Ui.navButton(this,label,icons[i],tab.equals(label),()->switchTab(label));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,Ui.dp(this,64),1);lp.setMargins(Ui.dp(this,2),0,Ui.dp(this,2),0);bottomNav.addView(b,lp);}}
     private void switchTab(String label){foldersVisible=false;tab=label;activeCollection=null;refreshBottomNavigation();if(label.equals("Biblioteca")||label.equals("Coleções"))showLibrary();else if(label.equals("Comunidade"))showCommunity();else settings();}
-    private LinearLayout page(String title){foldersVisible=false;screen++;body.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);LinearLayout content=Ui.column(this);content.setPadding(Ui.dp(this,16),Ui.dp(this,8),Ui.dp(this,16),Ui.dp(this,26));if(!title.isEmpty()){TextView heading=Ui.title(this,title,27);content.addView(heading,Ui.margin(-1,-2,this,0,4,0,16));}scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));Ui.enter(content);return content;}
+    private LinearLayout page(String title){foldersVisible=false;screen++;libraryGeneration++;libraryPreparing=false;if(librarySearchTask!=null)handler.removeCallbacks(librarySearchTask);if(collectionSearchTask!=null)handler.removeCallbacks(collectionSearchTask);if(libraryTask!=null)libraryTask.cancel(true);libraryWork.purge();body.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);LinearLayout content=Ui.column(this);content.setPadding(Ui.dp(this,16),Ui.dp(this,8),Ui.dp(this,16),Ui.dp(this,26));if(!title.isEmpty()){TextView heading=Ui.title(this,title,27);content.addView(heading,Ui.margin(-1,-2,this,0,4,0,16));}scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));Ui.enter(content);return content;}
     private void chooseLanguage(){String[] labels={"Português (Brasil)","English"};int selected="en".equals(I18n.language(this))?1:0;new AlertDialog.Builder(this).setTitle(I18n.t(this,"Escolha o idioma")).setSingleChoiceItems(labels,selected,(d,which)->{I18n.language(this,which==1?"en":"pt");d.dismiss();shell();}).setNegativeButton(I18n.t(this,"Cancelar"),null).show();}
     private void note(String text){banner.setText(I18n.t(this,text));banner.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE);}
     private void fail(Exception e){if(dead)return;String msg=e.getMessage();new AlertDialog.Builder(this).setTitle("Komicove").setMessage(msg==null?"Não foi possível concluir. Verifique o arquivo ou a conexão.":msg).setPositiveButton("Entendi",null).show();note("");}
     interface Job {void run()throws Exception;}
     private void async(String message,Job job,Runnable done){if(busy){Toast.makeText(this,"Aguarde a operação atual.",Toast.LENGTH_SHORT).show();return;}busy=true;note(message);work.execute(()->{try{job.run();runOnUiThread(()->{busy=false;if(dead)return;note("");if(done!=null)done.run();});}catch(Exception e){runOnUiThread(()->{busy=false;if(!dead)fail(e);});}});}
-    private void showLibrary(){foldersVisible=false;LinearLayout content=page(tab.equals("Coleções")?"Coleções":"");
+    private void showLibrary(){
+        foldersVisible=false;
+        LinearLayout content=page(tab.equals("Coleções")?"Coleções":"");int ticket=screen;
+        final boolean collections=tab.equals("Coleções")&&activeCollection==null;
+        final String collectionQuery=filter.toLowerCase(Locale.ROOT),kind=collectionKind,groupSort=collectionSort;
+        libraryPreparing=true;
+        if(libraryCovers==null)libraryCovers=new LibraryCovers(store);
+        TextView loading=Ui.text(this,"Carregando biblioteca...",14,Ui.MUTED);content.addView(loading);
+        if(libraryTask!=null)libraryTask.cancel(true);libraryWork.purge();
+        libraryTask=libraryWork.submit(()->{
+            try{
+                String items=getSharedPreferences("library",0).getString("items","[]");
+                JSONArray registry=folders.folders();StringBuilder visibility=new StringBuilder();
+                for(int i=0;i<registry.length();i++){JSONObject row=registry.optJSONObject(i);if(row!=null)visibility.append(row.optString("uri")).append(':').append(row.optBoolean("enabled",true)).append('\n');}
+                String folderState=visibility.toString();
+                if(libraryQuery==null||!items.equals(libraryItems)||!folderState.equals(libraryFolders)){
+                    LibraryQuery index=new LibraryQuery(folders.visibleBooks());
+                    libraryQuery=index;libraryItems=items;libraryFolders=folderState;
+                }
+                if(collections){
+                    SortedMap<String,String> aliasValues=new TreeMap<>();
+                    for(Map.Entry<String,?> entry:getSharedPreferences("library",0).getAll().entrySet())if(entry.getKey().startsWith("alias:"))aliasValues.put(entry.getKey(),String.valueOf(entry.getValue()));
+                    String aliases=aliasValues.toString();
+                    if(collectionIndex!=libraryQuery||!aliases.equals(collectionAliases)){
+                        libraryGroups=CollectionGroups.build(libraryQuery.books,store);collectionIndex=libraryQuery;collectionAliases=aliases;collectionOrders.clear();
+                    }
+                    List<CollectionGroups.Group> ordered=collectionOrders.get(groupSort);
+                    if(ordered==null){
+                        ordered=new ArrayList<>(libraryGroups);
+                        if(groupSort.equals("date")){Map<CollectionGroups.Group,Double> latest=new HashMap<>();for(CollectionGroups.Group group:ordered)latest.put(group,group.latest());ordered.sort((a,b)->Double.compare(latest.get(b),latest.get(a)));}
+                        else if(groupSort.equals("progress")){Map<CollectionGroups.Group,Double> progress=new HashMap<>();for(CollectionGroups.Group group:ordered)progress.put(group,(double)group.read()/group.books.size());ordered.sort((a,b)->Double.compare(progress.get(b),progress.get(a)));}
+                        else {NaturalOrder order=new NaturalOrder();ordered.sort((a,b)->order.compare(a.name,b.name));}
+                        collectionOrders.put(groupSort,ordered);
+                    }
+                    List<CollectionGroups.Group> groups=new ArrayList<>(ordered);
+                    groups.removeIf(group->(!collectionQuery.isEmpty()&&!group.name.toLowerCase(Locale.ROOT).contains(collectionQuery))||(!kind.equals("all")&&!(kind.equals("folder")&&(group.kind.equals("folder")||group.kind.equals("manual")))&&!kind.equals(group.kind)));
+                    matchedGroups=groups;
+                }
+                runOnUiThread(()->{if(dead||ticket!=screen)return;content.removeView(loading);libraryPreparing=false;renderLibrary(content);});
+            }catch(Exception error){runOnUiThread(()->{if(!dead&&ticket==screen){libraryPreparing=false;loading.setText(I18n.t(this,"Não foi possível carregar a biblioteca."));}});}
+        });
+    }
+    private void renderLibrary(LinearLayout content){
         if(tab.equals("Coleções")&&activeCollection==null){showCollectionGroups(content);return;}
         if(activeCollection!=null){
             CollectionGroups.Group current=activeCollection;
@@ -165,25 +219,67 @@ public final class MainActivity extends Activity {
         EditText search=Ui.search(this,"Buscar títulos, autores, gêneros...");search.setText(filter);content.addView(search,Ui.margin(-1,Ui.dp(this,54),this,0,0,0,12));
         HorizontalScrollView chipScroll=new HorizontalScrollView(this);chipScroll.setHorizontalScrollBarEnabled(false);LinearLayout chips=Ui.row(this);String[] statusNames={"Todos","Não lidas","Em andamento","Concluídas"};int[] statusIcons={R.drawable.lucide_grid,R.drawable.lucide_book_open,R.drawable.lucide_compass,R.drawable.lucide_check};for(int i=0;i<statusNames.length;i++){String status=statusNames[i];Button chip=Ui.chip(this,status,statusIcons[i],statusFilter.equals(status)&&!favorites,()->{statusFilter=status;favorites=false;showLibrary();});chips.addView(chip,Ui.margin(-2,Ui.dp(this,44),this,0,0,8,0));}Button fav=Ui.chip(this,"Favoritos",R.drawable.lucide_heart,favorites,()->{favorites=!favorites;showLibrary();});chips.addView(fav,new LinearLayout.LayoutParams(-2,Ui.dp(this,44)));chipScroll.addView(chips);content.addView(chipScroll,Ui.margin(-1,-2,this,0,0,0,14));
         LinearLayout organize=Ui.row(this);Button sort=Ui.button(this,"Ordenar",this::chooseSort);sort.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_sliders,0,0,0);sort.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));sort.setCompoundDrawablePadding(Ui.dp(this,7));organize.addView(sort,new LinearLayout.LayoutParams(0,Ui.dp(this,46),1));Button folder=Ui.primaryButton(this,"Pastas",this::showFolders);folder.setContentDescription(MonitoredFoldersView.t(this,"Pastas monitoradas / adicionar pasta","Monitored folders / add folder"));folder.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_folder,0,0,0);folder.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));folder.setCompoundDrawablePadding(Ui.dp(this,7));LinearLayout.LayoutParams folderSize=Ui.margin(0,Ui.dp(this,46),this,8,0,0,0);folderSize.weight=1;organize.addView(folder,folderSize);content.addView(organize);
-        if(folders.visibleBooks().isEmpty()&&activeCollection==null){content.addView(libraryEmpty(true),Ui.margin(-1,-2,this,0,12,0,0));return;}
+        if(libraryQuery.books.isEmpty()&&activeCollection==null){content.addView(libraryEmpty(true),Ui.margin(-1,-2,this,0,12,0,0));return;}
         LinearLayout tools=Ui.row(this);tools.addView(Ui.button(this,"Série / Autor",this::metadataFilters),new LinearLayout.LayoutParams(0,Ui.dp(this,44),1));tools.addView(Ui.button(this,selectMode?"Cancelar seleção":"Selecionar",()->{selectMode=!selectMode;selected.clear();showLibrary();}),Ui.margin(0,Ui.dp(this,44),this,8,0,0,0));content.addView(tools,Ui.margin(-1,-2,this,0,8,0,10));
         Button selectedButton=selectMode?Ui.button(this,"Adicionar selecionadas à coleção ("+selected.size()+")",this::assignSelected):null;
         if(selectMode){content.addView(selectedButton);content.addView(Ui.text(this,"Toque nas capas para selecionar várias HQs.",13,Ui.MUTED));}
         if(activeCollection==null)addContinueReading(content,screen);
         TextView allHeading=Ui.sectionTitle(this,activeCollection==null?"Todos os quadrinhos":activeCollection.name,R.drawable.lucide_grid);content.addView(allHeading,Ui.margin(-1,-2,this,0,4,0,6));
-        GridLayout grid=new GridLayout(this);int widthDp=getResources().getConfiguration().screenWidthDp;int columns=widthDp>=700?5:widthDp>=360?3:2;grid.setColumnCount(columns);content.addView(grid);int ticket=screen;
-        Runnable[] render=new Runnable[1];render[0]=()->{grid.removeAllViews();List<LibraryStore.Book> all=folders.visibleBooks();if(sortMode.equals("title"))all.sort((a,b)->new NaturalOrder().compare(a.title,b.title));else if(sortMode.equals("title_desc"))all.sort((a,b)->new NaturalOrder().compare(b.title,a.title));else if(sortMode.equals("series"))all.sort((a,b)->{int compared=new NaturalOrder().compare(a.series,b.series);return compared!=0?compared:new NaturalOrder().compare(a.title,b.title);});int count=0,matched=0;for(LibraryStore.Book book:all){if(favorites&&!book.favorite||activeCollection!=null&&!activeCollection.contains(book)||!(book.title+" "+book.series+" "+book.author).toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT))||!matchesStatus(book))continue;
-            matched++;if(count>=visibleLimit)continue;
-            LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,8));card.setBackground(Ui.bordered(this,Ui.SURFACE,book.favorite?Ui.RED:Ui.BORDER,Ui.RADIUS_LARGE));GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.width=0;lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);lp.setMargins(Ui.dp(this,3),Ui.dp(this,5),Ui.dp(this,3),Ui.dp(this,7));card.setLayoutParams(lp);
-            ImageView cover=new ImageView(this);cover.setImageResource(R.drawable.comic_cover_placeholder);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);cover.setClipToOutline(true);cover.setBackground(Ui.bordered(this,Ui.SURFACE_ALT,Ui.RED,Ui.RADIUS_MEDIUM));cover.setContentDescription(I18n.t(this,"Capa de ")+book.title);card.addView(cover,new LinearLayout.LayoutParams(-1,Ui.dp(this,148)));TextView title=Ui.title(this,book.title,13);updateBookTitle(book,title);title.setMaxLines(2);title.setMinHeight(Ui.dp(this,38));card.addView(title);ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(Math.max(1,book.count));bar.setProgress(book.page==0?0:book.page+1);bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.RED_BRIGHT));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.SURFACE_HOVER));card.addView(bar,new LinearLayout.LayoutParams(-1,Ui.dp(this,4)));card.addView(Ui.text(this,book.count==0?"Não lida":(book.page>0?Math.round((book.page+1)*100f/Math.max(1,book.count))+"%":"Não lida"),11,Ui.MUTED));card.setOnClickListener(v->{if(selectMode)toggleSelected(book,title,selectedButton);else open(book);});card.setOnLongClickListener(v->{if(selectMode)toggleSelected(book,title,selectedButton);else bookMenu(book);return true;});card.setFocusable(true);grid.addView(card);count++;
-            images.execute(()->{try{if(!store.cover(book).isFile())store.prepareCover(book);Bitmap bitmap=BitmapFactory.decodeFile(store.cover(book).getAbsolutePath());runOnUiThread(()->{if(!dead&&screen==ticket)cover.setImageBitmap(bitmap);});}catch(Exception ignored){}});}
-            if(matched>visibleLimit){Button more=Ui.button(this,"Mostrar mais ("+(matched-visibleLimit)+" restantes)",()->{ScrollView scroll=(ScrollView)content.getParent();int position=scroll.getScrollY();visibleLimit+=80;render[0].run();scroll.post(()->{if(scroll.isAttachedToWindow())scroll.scrollTo(0,position);});});GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.columnSpec=GridLayout.spec(0,columns);lp.width=-1;grid.addView(more,lp);}
-            if(count==0){LinearLayout empty=libraryEmpty(all.isEmpty());GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.columnSpec=GridLayout.spec(0,columns);lp.width=getResources().getDisplayMetrics().widthPixels-Ui.dp(this,40);empty.setLayoutParams(lp);grid.addView(empty);}};
-        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){filter=s.toString();render[0].run();}public void afterTextChanged(Editable e){}});render[0].run();}
-    private void addContinueReading(LinearLayout content,int ticket){List<LibraryStore.Book> books=new ArrayList<>();for(LibraryStore.Book b:folders.visibleBooks())if(b.page>0&&b.count>0&&b.page<b.count-1)books.add(b);if(books.isEmpty())return;content.addView(Ui.sectionTitle(this,"Continuar lendo",R.drawable.lucide_chevron_right),Ui.margin(-1,-2,this,0,10,0,6));HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);LinearLayout row=Ui.row(this);for(int i=0;i<Math.min(6,books.size());i++){LibraryStore.Book book=books.get(i);LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,8));card.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.RED,Ui.RADIUS_LARGE));ImageView cover=new ImageView(this);cover.setImageResource(R.drawable.comic_cover_placeholder);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);card.addView(cover,new LinearLayout.LayoutParams(-1,Ui.dp(this,126)));TextView name=Ui.title(this,book.title,13);name.setMaxLines(1);card.addView(name);ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(Math.max(1,book.count));progress.setProgress(book.page+1);progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.RED_BRIGHT));progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.SURFACE_HOVER));card.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(this,4)));card.addView(Ui.text(this,Math.round((book.page+1)*100f/book.count)+"%",11,Ui.MUTED));card.setOnClickListener(v->open(book));row.addView(card,Ui.margin(Ui.dp(this,154),-2,this,0,0,10,0));images.execute(()->{try{if(!store.cover(book).isFile())store.prepareCover(book);Bitmap bitmap=BitmapFactory.decodeFile(store.cover(book).getAbsolutePath());runOnUiThread(()->{if(!dead&&screen==ticket)cover.setImageBitmap(bitmap);});}catch(Exception ignored){}});}scroll.addView(row);content.addView(scroll,Ui.margin(-1,-2,this,0,0,0,10));}
+        LinearLayout gridHost=Ui.column(this);content.addView(gridHost);int ticket=screen;
+        Runnable render=()->queryLibrary(content,gridHost,selectedButton,ticket);
+        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){filter=s.toString();if(librarySearchTask!=null)handler.removeCallbacks(librarySearchTask);libraryGeneration++;librarySearchTask=render;handler.postDelayed(render,220);}public void afterTextChanged(Editable e){}});
+        render.run();
+    }
+    private void queryLibrary(LinearLayout content,LinearLayout host,Button selectedButton,int ticket){
+        final int generation=++libraryGeneration;
+        final String query=filter,mode=sortMode,status=statusFilter,series=seriesFilter,author=authorFilter;
+        final boolean favorite=favorites;
+        final Set<String> collection=activeCollection==null?null:new HashSet<>();
+        if(collection!=null)for(LibraryStore.Book book:activeCollection.books)collection.add(book.id);
+        final LibraryQuery index=libraryQuery;libraryPreparing=true;
+        if(libraryTask!=null)libraryTask.cancel(true);libraryWork.purge();
+        libraryTask=libraryWork.submit(()->{
+            List<LibraryStore.Book> matched=index.select(query,mode,status,favorite,series,author,collection);
+            if(Thread.currentThread().isInterrupted())return;
+            runOnUiThread(()->{if(dead||screen!=ticket||generation!=libraryGeneration)return;
+                libraryPreparing=false;host.removeAllViews();
+                if(matched.isEmpty()){host.addView(libraryEmpty(index.books.isEmpty()));return;}
+                int widthDp=getResources().getConfiguration().screenWidthDp;
+                int columns=widthDp>=700?5:widthDp>=360?3:2;
+                LibraryViewport grid=new LibraryViewport(this,columns,Math.min(visibleLimit,matched.size()),
+                    position->libraryCard(matched.get(position),selectedButton));
+                host.addView(grid,new LinearLayout.LayoutParams(-1,-2));
+                if(matched.size()>visibleLimit){
+                    Button more=Ui.button(this,"Mostrar mais ("+(matched.size()-visibleLimit)+" restantes)",()->{
+                        ScrollView scroll=(ScrollView)content.getParent();int position=scroll.getScrollY();visibleLimit+=80;
+                        grid.setCount(Math.min(visibleLimit,matched.size()));
+                        if(visibleLimit>=matched.size())host.removeViewAt(1);
+                        else ((Button)host.getChildAt(1)).setText(I18n.t(this,"Mostrar mais ("+(matched.size()-visibleLimit)+" restantes)"));
+                        scroll.post(()->{if(scroll.isAttachedToWindow())scroll.scrollTo(0,position);});
+                    });host.addView(more,new LinearLayout.LayoutParams(-1,-2));
+                }
+            });
+        });
+    }
+    private View libraryCard(LibraryStore.Book book,Button selectedButton){
+        LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,8));
+        card.setBackground(Ui.bordered(this,Ui.SURFACE,book.favorite?Ui.RED:Ui.BORDER,Ui.RADIUS_LARGE));
+        ImageView cover=new ImageView(this);cover.setImageResource(R.drawable.comic_cover_placeholder);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        cover.setClipToOutline(true);cover.setBackground(Ui.bordered(this,Ui.SURFACE_ALT,Ui.RED,Ui.RADIUS_MEDIUM));
+        cover.setContentDescription(I18n.t(this,"Capa de ")+book.title);card.addView(cover,new LinearLayout.LayoutParams(-1,Ui.dp(this,148)));
+        TextView title=Ui.title(this,book.title,13);updateBookTitle(book,title);title.setMaxLines(2);title.setMinHeight(Ui.dp(this,38));card.addView(title);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(Math.max(1,book.count));bar.setProgress(book.page==0?0:book.page+1);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.RED_BRIGHT));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.SURFACE_HOVER));card.addView(bar,new LinearLayout.LayoutParams(-1,Ui.dp(this,4)));
+        card.addView(Ui.text(this,book.count==0?"Não lida":(book.page>0?Math.round((book.page+1)*100f/Math.max(1,book.count))+"%":"Não lida"),11,Ui.MUTED));
+        card.setOnClickListener(v->{if(selectMode)toggleSelected(book,title,selectedButton);else open(book);});
+        card.setOnLongClickListener(v->{if(selectMode)toggleSelected(book,title,selectedButton);else bookMenu(book);return true;});card.setFocusable(true);
+        libraryCovers.bind(cover,book);
+        FrameLayout wrapper=new FrameLayout(this);wrapper.addView(card,Ui.margin(-1,-2,this,3,5,3,7));return wrapper;
+    }
+    private void addContinueReading(LinearLayout content,int ticket){List<LibraryStore.Book> books=new ArrayList<>();for(LibraryStore.Book b:libraryQuery.books)if(b.page>0&&b.count>0&&b.page<b.count-1){books.add(b);if(books.size()==6)break;}if(books.isEmpty())return;content.addView(Ui.sectionTitle(this,"Continuar lendo",R.drawable.lucide_chevron_right),Ui.margin(-1,-2,this,0,10,0,6));HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);LinearLayout row=Ui.row(this);for(int i=0;i<Math.min(6,books.size());i++){LibraryStore.Book book=books.get(i);LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,8));card.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.RED,Ui.RADIUS_LARGE));ImageView cover=new ImageView(this);cover.setImageResource(R.drawable.comic_cover_placeholder);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);card.addView(cover,new LinearLayout.LayoutParams(-1,Ui.dp(this,126)));TextView name=Ui.title(this,book.title,13);name.setMaxLines(1);card.addView(name);ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(Math.max(1,book.count));progress.setProgress(book.page+1);progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.RED_BRIGHT));progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.SURFACE_HOVER));card.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(this,4)));card.addView(Ui.text(this,Math.round((book.page+1)*100f/book.count)+"%",11,Ui.MUTED));card.setOnClickListener(v->open(book));row.addView(card,Ui.margin(Ui.dp(this,154),-2,this,0,0,10,0));libraryCovers.bind(cover,book);}scroll.addView(row);content.addView(scroll,Ui.margin(-1,-2,this,0,0,0,10));}
     private LinearLayout libraryEmpty(boolean libraryEmpty){LinearLayout empty=Ui.column(this);empty.setGravity(Gravity.CENTER_HORIZONTAL);empty.setPadding(Ui.dp(this,18),0,Ui.dp(this,18),Ui.dp(this,24));ImageView art=new ImageView(this);art.setImageResource(R.drawable.empty_library);art.setScaleType(ImageView.ScaleType.CENTER_INSIDE);empty.addView(art,new LinearLayout.LayoutParams(-1,Ui.dp(this,245)));TextView title=Ui.title(this,libraryEmpty?"Sua biblioteca está vazia":"Nenhuma HQ encontrada",20);title.setGravity(Gravity.CENTER);empty.addView(title);TextView desc=Ui.text(this,libraryEmpty?"Adicione uma pasta com suas HQs ou importe seus arquivos para começar.":"Tente mudar a busca ou os filtros selecionados.",14,Ui.MUTED);desc.setGravity(Gravity.CENTER);empty.addView(desc,Ui.margin(-1,-2,this,12,6,12,16));if(libraryEmpty){Button action=Ui.primaryButton(this,"Escolher pasta",this::showFolders);action.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_folder,0,0,0);action.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));action.setCompoundDrawablePadding(Ui.dp(this,8));LinearLayout actionWrap=Ui.row(this);actionWrap.setGravity(Gravity.CENTER);actionWrap.addView(action,new LinearLayout.LayoutParams(Ui.dp(this,260),Ui.dp(this,54)));empty.addView(actionWrap,new LinearLayout.LayoutParams(-1,-2));}return empty;}
     private void showCollectionGroups(LinearLayout content){
-        List<CollectionGroups.Group> allGroups=CollectionGroups.build(folders.visibleBooks(),store);
+        List<CollectionGroups.Group> allGroups=libraryGroups;
         LinearLayout filters=Ui.row(this);
         String[] kinds={"all","folder","series"},labels={"Todas","Pastas","Séries"};int[] icons={R.drawable.lucide_grid,R.drawable.lucide_folder,R.drawable.lucide_folders};
         for(int i=0;i<kinds.length;i++){
@@ -194,32 +290,28 @@ public final class MainActivity extends Activity {
         if(allGroups.isEmpty()){content.addView(collectionsEmpty(),new LinearLayout.LayoutParams(-1,-2));return;}
         EditText search=Ui.search(this,"Buscar coleções, pastas, séries...");search.setText(filter);content.addView(search,Ui.margin(-1,Ui.dp(this,54),this,0,0,0,12));
         Button sorting=Ui.button(this,collectionSort.equals("progress")?"Progresso":collectionSort.equals("date")?"Recentes":"Nome",()->new AlertDialog.Builder(this).setTitle("Ordenar coleções").setItems(new String[]{"Nome","Recentes","Progresso"},(d,n)->{collectionSort=new String[]{"name","date","progress"}[n];showLibrary();}).show());sorting.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_sliders,0,0,0);sorting.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));sorting.setCompoundDrawablePadding(Ui.dp(this,7));content.addView(sorting,Ui.margin(-1,Ui.dp(this,46),this,0,0,0,12));
-        List<CollectionGroups.Group> groups=new ArrayList<>(allGroups);
-        groups.removeIf(group->(!filter.isEmpty()&&!group.name.toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT)))||(!collectionKind.equals("all")&&!(collectionKind.equals("folder")&&(group.kind.equals("folder")||group.kind.equals("manual")))&&!collectionKind.equals(group.kind)));
-        if(collectionSort.equals("date"))groups.sort((a,b)->Double.compare(b.latest(),a.latest()));
-        else if(collectionSort.equals("progress"))groups.sort((a,b)->Double.compare((double)b.read()/b.books.size(),(double)a.read()/a.books.size()));
-        else groups.sort((a,b)->new NaturalOrder().compare(a.name,b.name));
+        List<CollectionGroups.Group> groups=matchedGroups;
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){filter=s.toString();if(collectionSearchTask!=null)handler.removeCallbacks(collectionSearchTask);collectionSearchTask=()->showLibrary();handler.postDelayed(collectionSearchTask,220);}public void afterTextChanged(Editable e){}});
         if(groups.isEmpty()){content.addView(collectionsEmpty(),new LinearLayout.LayoutParams(-1,-2));return;}
         content.addView(Ui.sectionTitle(this,collectionKind.equals("series")?"Séries":"Pastas",R.drawable.lucide_chevron_right),Ui.margin(-1,-2,this,0,2,0,6));
-        GridLayout grid=new GridLayout(this);int columns=getResources().getConfiguration().screenWidthDp>=600?3:2;grid.setColumnCount(columns);content.addView(grid);
-        int ticket=screen;
-        for(CollectionGroups.Group group:groups){
+        int columns=getResources().getConfiguration().screenWidthDp>=600?3:2;
+        LibraryViewport grid=new LibraryViewport(this,columns,groups.size(),position->{
+            CollectionGroups.Group group=groups.get(position);
             LinearLayout card=Ui.column(this);Ui.pad(card,10);card.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.RED,Ui.RADIUS_LARGE));
-            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.width=0;lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);lp.setMargins(Ui.dp(this,4),Ui.dp(this,7),Ui.dp(this,4),Ui.dp(this,7));grid.addView(card,lp);
             FrameLayout covers=new FrameLayout(this);card.addView(covers,new LinearLayout.LayoutParams(-1,Ui.dp(this,175)));
             int layers=Math.min(3,group.books.size());
             for(int i=layers-1;i>=0;i--){
                 LibraryStore.Book book=group.books.get(i);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 image.setBackground(Ui.shape(Ui.BG,Ui.dp(this,5)));image.setRotation(i==0?-3:i==1?4:0);
                 FrameLayout.LayoutParams imageLp=new FrameLayout.LayoutParams(-1,Ui.dp(this,154));imageLp.setMargins(Ui.dp(this,8+i*4),Ui.dp(this,10+i*3),Ui.dp(this,18+i*2),0);covers.addView(image,imageLp);
-                images.execute(()->{try{synchronized(store){if(!store.cover(book).isFile())store.prepareCover(book);}Bitmap bitmap=BitmapFactory.decodeFile(store.cover(book).getAbsolutePath());runOnUiThread(()->{if(!dead&&screen==ticket)image.setImageBitmap(bitmap);});}catch(Exception ignored){}});
+                libraryCovers.bind(image,book);
             }
             TextView title=Ui.title(this,group.name,15);title.setMaxLines(2);card.addView(title);
             card.addView(Ui.text(this,group.books.size()+" "+I18n.t(this,"HQs")+" · "+group.read()+" "+I18n.t(this,"lidas"),12,Ui.MUTED));
             ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(group.books.size());progress.setProgress(group.read());progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.RED_BRIGHT));progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.SURFACE_HOVER));card.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(this,4)));Button rename=Ui.button(this,"Renomear",()->renameCollection(group));rename.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_edit,0,0,0);rename.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));rename.setCompoundDrawablePadding(Ui.dp(this,7));card.addView(rename,Ui.margin(-1,Ui.dp(this,42),this,0,8,0,0));
             card.setOnClickListener(v->{activeCollection=group;showLibrary();});card.setOnLongClickListener(v->{renameCollection(group);return true;});card.setFocusable(true);
-        }
+            FrameLayout wrapper=new FrameLayout(this);wrapper.addView(card,Ui.margin(-1,-2,this,4,7,4,7));return wrapper;
+        });content.addView(grid,new LinearLayout.LayoutParams(-1,-2));
     }
     private LinearLayout collectionsEmpty(){LinearLayout empty=Ui.column(this);empty.setGravity(Gravity.CENTER_HORIZONTAL);ImageView art=new ImageView(this);art.setImageResource(R.drawable.empty_collections);art.setScaleType(ImageView.ScaleType.CENTER_INSIDE);empty.addView(art,new LinearLayout.LayoutParams(-1,Ui.dp(this,270)));TextView title=Ui.title(this,"Nenhuma coleção encontrada",20);title.setGravity(Gravity.CENTER);empty.addView(title);TextView desc=Ui.text(this,"Você ainda não criou nenhuma coleção.\nOrganize suas histórias em pastas ou coleções para facilitar sua leitura.",14,Ui.MUTED);desc.setGravity(Gravity.CENTER);empty.addView(desc,Ui.margin(-1,-2,this,16,8,16,18));Button action=Ui.primaryButton(this,"Ir para biblioteca",()->switchTab("Biblioteca"));action.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_library,0,0,0);action.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));action.setCompoundDrawablePadding(Ui.dp(this,8));empty.addView(action,new LinearLayout.LayoutParams(-1,Ui.dp(this,52)));return empty;}
 
@@ -258,7 +350,7 @@ public final class MainActivity extends Activity {
     private void scanTree(Uri rootUri,Uri directory,List<Uri> found,int depth)throws Exception {if(depth>32)throw new IOException("Pasta aninhada demais.");Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(rootUri,DocumentsContract.getDocumentId(directory));try(Cursor c=getContentResolver().query(children,new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null)){if(c==null)return;while(c.moveToNext()){Uri child=DocumentsContract.buildDocumentUriUsingTree(rootUri,c.getString(0));if(DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(2)))scanTree(rootUri,child,found,depth+1);else if(BookSource.supported(c.getString(1)))found.add(child);}}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==AUTH){authPending=false;if(result==RESULT_OK){api=new PanelApi(this);shell();scheduleSync();}else if(body==null)finish();else shell();return;}if(result!=RESULT_OK||data==null)return;
         if(request==AVATAR&&data.getData()!=null){Uri avatarUri=data.getData();boolean[] synced={false};async("Salvando foto…",()->{File saved=saveAvatar(avatarUri);runOnUiThread(this::refreshAvatars);if(api.signedIn()){try{api.uploadAvatar(saved);synced[0]=true;}catch(Exception ignored){synced[0]=false;}}},()->Toast.makeText(this,synced[0]?"Foto atualizada no Windows e no celular.":"Foto salva neste aparelho. Atualize o servidor para sincronizar.",Toast.LENGTH_LONG).show());}
-        else if(request==COVER&&data.getData()!=null){LibraryStore.Book target=store.get(coverBookId);if(target!=null)async("Salvando capa…",()->store.replaceCover(target,data.getData()),this::showLibrary);}
+        else if(request==COVER&&data.getData()!=null){LibraryStore.Book target=store.get(coverBookId);if(target!=null)async("Salvando capa…",()->store.replaceCover(target,data.getData()),()->{if(libraryCovers!=null)libraryCovers.clearCache();showLibrary();});}
         else if(request==IMPORT){List<Uri> uris=new ArrayList<>();if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)uris.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)uris.add(data.getData());try{for(Uri uri:uris)getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException e){fail(new IOException("O seletor não concedeu acesso permanente ao arquivo. Tente adicionar pela pasta.",e));return;}linkFiles(uris);}
         else if(request==TREE&&data.getData()!=null){Uri tree=data.getData();async("Procurando quadrinhos…",()->folders.add(tree),()->{tab="Biblioteca";refreshBottomNavigation();showFolders();refreshFolders(true);});}
         else if(request==BACKUP){async("Salvando backup…",()->{try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out==null)throw new IOException("Destino indisponível.");store.exportBackup(out);}},()->Toast.makeText(this,"Backup exportado.",Toast.LENGTH_LONG).show());}
@@ -370,5 +462,5 @@ public final class MainActivity extends Activity {
         if("panel".equals(item.optString("source"))){Set<String> seen=new LinkedHashSet<>(getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet()));seen.add(AppUpdates.messageId(item));while(seen.size()>100)seen.remove(seen.iterator().next());getSharedPreferences("updates",0).edit().putStringSet("seen_messages",seen).apply();}
     }
     private void diagnostics(){String report="Komicove Android "+BuildConfig.VERSION_NAME+"\nAPI configurada: sim\nConta conectada: "+(api.signedIn()?"sim":"não")+"\nDispositivo: "+Build.MANUFACTURER+" "+Build.MODEL+"\nAndroid: "+Build.VERSION.RELEASE+"\nLivros locais: "+store.all().size();new AlertDialog.Builder(this).setTitle("Diagnóstico seguro").setMessage(report).setPositiveButton("Copiar",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("Diagnóstico Komicove",report));Toast.makeText(this,"Diagnóstico copiado sem dados sensíveis.",Toast.LENGTH_SHORT).show();}).setNegativeButton("Fechar",null).show();}
-    @Override protected void onDestroy(){dead=true;getSharedPreferences("library",0).unregisterOnSharedPreferenceChangeListener(syncListener);syncWork.shutdownNow();updateWork.shutdownNow();handler.removeCallbacksAndMessages(null);folderWatching=false;if(folderFuture!=null)folderFuture.cancel(true);folderWork.shutdownNow();work.shutdown();images.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){dead=true;libraryWork.shutdownNow();if(libraryCovers!=null)libraryCovers.close();libraryQuery=null;getSharedPreferences("library",0).unregisterOnSharedPreferenceChangeListener(syncListener);syncWork.shutdownNow();updateWork.shutdownNow();handler.removeCallbacksAndMessages(null);folderWatching=false;if(folderFuture!=null)folderFuture.cancel(true);folderWork.shutdownNow();work.shutdown();images.shutdownNow();super.onDestroy();}
 }

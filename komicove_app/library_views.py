@@ -31,6 +31,7 @@ from komicove_app.storage import preserve_renamed_book, sync_snapshot, unregiste
 from komicove_app.sync import apply_sync_response, seed_content_index
 from komicove_app.folder_views import render_folders, update_folders
 from komicove_app.library_grid import LibraryGrid
+from komicove_app.library_query import LibraryQuery
 from PIL import ImageOps, ImageEnhance, ImageDraw
 from urllib.parse import urlparse
 
@@ -56,6 +57,12 @@ class LibraryWindow(tk.Tk):
         self._search_query = ""
         self._card_map     = {}
         self._library_grid = None
+        self._library_query = None
+        self._library_overrides = None
+        self._collection_groups = None
+        self._collection_orders = {}
+        self._collection_order_state = None
+        self._collection_prepare_cancel = threading.Event()
         self._library_prepare_cancel = threading.Event()
         self._library_restore_scroll = None
         self._library_preparing = False
@@ -1293,6 +1300,12 @@ class LibraryWindow(tk.Tk):
     def _refresh_library(self, preserve_scroll=False):
         if self._embedded_reader is not None:
             return
+        self._library_query = None
+        self._collection_groups = None
+        # Metadata editing replaces custom covers at the same persisted path.
+        for key in list(self._capa_cache):
+            if isinstance(key, tuple):
+                self._capa_cache.pop(key, None)
         self._active_tab = "library"
         c = THEME
         scroll = (self._lib_canvas.yview()[0] if preserve_scroll
@@ -1408,11 +1421,12 @@ class LibraryWindow(tk.Tk):
             self._library_search.clear()
         self._populate_library_grid()
 
-    def _status_of(self, path):
-        ms = get_manual_status(path)
+    def _status_of(self, path, progress=None, manual=None):
+        ms = get_manual_status(path) if manual is None else manual.get(path)
         if ms in ("reading", "done"):
             return ms
-        page = get_progress_page(path)
+        entry = (load_progress() if progress is None else progress).get(path)
+        page = entry.get('page') if isinstance(entry, dict) else entry
         if page is None: return "unread"
         try:
             be = ArchiveBackend(path)
@@ -1429,11 +1443,12 @@ class LibraryWindow(tk.Tk):
         dialog.title(ui('Filtrar biblioteca', 'Filter library'))
         dialog.configure(bg=THEME["bg"])
         fields = {}
-        files = self._scan()
+        index = self._library_query
         for key, label in [("series", ui('Série', 'Series')), ("writer", ui('Autor', 'Author'))]:
             tk.Label(dialog, text=label, bg=THEME["bg"], fg=THEME["text"]).pack(padx=20, pady=(12, 4))
-            choices = sorted({get_comic_info(path).get(key, "") for path in files} - {""})
-            entry = ttk.Combobox(dialog, values=[""] + choices, state="readonly", width=40)
+            choices = index.field_choices[key] if index is not None else []
+            entry = ttk.Combobox(dialog, values=[""] + choices,
+                                 state="readonly" if index is not None else "disabled", width=40)
             entry.set(getattr(self, "_metadata_filter_" + key, ""))
             entry.pack(padx=20, pady=4)
             fields[key] = entry
@@ -1442,8 +1457,41 @@ class LibraryWindow(tk.Tk):
                 setattr(self, "_metadata_filter_" + key, "" if clear else entry.get())
             dialog.destroy()
             self._populate_library_grid()
-        tk.Button(dialog, text=ui('Aplicar filtros', 'Apply filters'), command=apply).pack(pady=12)
+        apply_button = tk.Button(dialog, text=ui('Aplicar filtros', 'Apply filters'), command=apply,
+                                 state='normal' if index is not None else 'disabled')
+        apply_button.pack(pady=12)
         tk.Button(dialog, text=ui('Limpar filtros', 'Clear filters'), command=lambda: apply(True)).pack(pady=(0, 12))
+        if index is None:
+            cancel = threading.Event()
+            dialog.bind('<Destroy>', lambda event: cancel.set() if event.widget is dialog else None, add='+')
+            loading = tk.Label(dialog, text=ui('Carregando biblioteca...', 'Loading library...'),
+                               bg=THEME['bg'], fg=THEME['text_dim'])
+            loading.pack(pady=8)
+            completed = queue.SimpleQueue()
+            def prepare():
+                try:
+                    overrides = _library_widgets.book_metadata.json_load(_library_widgets.book_metadata.FILE, {})
+                    metadata = []
+                    for path in self._scan():
+                        if self._closing_app or cancel.is_set(): return
+                        metadata.append(get_comic_info(path, overrides))
+                    completed.put(({key: sorted({info.get(key, '') for info in metadata} - {''})
+                                    for key in fields}, None))
+                except Exception as error: completed.put(({}, error))
+            def finish():
+                if self._closing_app or not dialog.winfo_exists(): return
+                try: choices, error = completed.get_nowait()
+                except queue.Empty:
+                    self.after(25, finish)
+                    return
+                if error is not None:
+                    loading.configure(text=ui('Não foi possível carregar a biblioteca.', 'Could not load the library.'))
+                    return
+                for key, entry in fields.items(): entry.configure(values=[''] + choices[key], state='readonly')
+                apply_button.configure(state='normal')
+                loading.destroy()
+            threading.Thread(target=prepare, daemon=True, name='library-filter-choices').start()
+            self.after(25, finish)
 
     def _populate_library_grid(self, preserve_scroll=False):
         if (self._embedded_reader is not None or self._closing_app
@@ -1476,37 +1524,29 @@ class LibraryWindow(tk.Tk):
 
         def prepare():
             try:
-                paths = self._scan()
+                index = self._library_query
+                paths = list(index.paths) if index is not None else self._scan()
                 overrides = _library_widgets.book_metadata.json_load(_library_widgets.book_metadata.FILE, {})
-                metadata, titles = {}, {}
-                # Warm metadata away from Tk, including title/series sorting.
-                for path in paths:
+                if index is None or index.paths != tuple(paths) or overrides != self._library_overrides:
+                    metadata, titles = {}, {}
+                    for path in paths:
+                        if cancel.is_set():
+                            return
+                        metadata[path] = get_comic_info(path, overrides)
+                        titles[path] = comic_display_title(path, overrides)
+                    index = LibraryQuery(paths, metadata, titles, sort_comics)
                     if cancel.is_set():
                         return
-                    metadata[path] = get_comic_info(path, overrides)
-                    titles[path] = comic_display_title(path, overrides)
-                for field, selected in fields.items():
-                    if selected:
-                        paths = [p for p in paths if metadata[p].get(field, '') == selected]
-                prog = load_progress()
-                recent = [(entry.get('ts', 0) if isinstance(entry, dict) else 0, p)
-                          for p in paths if (entry := prog.get(p)) is not None]
-                recent.sort(reverse=True)
-                continuar = [p for _, p in recent[:6]]
-                if q:
-                    paths = [p for p in paths if q in Path(p).stem.lower() or any(
-                        q in metadata[p].get(f, '').lower()
-                        for f in ('title', 'series', 'writer', 'publisher', 'genre'))]
-                if status == 'favorites':
-                    favorites = set(load_favorites())
-                    paths = [p for p in paths if p in favorites]
-                elif status != 'all':
-                    paths = [p for p in paths if self._status_of(p) == status]
-                paths = sort_comics(paths, mode, prog, titles=titles, metadata=metadata)
+                metadata, titles = index.metadata, index.titles
+                progress = {p: dict(v) if isinstance(v, dict) else v for p, v in load_progress().items()}
+                manual = load_manual_status()
+                paths, continuar = index.select(q, status, mode, fields,
+                    progress, set(load_favorites()), manual,
+                    lambda path: self._status_of(path, progress, manual))
                 if not cancel.is_set():
-                    completed.put((paths, continuar, titles, metadata, None))
+                    completed.put((paths, continuar, index, overrides, None))
             except Exception as error:
-                completed.put(([], [], {}, {}, error))
+                completed.put(([], [], None, {}, error))
 
         def finish():
             if (cancel.is_set() or self._closing_app or self._active_tab != 'library'
@@ -1514,7 +1554,7 @@ class LibraryWindow(tk.Tk):
                 cancel.set()
                 return
             try:
-                paths, continuar, titles, metadata, error = completed.get_nowait()
+                paths, continuar, index, overrides, error = completed.get_nowait()
             except queue.Empty:
                 self.after(25, finish)
                 return
@@ -1524,8 +1564,13 @@ class LibraryWindow(tk.Tk):
                                           'Could not load the library.'))
                 self._library_preparing = False
                 return
+            if self._library_query is not index:
+                for obsolete in list(_library_widgets._COMIC_INFO_CACHE):
+                    if obsolete not in index.metadata:
+                        _library_widgets._COMIC_INFO_CACHE.pop(obsolete, None)
+            self._library_query, self._library_overrides = index, overrides
             loading.destroy()
-            self._render_library_grid(paths, continuar, titles, metadata, has_active_filter, scroll)
+            self._render_library_grid(paths, continuar, index.titles, index.metadata, has_active_filter, scroll)
             self._library_preparing = False
 
         threading.Thread(target=prepare, daemon=True, name='library-metadata').start()
@@ -1560,7 +1605,7 @@ class LibraryWindow(tk.Tk):
         tk.Label(section,
                  text=ui(f'TODAS AS HQs  ·  {len(arquivos)}', f'ALL COMICS  ·  {len(arquivos)}'),
                  font=design_caption(10, bold=True), bg=c["bg"], fg=c["text"], anchor="w").pack(side="left")
-        self._book_sort_controls(section, self._refresh_library, side="right")
+        self._book_sort_controls(section, self._populate_library_grid, side="right")
 
         if not arquivos:
             return
@@ -1578,7 +1623,7 @@ class LibraryWindow(tk.Tk):
             if self._card_map.get(path) is card:
                 self._card_map.pop(path)
             if self._cover_loader and hasattr(self._cover_loader, 'cancel'):
-                self._cover_loader.cancel(path, card._cover_callback)
+                self._cover_loader.cancel(card._cover_key, card._cover_callback)
             card.destroy()
 
         self.update_idletasks()
@@ -1699,18 +1744,12 @@ class LibraryWindow(tk.Tk):
                 def loaded(_path, pil, item=image_id, key=tag, cover=path):
                     if not hero.winfo_exists() or not hero.find_withtag(item):
                         return
-                    custom_cover = get_comic_info(cover).get('cover')
-                    if custom_cover:
-                        try:
-                            with Image.open(custom_cover) as source:
-                                pil = source.convert('RGB')
-                        except (OSError, ValueError):
-                            pass
                     photo = cover_photo(pil)
                     cover_photos[key] = photo
                     hero.itemconfigure(item, image=photo)
 
-                self._cover_loader.request(path, loaded)
+                custom_cover = get_comic_info(path).get('cover')
+                self._cover_loader.request((path, custom_cover) if custom_cover else path, loaded)
 
                 if page is not None and not total and status != 'done':
                     def count_pages(book=path, current_page=page, line=progress_id,
@@ -1772,15 +1811,11 @@ class LibraryWindow(tk.Tk):
         def _on_loaded(p, pil, _card=card):
             if not getattr(_card, '_alive', True) or not _card.frame.winfo_exists():
                 return
-            if custom_cover:
-                try:
-                    with Image.open(custom_cover) as source:
-                        pil = source.convert('RGB')
-                except (OSError, ValueError): pass
             try: _card.set_image(pil)
             except Exception: pass
         card._cover_callback = _on_loaded
-        self._cover_loader.request(path, _on_loaded)
+        card._cover_key = (path, custom_cover) if custom_cover else path
+        self._cover_loader.request(card._cover_key, _on_loaded)
 
     def _check_ncols(self):
         self._resize_job = None
@@ -2041,6 +2076,7 @@ class LibraryWindow(tk.Tk):
             'profile':self._open_profile,
         }.get(state['tab'],self._refresh_library)
         if state['tab']=='collections' and state['collection'] is not None:
+            self._collection_restore_scroll = state['scroll']
             self._show_collection_detail(state['collection'])
         else:
             if state['tab'] == 'library':
@@ -2121,6 +2157,7 @@ class LibraryWindow(tk.Tk):
                     self._folder_added = 0
                     self._folder_manual = False
                 if report["changed"]:
+                    self._collection_groups = None
                     self._schedule_sync()
                 if hasattr(self, "_main"):
                     active = getattr(self, "_active_tab", "library")
@@ -2137,6 +2174,7 @@ class LibraryWindow(tk.Tk):
             return
         self._closing_app=True
         self._library_prepare_cancel.set()
+        self._collection_prepare_cancel.set()
         if self._library_grid:
             self._library_grid.close()
         if self._sync_poll is not None:
@@ -2185,6 +2223,14 @@ class LibraryWindow(tk.Tk):
             self._show_folders()
 
     def _show_collections(self):
+        self._active_tab = 'collections'
+        self._library_prepare_cancel.set()
+        self._library_preparing = False
+        if self._library_grid:
+            self._library_grid.close()
+            self._library_grid = None
+        if self._cover_loader:
+            self._cover_loader.clear_queue()
         self._reader_collection=None
         if self._search_bubble:
             try: self._search_bubble.destroy()
@@ -2250,8 +2296,89 @@ class LibraryWindow(tk.Tk):
         self._build_shell()
         self._refresh_library()
 
-    def _col_scroll_area(self, parent):
+    def _col_scroll_area(self, parent, prepared=None):
         c = THEME
+        if self._library_grid:
+            self._library_grid.close()
+            self._library_grid = None
+        if self._cover_loader:
+            self._cover_loader.clear_queue()
+        if prepared is None:
+            self._collection_prepare_cancel.set()
+            cancel = self._collection_prepare_cancel = threading.Event()
+            self._library_preparing = True
+            if hasattr(self, '_col_sf') and self._col_sf.winfo_exists(): self._col_sf.destroy()
+            host = self._col_sf = tk.Frame(parent, bg=c['bg'])
+            host.pack(fill='both', expand=True)
+            loading = tk.Label(host, text=ui('Carregando biblioteca...', 'Loading library...'),
+                               bg=c['bg'], fg=c['text_dim'], font=FSMALL)
+            loading.pack(padx=CONTENT_PADDING, pady=24, anchor='w')
+            query, mode = self._collection_query.strip().casefold(), self._col_sort
+            completed = queue.SimpleQueue()
+            cached_groups = self._collection_groups
+            cached_orders = self._collection_orders.copy()
+            cached_state = self._collection_order_state
+
+            def prepare():
+                try:
+                    groups, orders = cached_groups, cached_orders
+                    if groups is None:
+                        folders, series = {}, {}
+                        for path in self._scan():
+                            if cancel.is_set(): return
+                            folders.setdefault(os.path.dirname(path), []).append(path)
+                            series.setdefault(_serie_name(os.path.basename(path)), []).append(path)
+                        roots = {row['path'] for row in self._folder_index.snapshot()['folders'].values()}
+                        groups = {'subfolders': [dict(name=Path(folder).name, path=folder,
+                            files=sorted(files, key=natural_key), alias_key=f'subfolders:{folder}')
+                            for folder, files in folders.items() if folder not in roots or len(roots)>1],
+                            'series': [dict(name=name, files=sorted(files, key=natural_key), alias_key=f'series:{name}')
+                            for name, files in series.items() if len(files)>=2]}
+                        orders = {}
+                    aliases = load_prefs().get('collection_aliases', {})
+                    progress = {p: dict(v) if isinstance(v, dict) else v for p,v in load_progress().items()}
+                    state = (aliases, progress)
+                    if state != cached_state:
+                        orders = {}
+                    if mode not in orders:
+                        ordered = {}
+                        for kind, items in groups.items():
+                            items = [{**item, 'name': aliases.get(item['alias_key'], item['name'])} for item in items]
+                            for item in items:
+                                read, latest, latest_ts = 0, None, -1
+                                for path in item['files']:
+                                    entry = progress.get(path)
+                                    if entry is not None:
+                                        stamp = entry.get('ts', 0) if isinstance(entry, dict) else 0
+                                        if stamp > latest_ts: latest, latest_ts = path, stamp
+                                        read += 1
+                                item['_read_count'] = (read, len(item['files']), latest)
+                            ordered[kind] = _sort_collections(items, mode)
+                        orders[mode] = ordered
+                    ordered = orders[mode]
+                    outcome = {kind: [item for item in items if not query or query in item['name'].casefold()]
+                               for kind, items in ordered.items()}
+                    if not cancel.is_set(): completed.put((outcome, (groups, orders, state), None))
+                except Exception as error: completed.put(({}, None, error))
+
+            def finish():
+                if (cancel.is_set() or self._closing_app or self._active_tab != 'collections'
+                        or self._col_sf is not host or not host.winfo_exists()): return
+                try: outcome, cache_state, error = completed.get_nowait()
+                except queue.Empty:
+                    self.after(25, finish)
+                    return
+                self._library_preparing = False
+                if error is not None:
+                    log.error('Collections preparation failed: %s', error)
+                    loading.configure(text=ui('Não foi possível carregar a biblioteca.', 'Could not load the library.'))
+                    return
+                self._collection_groups, self._collection_orders, self._collection_order_state = cache_state
+                self._col_scroll_area(parent, outcome)
+
+            threading.Thread(target=prepare, daemon=True, name='collections-query').start()
+            self.after(25, finish)
+            return
         if hasattr(self, "_col_sf") and self._col_sf.winfo_exists():
             self._col_sf.destroy()
         sf = tk.Frame(parent, bg=c["bg"]); sf.pack(fill="both", expand=True); self._col_sf = sf
@@ -2260,34 +2387,15 @@ class LibraryWindow(tk.Tk):
         cv.configure(yscrollcommand=sb.set)
         content = tk.Frame(cv, bg=c["bg"])
         wid = cv.create_window((0, 0), window=content, anchor="nw")
-        content.bind("<Configure>", lambda e: cv.configure(scrollregion=cv.bbox("all")))
+        content.bind("<Configure>", lambda e: cv.configure(scrollregion=cv.bbox("all"))
+                     if self._library_grid is None else None)
         cv.bind("<Configure>", lambda e: cv.itemconfig(wid, width=e.width))
         def _on_wheel(e): cv.yview_scroll(-int(e.delta / 120), "units")
         cv.bind("<Enter>", lambda e: cv.bind_all("<MouseWheel>", _on_wheel))
         cv.bind("<Leave>", lambda e: cv.unbind_all("<MouseWheel>"))
 
-        cols = {"subfolders": [], "series": []}
-        folder_groups, series_groups = {}, {}
-        for path in self._scan():
-            folder_groups.setdefault(os.path.dirname(path), []).append(path)
-            series_groups.setdefault(_serie_name(os.path.basename(path)), []).append(path)
-        roots = {row["path"] for row in self._folder_index.snapshot()["folders"].values()}
-        cols["subfolders"] = [{"name": Path(folder).name, "path": folder, "files": sorted(files, key=natural_key)}
-                              for folder, files in folder_groups.items() if folder not in roots or len(roots) > 1]
-        cols["series"] = [{"name": name, "files": sorted(files, key=natural_key)}
-                          for name, files in series_groups.items() if len(files) >= 2]
-        aliases = load_prefs().get("collection_aliases", {})
-        for kind in ("subfolders", "series"):
-            for item in cols[kind]:
-                source = item["path"] if kind == "subfolders" else item["name"]
-                item["alias_key"] = f"{kind}:{source}"
-                item["name"] = aliases.get(item["alias_key"], item["name"])
         query = self._collection_query.strip().casefold()
-        if query:
-            for kind in ("subfolders", "series"):
-                cols[kind] = [item for item in cols[kind] if query in item["name"].casefold()]
-        subfolders = _sort_collections(cols["subfolders"], self._col_sort)
-        series = _sort_collections(cols["series"], self._col_sort)
+        subfolders, series = prepared['subfolders'], prepared['series']
         show_sub = self._col_filter in ("all", "subfolders")
         show_ser = self._col_filter in ("all", "series")
 
@@ -2336,23 +2444,25 @@ class LibraryWindow(tk.Tk):
         card_w = 320 + GPAD
         ncols = max(1, avail // card_w)
 
-        def _section(par, title, items):
-            heading_row = tk.Frame(par, bg=c["bg"])
-            heading_row.pack(fill="x", padx=CONTENT_PADDING, pady=(12, 7))
+        collection_items, sections = [], []
+        def _section(title, items):
+            heading_row = tk.Frame(cv, bg=c["bg"])
             tk.Frame(heading_row, bg=c["accent"], width=4).pack(side="left", fill="y", padx=(0, 12))
             tk.Label(heading_row, text=f'›  {title}', font=design_heading(18),
                      bg=c["bg"], fg=c["text"], anchor="w").pack(side="left")
-            gf = tk.Frame(par, bg=c["bg"])
-            gf.pack(padx=CONTENT_PADDING - GPAD // 2, pady=(0, 12), anchor="nw")
-            for i, item in enumerate(items):
-                row, col = i // ncols, i % ncols
-                card = CollectionCard(gf, item, open_cb=self._open,
-                                      detail_cb=self._show_collection_detail,
-                                      rename_cb=self._rename_collection, root=self)
-                card.grid(row=row, column=col, padx=GPAD//2, pady=GPAD//2)
-            tk.Frame(par, bg=c["border"], height=1).pack(fill="x", padx=CONTENT_PADDING, pady=(0, 8))
-        if show_sub and subfolders: _section(content, TEXTS[LANG]['subfolders'], subfolders)
-        if show_ser and series:     _section(content, TEXTS[LANG]['series'], series)
+            sections.append((len(collection_items), heading_row))
+            collection_items.extend(items)
+        if show_sub and subfolders: _section(TEXTS[LANG]['subfolders'], subfolders)
+        if show_ser and series:     _section(TEXTS[LANG]['series'], series)
+        self.update_idletasks()
+        self._library_grid = LibraryGrid(cv, sb, content, collection_items, ncols,
+            322, GPAD, CONTENT_PADDING, lambda item: CollectionCard(cv, item,
+                open_cb=self._open, detail_cb=self._show_collection_detail,
+                rename_cb=self._rename_collection, root=self),
+            lambda card, item: card.destroy(), sections=sections)
+        for _, separator in self._library_grid.section_items:
+            cv.itemconfigure(separator, fill=c['border'])
+        self._library_grid.refresh()
 
     def _set_col_filter(self, key): self._col_filter = key; self._show_collections()
     def _set_col_sort(self, key):   self._col_sort = key; self._show_collections()
@@ -2380,15 +2490,70 @@ class LibraryWindow(tk.Tk):
         else:
             self._show_collections()
 
-    def _show_collection_detail(self, collection):
+    def _show_collection_detail(self, collection, prepared=None):
         self._reader_collection=collection
+        if prepared is None:
+            self._library_prepare_cancel.set()
+            cancel = self._library_prepare_cancel = threading.Event()
+            self._library_preparing = True
+            if self._library_grid:
+                self._library_grid.close()
+                self._library_grid = None
+            if self._cover_loader:
+                self._cover_loader.clear_queue()
+            for widget in self._main.winfo_children():
+                widget.destroy()
+            host = self._main
+            loading = tk.Label(host, text=ui('Carregando biblioteca...', 'Loading library...'),
+                               bg=THEME['bg'], fg=THEME['text_dim'], font=FSMALL)
+            loading.pack(padx=20, pady=24)
+            completed = queue.SimpleQueue()
+            mode = self._book_sort
+
+            def prepare():
+                try:
+                    overrides = _library_widgets.book_metadata.json_load(_library_widgets.book_metadata.FILE, {})
+                    index = getattr(self, '_collection_book_query', None)
+                    if (index is None or index.paths != tuple(collection['files'])
+                            or overrides != getattr(self, '_collection_book_overrides', None)):
+                        metadata, titles = {}, {}
+                        for path in collection['files']:
+                            if cancel.is_set(): return
+                            metadata[path] = get_comic_info(path, overrides)
+                            titles[path] = comic_display_title(path, overrides)
+                        index = LibraryQuery(collection['files'], metadata, titles, sort_comics)
+                    if cancel.is_set(): return
+                    files, _ = index.select('', 'all', mode, {}, load_progress(), set(), {}, lambda p: 'unread')
+                    completed.put((files, index, overrides, collection_read_count(files), None))
+                except Exception as error:
+                    completed.put(([], None, {}, None, error))
+
+            def finish():
+                if (cancel.is_set() or self._closing_app or self._main is not host
+                        or self._reader_collection is not collection or not host.winfo_exists()): return
+                try: outcome = completed.get_nowait()
+                except queue.Empty:
+                    self.after(25, finish)
+                    return
+                self._library_preparing = False
+                if outcome[4] is not None:
+                    log.error('Collection preparation failed: %s', outcome[4])
+                    loading.configure(text=ui('Não foi possível carregar a biblioteca.', 'Could not load the library.'))
+                    return
+                files, index, overrides, counts, _ = outcome
+                self._collection_book_query, self._collection_book_overrides = index, overrides
+                self._show_collection_detail(collection, (files, index.metadata, counts))
+
+            threading.Thread(target=prepare, daemon=True, name='collection-metadata').start()
+            self.after(25, finish)
+            return
         c = THEME
         try: self._main.unbind("<Configure>")
         except Exception as _e: log.debug("silenced: %s", _e)
         for w in self._main.winfo_children():
             w.destroy()
-        files = sort_comics(collection["files"], self._book_sort)
-        lidas, total, ultima = collection_read_count(files)
+        files, metadata, counts = prepared
+        lidas, total, ultima = counts
 
         hdr = tk.Frame(self._main, bg=c["bg"]); hdr.pack(fill="x", padx=20, pady=(16, 6))
         make_pill(hdr, f"◀  {TEXTS[LANG]['back_collections']}", self._show_collections,
@@ -2427,7 +2592,6 @@ class LibraryWindow(tk.Tk):
         cvd.configure(yscrollcommand=sb2.set)
         content = tk.Frame(cvd, bg=c["bg"])
         wid = cvd.create_window((0, 0), window=content, anchor="nw")
-        content.bind("<Configure>", lambda e: cvd.configure(scrollregion=cvd.bbox("all")))
         cvd.bind("<Configure>", lambda e: cvd.itemconfig(wid, width=e.width))
         def _on_wheel(e): cvd.yview_scroll(-int(e.delta / 120), "units")
         cvd.bind("<Enter>", lambda e: cvd.bind_all("<MouseWheel>", _on_wheel))
@@ -2437,11 +2601,10 @@ class LibraryWindow(tk.Tk):
         avail = self._main.winfo_width() - 44
         card_w = CAPA_W + 24 + GPAD * 2
         ncols = max(2, avail // card_w)
-        gf = tk.Frame(content, bg=c["bg"]); gf.pack(padx=GPAD, pady=GPAD, anchor="nw")
-        prog = load_progress()
-        for i, fpath in enumerate(files):
-            row, col = i // ncols, i % ncols
-            info = get_comic_info(fpath)
+        self._card_map.clear()
+
+        def create(fpath):
+            info = metadata[fpath]
             stem = Path(fpath).stem
             if info.get("number"):
                 label = f"#{info['number']}"
@@ -2451,20 +2614,28 @@ class LibraryWindow(tk.Tk):
             if len(label) > 22: label = label[:20] + "…"
             page = get_progress_page(fpath)
             if page is not None and page > 0: label = f"✓ {label}"
-            card = ComicCard(gf, fpath, None,
+            card = ComicCard(cvd, fpath, None,
                              lambda p, fl=files: self._open(p, fl), self, label_override=label)
-            card.grid(row=row, column=col, padx=GPAD//2, pady=GPAD//2)
-            if self._meta_tooltip:
-                tt = self._meta_tooltip
-                card.cv.bind("<Enter>", lambda e, p=fpath, w=card.cv: tt.show(w, p), add="+")
-                card.cv.bind("<Leave>", lambda e: tt.hide(), add="+")
+            self._wire_card(card, fpath, info)
+            self._card_map[fpath] = card
             if page is not None and page > 0:
                 tk.Frame(card.frame, bg=c["read_badge_text"], width=6, height=6).place(
                     relx=0.5, rely=1.0, anchor="s", y=-2)
-            def _on_loaded(p, pil, _card=card):
-                try: _card.set_image(pil)
-                except Exception as _e: log.debug("silenced: %s", _e)
-            self._cover_loader.request(fpath, _on_loaded)
+            return card
+
+        def release(card, path):
+            if self._cover_loader and hasattr(self._cover_loader, 'cancel'):
+                self._cover_loader.cancel(card._cover_key, card._cover_callback)
+            if self._card_map.get(path) is card: self._card_map.pop(path)
+            card.destroy()
+
+        if files:
+            self._library_grid = LibraryGrid(cvd, sb2, content, files, ncols,
+                CAPA_W + 40, GPAD, GPAD, create, release)
+            self.update_idletasks()
+            cvd.yview_moveto(getattr(self, '_collection_restore_scroll', 0) or 0)
+            self._collection_restore_scroll = None
+            self._library_grid.refresh()
 
     def _toggle_theme(self):
         active = getattr(self, "_active_tab", "library")

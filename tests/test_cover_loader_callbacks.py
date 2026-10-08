@@ -216,3 +216,45 @@ def test_large_jpeg_cover_is_decoded_at_thumbnail_size(tmp_path, monkeypatch):
     finally:
         loader.stop()
         loader._thread.join(2)
+
+
+def test_lru_promotes_hits_and_evicts_oldest(monkeypatch):
+    root = ImmediateRoot()
+    monkeypatch.setattr(CoverLoader, 'MAX_CACHED', 2)
+    loader = CoverLoader(root, {})
+    loader._load = lambda p: Image.new('RGB', (4, 4))
+    received = []
+    try:
+        for key in ('one', 'two', 'one', 'three'):
+            count = len(received)
+            loader.request(key, lambda *args: received.append(args[0]))
+            root.pump(lambda: len(received) > count)
+        assert list(loader._cache) == ['one', 'three']
+    finally:
+        loader.stop()
+        loader._thread.join(2)
+
+
+def test_custom_cover_decode_runs_off_ui_and_is_reduced(tmp_path, monkeypatch):
+    root = ImmediateRoot()
+    cover = tmp_path / 'custom.jpg'
+    Image.new('RGB', (4000, 6000), 'red').save(cover)
+    from komicove_app import runtime
+    opened = []
+    original = runtime.Image.open
+
+    def open_image(*args, **kwargs):
+        opened.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime.Image, 'open', open_image)
+    loader = CoverLoader(root, {})
+    received = []
+    try:
+        loader.request(('comic.cbz', str(cover)), lambda path, pil: received.append(pil.size))
+        root.pump(lambda: bool(received))
+        assert all(thread != root.thread for thread in opened)
+        assert received[0][0] <= runtime.CAPA_W and received[0][1] <= runtime.CAPA_H
+    finally:
+        loader.stop()
+        loader._thread.join(2)

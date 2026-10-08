@@ -23,3 +23,11 @@ def test_sort_comics_by_recent_activity(monkeypatch):
     monkeypatch.setattr(library_widgets.os.path, "getmtime", lambda path: modified[path])
 
     assert library_widgets.sort_comics(modified, "recent", {"a.cbz": {"ts": 30}}) == ["a.cbz", "b.cbz"]
+
+
+def test_reusing_natural_keys_preserves_ties_and_avoids_retokenizing(monkeypatch):
+    titles = {'a': 'Issue 2', 'b': 'Issue 2', 'c': 'Issue 10'}
+    keys = {}
+    assert library_widgets.sort_comics(titles, 'title', titles=titles, keys=keys) == ['a', 'b', 'c']
+    monkeypatch.setattr(library_widgets.re, 'split', lambda *args: (_ for _ in ()).throw(AssertionError('Repeated key processing')))
+    assert library_widgets.sort_comics(titles, 'title_desc', titles=titles, keys=keys) == ['c', 'a', 'b']

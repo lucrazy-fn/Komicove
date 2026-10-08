@@ -1,0 +1,8 @@
+{
+  "conditions": "SM-A266M API 36; physical USB device; isolated .phase6test app; 136x188 JPEG covers; deterministic JSON metadata; 10 searches, 4 sorts, 6 increments of 80, 30 scroll jumps; timings include readiness settle of 280 ms; Java heap after GC and total PSS",
+  "results": [
+    {"size":1000,"first_ms":3079.00469,"search_median_ms":759.997499,"search_max_ms":1800.238153,"sort_median_ms":1211.193153,"heap_before_navigation_bytes":12238560,"heap_after_navigation_bytes":44007200,"max_view_count":2870,"pss_kb":405258},
+    {"size":5000,"first_ms":6635.852226,"search_median_ms":1579.328652,"search_max_ms":4383.405727,"sort_median_ms":4102.077458,"heap_before_navigation_bytes":38744752,"heap_after_navigation_bytes":46355184,"max_view_count":2870,"pss_kb":423562},
+    {"size":10000,"first_ms":11544.094184,"search_median_ms":2338.373806,"search_max_ms":9765.613917,"sort_median_ms":5794.426034,"heap_before_navigation_bytes":31436912,"heap_after_navigation_bytes":62001200,"max_view_count":2870,"pss_kb":398790}
+  ]
+}

@@ -105,15 +105,17 @@ final class LibraryStore {
     }
     void release(Book b){if(!b.uri.isEmpty())new File(context.getCacheDir(),"linked-"+b.file).delete();}
     void prepareCover(Book b)throws Exception {
+        BookSource.checkCancelled();
         if(cover(b).isFile())return;
         File archive=b.uri.isEmpty()?new File(books,b.file):File.createTempFile("cover-source-",b.file.substring(b.file.lastIndexOf('.')),context.getCacheDir());
         try{
             if(!b.uri.isEmpty())try(InputStream in=context.getContentResolver().openInputStream(Uri.parse(b.uri));OutputStream out=new FileOutputStream(archive)){
                 if(in==null)throw new IOException("Arquivo indisponível.");byte[] bytes=new byte[65536];int n;long total=0;
-                while((n=in.read(bytes))!=-1){total+=n;if(total>768L*1024*1024)throw new IOException("Arquivo maior que 768 MB.");out.write(bytes,0,n);}
+                while((n=in.read(bytes))!=-1){BookSource.checkCancelled();total+=n;if(total>768L*1024*1024)throw new IOException("Arquivo maior que 768 MB.");out.write(bytes,0,n);}
             }
             try(BookSource source=new BookSource(archive,context.getCacheDir())){
             int count=source.pages.size();Bitmap image=source.page(0,320);
+            if(Thread.currentThread().isInterrupted()){image.recycle();BookSource.checkCancelled();}
             try(OutputStream out=new FileOutputStream(cover(b))){image.compress(Bitmap.CompressFormat.JPEG,85,out);}
             image.recycle();Book current=get(b.id);if(current!=null){current.count=count;save(current);}
             }

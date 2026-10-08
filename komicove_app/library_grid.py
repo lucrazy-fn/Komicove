@@ -1,10 +1,11 @@
 """Keep only the visible library rows as items on the scrolling canvas."""
 import math
+import bisect
 
 
 class LibraryGrid:
     def __init__(self, canvas, scrollbar, header, paths, columns, card_width,
-                 gap, padding, create_card, release_card):
+                 gap, padding, create_card, release_card, sections=()):
         self.canvas = canvas
         self.scrollbar = scrollbar
         self.header = header
@@ -15,6 +16,11 @@ class LibraryGrid:
         self.padding = padding
         self.create_card = create_card
         self.release_card = release_card
+        self.sections = sections
+        self.positions = {}
+        self.rows = []
+        self.row_tops = []
+        self.section_items = []
         self.cards = {}
         self.job = None
         self.closed = False
@@ -24,26 +30,61 @@ class LibraryGrid:
         self.cards[0] = (first, self._place(first, 0))
         self.bindings = [(header, header.bind('<Configure>', self._layout, add='+')),
                          (canvas, canvas.bind('<Configure>', self._layout, add='+'))]
-        canvas.bind('<Destroy>', lambda event: self.close() if event.widget is canvas else None, add='+')
+        self.destroy_binding = canvas.bind('<Destroy>',
+            lambda event: self.close() if event.widget is canvas else None, add='+')
+        self.original_scroll_command = canvas.cget('yscrollcommand')
         canvas.configure(yscrollcommand=self._scrolled, yscrollincrement=28)
+        self.scroll_command = canvas.cget('yscrollcommand')
         self._layout()
 
     def _place(self, card, index):
         row, column = divmod(index, self.columns)
-        return card.place_on_canvas(self.padding + column * (self.card_width + self.gap),
-            self.header.winfo_reqheight() + self.gap + row * self.row_height)
+        x = self.padding + column * (self.card_width + self.gap)
+        y = self.header.winfo_reqheight() + self.gap + row * self.row_height
+        if self.sections and index in self.positions:
+            x, y = self.positions[index]
+        if hasattr(card, 'place_on_canvas'):
+            return card.place_on_canvas(x, y)
+        item = getattr(card, '_canvas_window', None)
+        if item is None:
+            item = card._canvas_window = self.canvas.create_window(x, y, window=card.frame, anchor='nw')
+        else:
+            self.canvas.coords(item, x, y)
+        return item
 
     def _layout(self, event=None):
         if self.closed:
             return
         top = self.header.winfo_reqheight() + self.gap
         height = top + math.ceil(len(self.paths) / self.columns) * self.row_height
+        if self.sections:
+            self.rows, self.row_tops, self.positions = [], [], {}
+            if not self.section_items:
+                for _, heading in self.sections:
+                    self.section_items.append((self.canvas.create_window(0, 0, window=heading, anchor='nw'),
+                        self.canvas.create_line(0, 0, 0, 0, fill=self.canvas.cget('bg'))))
+            y = top
+            for section, (start, heading) in enumerate(self.sections):
+                end = self.sections[section + 1][0] if section + 1 < len(self.sections) else len(self.paths)
+                window, separator = self.section_items[section]
+                width = max(1, self.canvas.winfo_width() - self.padding * 2)
+                self.canvas.itemconfigure(window, width=width)
+                self.canvas.coords(window, self.padding, y)
+                y += heading.winfo_reqheight() + self.gap
+                for first in range(start, end, self.columns):
+                    indices = range(first, min(end, first + self.columns))
+                    self.rows.append(indices)
+                    self.row_tops.append(y)
+                    for column, index in enumerate(indices):
+                        self.positions[index] = (self.padding + column * (self.card_width + self.gap), y)
+                    y += self.row_height
+                self.canvas.coords(separator, self.padding, y, self.padding + width, y)
+                y += self.gap * 2
+            height = y
         self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(),
                                             max(height, self.canvas.winfo_height())))
         for index, (card, _) in self.cards.items():
-            row, column = divmod(index, self.columns)
-            card.place_on_canvas(self.padding + column * (self.card_width + self.gap),
-                                 top + row * self.row_height)
+            self._place(card, index)
         self.schedule()
 
     def _scrolled(self, first, last):
@@ -64,6 +105,10 @@ class LibraryGrid:
                          // self.row_height) + 2)
         wanted = set(range(min(len(self.paths), start * self.columns),
                            min(len(self.paths), end * self.columns)))
+        if self.sections:
+            first = max(0, bisect.bisect_right(self.row_tops, self.canvas.canvasy(0)) - 2)
+            last = bisect.bisect_right(self.row_tops, self.canvas.canvasy(self.canvas.winfo_height())) + 1
+            wanted = {index for row in self.rows[first:last] for index in row}
         for index in self.cards.keys() - wanted:
             card, item = self.cards.pop(index)
             self.release_card(card, self.paths[index])
@@ -90,4 +135,6 @@ class LibraryGrid:
         self.canvas._comic_hit_photo = None
         self.canvas._comic_hit_size = None
         if self.canvas.winfo_exists():
-            self.canvas.configure(yscrollcommand=self.scrollbar.set)
+            self.canvas.unbind('<Destroy>', self.destroy_binding)
+            self.canvas.configure(yscrollcommand=self.original_scroll_command)
+            self.canvas.deletecommand(self.scroll_command)

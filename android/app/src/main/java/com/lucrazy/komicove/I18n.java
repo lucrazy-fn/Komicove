@@ -11,6 +11,8 @@ import android.widget.Toast;
 final class I18n {
     private static final Map<String,String> EN=new LinkedHashMap<>();
     static {
+        put("Carregando biblioteca...","Loading library...");
+        put("Não foi possível carregar a biblioteca.","Could not load the library.");
         put("Oculta os controles e as barras do sistema.","Hides reader controls and system bars.");
         put("Acesse sua conta e continue explorando histórias incríveis.","Sign in to your account and keep exploring amazing stories.");
         put("Entre para a comunidade e descubra um universo de histórias incríveis.","Join the community and discover a universe of amazing stories.");

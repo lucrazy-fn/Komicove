@@ -467,22 +467,12 @@ class CollectionCard:
         self._name = name
         self._files = files
 
-        lidas, total, ultima = collection_read_count(files)
+        counts = collection.get('_read_count')
+        lidas, total, ultima = counts if counts is not None else collection_read_count(files)
         self._lidas, self._total, self._ultima = lidas, total, ultima
 
-        self._capas_pil = []
-        for fpath in files[:3]:
-            try:
-                cf = _cover_cache_path(fpath)
-                if os.path.exists(cf):
-                    self._capas_pil.append(Image.open(cf).convert("RGB"))
-                else:
-                    data = extract_cover_only(fpath)
-                    img = Image.open(io.BytesIO(data)).convert("RGB")
-                    img.thumbnail((CAPA_W, CAPA_H), Image.BILINEAR)
-                    self._capas_pil.append(img)
-            except:
-                self._capas_pil.append(None)
+        self._capas_pil = [None] * min(3, len(files))
+        self._cover_requests = []
 
         self._cw = 320
         self._ch = 210
@@ -510,6 +500,31 @@ class CollectionCard:
             w.bind("<Double-Button-1>", lambda e: self._detail_cb(self._collection))
             w.bind("<Button-1>",        lambda e: self._detail_cb(self._collection))
             w.bind("<Button-3>",        self._show_menu)
+
+        def cleanup(event):
+            if event.widget is self.frame:
+                if self._anim_id:
+                    self._root.after_cancel(self._anim_id)
+                    self._anim_id = None
+                for path, callback in self._cover_requests:
+                    loader = self._root._cover_loader
+                    if loader and hasattr(loader, 'cancel'):
+                        loader.cancel(path, callback)
+                self._cover_requests.clear()
+                self._capas_pil.clear()
+                self._tk_imgs.clear()
+        self.frame.bind('<Destroy>', cleanup, add='+')
+        for index, path in enumerate(files[:3]):
+            def loaded(_path, pil, slot=index):
+                if self.frame.winfo_exists():
+                    self._capas_pil[slot] = pil
+                    self._draw(self._alpha)
+            self._cover_requests.append((path, loaded))
+            root._cover_loader.request(path, loaded)
+
+    def destroy(self):
+        if self.frame.winfo_exists():
+            self.frame.destroy()
 
     def _show_menu(self, event):
         menu = tk.Menu(self.frame, tearoff=False)
@@ -695,7 +710,8 @@ def _sort_collections(items, mode):
         return sorted(items, key=_mtime, reverse=True)
     elif mode == "progress":
         def _pct(item):
-            lidas, total, _ = collection_read_count(item["files"])
+            counts = item.get('_read_count')
+            lidas, total, _ = counts if counts is not None else collection_read_count(item["files"])
             return lidas / total if total > 0 else 0
         return sorted(items, key=_pct, reverse=True)
     return items
@@ -745,7 +761,7 @@ def comic_display_title(path, overrides=None):
     return Path(path).stem
 
 
-def sort_comics(paths, mode, progress=None, *, titles=None, metadata=None):
+def sort_comics(paths, mode, progress=None, *, titles=None, metadata=None, keys=None):
     """Order library and collection cards without changing files on disk."""
     paths = list(paths)
     display_title = (lambda path: titles[path]) if titles is not None else comic_display_title
@@ -753,6 +769,17 @@ def sort_comics(paths, mode, progress=None, *, titles=None, metadata=None):
     def title_key(value):
         return [(0, int(part)) if part.isdigit() else (1, part.casefold())
                 for part in re.split(r"(\d+)", str(value))]
+
+    def cached_key(path, field, value):
+        if keys is None:
+            return title_key(value())
+        key = (path, field)
+        if key not in keys:
+            keys[key] = title_key(value())
+        return keys[key]
+
+    def display_key(path):
+        return cached_key(path, 'title', lambda: display_title(path))
 
     if mode == "recent":
         progress = progress if progress is not None else load_progress()
@@ -771,10 +798,10 @@ def sort_comics(paths, mode, progress=None, *, titles=None, metadata=None):
         def series_key(path):
             info = metadata[path] if metadata is not None else get_comic_info(path)
             series = info.get("series") or _serie_name(Path(path).name)
-            return title_key(series), title_key(display_title(path))
+            return cached_key(path, 'series', lambda: series), display_key(path)
 
         return sorted(paths, key=series_key)
-    return sorted(paths, key=lambda path: title_key(display_title(path)),
+    return sorted(paths, key=display_key,
                   reverse=(mode == "title_desc"))
 
 
@@ -785,7 +812,10 @@ class MetaTooltip:
         self._after = None
 
     def show(self, widget, path):
-        info = get_comic_info(path)
+        index = getattr(self._root, '_collection_book_query' if
+                        getattr(self._root, '_reader_collection', None) is not None else '_library_query', None)
+        info = index.metadata.get(path) if index is not None else None
+        if info is None: info = get_comic_info(path)
         if not info: return
         self._cancel()
         self._after = self._root.after(600, lambda: self._create(widget, path, info))

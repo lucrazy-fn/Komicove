@@ -880,6 +880,15 @@ class CoverLoader:
                 self._wake.wait()
 
     def _load(self, path):
+        if isinstance(path, tuple):
+            path, custom_cover = path
+            try:
+                with Image.open(custom_cover) as source:
+                    source.draft('RGB', (CAPA_W, CAPA_H))
+                    source.thumbnail((CAPA_W, CAPA_H), Image.BILINEAR)
+                    return source.convert('RGB')
+            except (OSError, ValueError):
+                pass
         cache_file = _cover_cache_path(path)
         if os.path.exists(cache_file):
             try:

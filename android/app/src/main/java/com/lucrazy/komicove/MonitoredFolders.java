@@ -72,7 +72,13 @@ final class MonitoredFolders {
     static final class Result{int added,duplicates,invalid;boolean waiting,changed;}
     Result scan()throws Exception{synchronized(scanLock){return scanLocked();}}
     private Result scanLocked()throws Exception{
-        JSONArray rows=folders();JSONObject observations=new JSONObject(prefs.getString("observations","{}")),next=new JSONObject();Map<String,JSONObject> known=new HashMap<>();
+        JSONArray rows=folders();
+        if(rows.length()==0){
+            // No SAF roots exist to reconcile. Standalone imports need no scan.
+            if(!prefs.getString("observations","{}").equals("{}")||!prefs.getString("validated","{}").equals("{}"))prefs.edit().putString("observations","{}").putString("validated","{}").apply();
+            return new Result();
+        }
+        JSONObject observations=new JSONObject(prefs.getString("observations","{}")),next=new JSONObject();Map<String,JSONObject> known=new HashMap<>();
         JSONObject validated=new JSONObject(prefs.getString("validated","{}"));Iterator<String> saved=validated.keys();while(saved.hasNext()){String uri=saved.next();known.put(uri,validated.getJSONObject(uri));}
         for(LibraryStore.Book b:store.all())for(int i=0;i<b.sources.length();i++){JSONObject source=b.sources.getJSONObject(i);known.put(source.optString("uri"),source);}
         List<JSONObject> accepted=new ArrayList<>();Set<String> scanned=new HashSet<>(),unavailable=new HashSet<>();Result result=new Result();long now=System.currentTimeMillis();

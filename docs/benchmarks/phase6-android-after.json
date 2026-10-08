@@ -1,0 +1,8 @@
+{
+  "conditions": "Same fixture, runner, phone and workload as phase6-android-before.json; times include 280 ms readiness settle and the production 220 ms search debounce",
+  "results": [
+    {"size":1000,"first_ms":1693.733537,"search_median_ms":299.493884,"search_max_ms":311.621692,"sort_median_ms":366.224615,"heap_before_navigation_bytes":13825232,"heap_after_navigation_bytes":14824720,"max_view_count":167,"pss_kb":217900},
+    {"size":5000,"first_ms":2090.999575,"search_median_ms":298.747384,"search_max_ms":310.462269,"sort_median_ms":427.943654,"heap_before_navigation_bytes":35849360,"heap_after_navigation_bytes":46695664,"max_view_count":161,"pss_kb":293549},
+    {"size":10000,"first_ms":2808.23019,"search_median_ms":297.455769,"search_max_ms":324.337461,"sort_median_ms":440.649423,"heap_before_navigation_bytes":63375104,"heap_after_navigation_bytes":73824064,"max_view_count":161,"pss_kb":306109}
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "viewport": "1280x860",
+  "fixture": "synthetic metadata; RGB 136x188 covers; temporary AppData",
+  "repetitions": "15 searches, 12 sorts, 30 scroll jumps",
+  "result": {
+    "size": 5000,
+    "first_ms": 931.5717999998014,
+    "search_median_ms": 160.7893000036711,
+    "search_max_ms": 220.92380000685807,
+    "sort_median_ms": 167.79685000074096,
+    "favorites_ms": 133.3526999951573,
+    "python_current_bytes": 9790093,
+    "python_peak_bytes": 9878304,
+    "rss_before_scroll_bytes": 113254400,
+    "rss_after_scroll_bytes": 115720192,
+    "max_mounted_cards": 30,
+    "cover_cache_items": 7
+  }
+}

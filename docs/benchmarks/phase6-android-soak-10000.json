@@ -1,0 +1,2922 @@
+{
+  "result": {
+    "size": 10000,
+    "device": "SM-A266M",
+    "api": 36,
+    "language": "en",
+    "first_ms": 3386.279805,
+    "search_median_ms": 298.469884,
+    "search_max_ms": 314.261807,
+    "sort_median_ms": 441.262461,
+    "heap_before_navigation_bytes": 63145280,
+    "heap_after_navigation_bytes": 73844032,
+    "max_view_count": 161,
+    "pss_kb": 309597,
+    "verified_last_selection": true,
+    "verified_navigation_cycles": 20,
+    "heap_warm_bytes": 62608688,
+    "heap_after_20_navigation_bytes": 72780448,
+    "cover_cache_bytes": 2147712,
+    "cover_cache_items": 42,
+    "soak": {
+      "duration_seconds": 180,
+      "cpu_logical_cores": 8,
+      "samples": [
+        {
+          "seconds": 1.109,
+          "heap_bytes": 84837584,
+          "pss_kb": 379350,
+          "process_cpu_percent_one_core": 91.70423805229937,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 2.142,
+          "heap_bytes": 93750480,
+          "pss_kb": 434522,
+          "process_cpu_percent_one_core": 95.64375605033882,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 3.183,
+          "heap_bytes": 101713104,
+          "pss_kb": 488178,
+          "process_cpu_percent_one_core": 87.70413064361192,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 4.23,
+          "heap_bytes": 81188432,
+          "pss_kb": 455642,
+          "process_cpu_percent_one_core": 130.75453677172874,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 5.256,
+          "heap_bytes": 89380432,
+          "pss_kb": 446263,
+          "process_cpu_percent_one_core": 85.7699805068226,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 6.301,
+          "heap_bytes": 98260560,
+          "pss_kb": 485970,
+          "process_cpu_percent_one_core": 96.7464114832536,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 7.349,
+          "heap_bytes": 106419792,
+          "pss_kb": 537132,
+          "process_cpu_percent_one_core": 89.40839694656489,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 8.411,
+          "heap_bytes": 83515040,
+          "pss_kb": 413328,
+          "process_cpu_percent_one_core": 143.40866290018832,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 9.459,
+          "heap_bytes": 92591776,
+          "pss_kb": 428210,
+          "process_cpu_percent_one_core": 96.66030534351145,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 10.501,
+          "heap_bytes": 97375904,
+          "pss_kb": 404230,
+          "process_cpu_percent_one_core": 69.28982725527831,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 11.594,
+          "heap_bytes": 101504672,
+          "pss_kb": 437058,
+          "process_cpu_percent_one_core": 73.10155535224153,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 12.661,
+          "heap_bytes": 104715936,
+          "pss_kb": 467014,
+          "process_cpu_percent_one_core": 66.26054358013121,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 13.726,
+          "heap_bytes": 108132000,
+          "pss_kb": 495217,
+          "process_cpu_percent_one_core": 69.10798122065728,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 14.792,
+          "heap_bytes": 111310496,
+          "pss_kb": 522580,
+          "process_cpu_percent_one_core": 63.133208255159474,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 15.885,
+          "heap_bytes": 80748992,
+          "pss_kb": 389872,
+          "process_cpu_percent_one_core": 103.1107044830741,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 16.968,
+          "heap_bytes": 83960256,
+          "pss_kb": 341080,
+          "process_cpu_percent_one_core": 69.89843028624192,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 106,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 18.034,
+          "heap_bytes": 87335360,
+          "pss_kb": 357636,
+          "process_cpu_percent_one_core": 66.88555347091932,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 19.108,
+          "heap_bytes": 90939840,
+          "pss_kb": 380256,
+          "process_cpu_percent_one_core": 72.06703910614524,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 20.443,
+          "heap_bytes": 95289792,
+          "pss_kb": 412387,
+          "process_cpu_percent_one_core": 59.62546816479401,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 21.5,
+          "heap_bytes": 103219648,
+          "pss_kb": 465087,
+          "process_cpu_percent_one_core": 83.44370860927152,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 22.532,
+          "heap_bytes": 111149504,
+          "pss_kb": 513627,
+          "process_cpu_percent_one_core": 95.34883720930233,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 23.575,
+          "heap_bytes": 86020544,
+          "pss_kb": 386467,
+          "process_cpu_percent_one_core": 117.92905081495685,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 24.605,
+          "heap_bytes": 94212544,
+          "pss_kb": 378266,
+          "process_cpu_percent_one_core": 90.19417475728156,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 25.68,
+          "heap_bytes": 103059904,
+          "pss_kb": 432182,
+          "process_cpu_percent_one_core": 89.48837209302326,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 26.726,
+          "heap_bytes": 79577536,
+          "pss_kb": 424850,
+          "process_cpu_percent_one_core": 113.47992351816444,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 27.804,
+          "heap_bytes": 87605696,
+          "pss_kb": 358278,
+          "process_cpu_percent_one_core": 104.08163265306122,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 28.868,
+          "heap_bytes": 96453056,
+          "pss_kb": 390514,
+          "process_cpu_percent_one_core": 87.5,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 29.895,
+          "heap_bytes": 104645056,
+          "pss_kb": 440904,
+          "process_cpu_percent_one_core": 86.17332035053553,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 31.008,
+          "heap_bytes": 111788480,
+          "pss_kb": 478444,
+          "process_cpu_percent_one_core": 68.46361185983828,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 32.069,
+          "heap_bytes": 87306688,
+          "pss_kb": 378098,
+          "process_cpu_percent_one_core": 123.84542884071631,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 33.179,
+          "heap_bytes": 96383424,
+          "pss_kb": 387574,
+          "process_cpu_percent_one_core": 81.62162162162163,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 34.266,
+          "heap_bytes": 106312128,
+          "pss_kb": 446178,
+          "process_cpu_percent_one_core": 83.62465501379945,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 35.274,
+          "heap_bytes": 80581056,
+          "pss_kb": 404765,
+          "process_cpu_percent_one_core": 109.32539682539682,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 36.382,
+          "heap_bytes": 90476992,
+          "pss_kb": 364201,
+          "process_cpu_percent_one_core": 96.75090252707581,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 37.394,
+          "heap_bytes": 98668992,
+          "pss_kb": 401537,
+          "process_cpu_percent_one_core": 75.49407114624506,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 38.394,
+          "heap_bytes": 107549120,
+          "pss_kb": 455129,
+          "process_cpu_percent_one_core": 84.8,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 39.424,
+          "heap_bytes": 82559424,
+          "pss_kb": 395909,
+          "process_cpu_percent_one_core": 128.15533980582524,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 40.628,
+          "heap_bytes": 91308480,
+          "pss_kb": 363804,
+          "process_cpu_percent_one_core": 73.421926910299,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 41.685,
+          "heap_bytes": 95076800,
+          "pss_kb": 380728,
+          "process_cpu_percent_one_core": 57.237464522232735,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 42.739,
+          "heap_bytes": 98255296,
+          "pss_kb": 402704,
+          "process_cpu_percent_one_core": 51.04364326375712,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 43.802,
+          "heap_bytes": 101663168,
+          "pss_kb": 431164,
+          "process_cpu_percent_one_core": 56.25587958607714,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 44.864,
+          "heap_bytes": 104939968,
+          "pss_kb": 459080,
+          "process_cpu_percent_one_core": 54.33145009416196,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 45.925,
+          "heap_bytes": 108380608,
+          "pss_kb": 487280,
+          "process_cpu_percent_one_core": 55.70216776625825,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 46.988,
+          "heap_bytes": 111559104,
+          "pss_kb": 513472,
+          "process_cpu_percent_one_core": 55.03292568203199,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 48.054,
+          "heap_bytes": 81904064,
+          "pss_kb": 404208,
+          "process_cpu_percent_one_core": 95.40337711069418,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 49.119,
+          "heap_bytes": 84951488,
+          "pss_kb": 354480,
+          "process_cpu_percent_one_core": 54.178403755868544,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 50.175,
+          "heap_bytes": 88490432,
+          "pss_kb": 368484,
+          "process_cpu_percent_one_core": 57.765151515151516,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 51.215,
+          "heap_bytes": 94355904,
+          "pss_kb": 391720,
+          "process_cpu_percent_one_core": 59.71153846153846,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 52.294,
+          "heap_bytes": 103301568,
+          "pss_kb": 450972,
+          "process_cpu_percent_one_core": 84.33734939759036,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 53.335,
+          "heap_bytes": 78811584,
+          "pss_kb": 465624,
+          "process_cpu_percent_one_core": 102.59365994236312,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 54.401,
+          "heap_bytes": 86708672,
+          "pss_kb": 361588,
+          "process_cpu_percent_one_core": 109.84990619136961,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 55.471,
+          "heap_bytes": 96670144,
+          "pss_kb": 398964,
+          "process_cpu_percent_one_core": 91.02803738317758,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 56.561,
+          "heap_bytes": 105714112,
+          "pss_kb": 448468,
+          "process_cpu_percent_one_core": 84.03669724770643,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 57.621,
+          "heap_bytes": 81981888,
+          "pss_kb": 388728,
+          "process_cpu_percent_one_core": 134.33962264150944,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 58.716,
+          "heap_bytes": 90960320,
+          "pss_kb": 360288,
+          "process_cpu_percent_one_core": 83.37899543378995,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 59.729,
+          "heap_bytes": 99971520,
+          "pss_kb": 411064,
+          "process_cpu_percent_one_core": 86.77196446199407,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 60.822,
+          "heap_bytes": 107311552,
+          "pss_kb": 452804,
+          "process_cpu_percent_one_core": 66.51418115279048,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 61.871,
+          "heap_bytes": 81342912,
+          "pss_kb": 408988,
+          "process_cpu_percent_one_core": 112.39275500476644,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 62.9,
+          "heap_bytes": 90386880,
+          "pss_kb": 376803,
+          "process_cpu_percent_one_core": 101.36054421768708,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 63.976,
+          "heap_bytes": 99463616,
+          "pss_kb": 407175,
+          "process_cpu_percent_one_core": 83.82899628252788,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 64.99,
+          "heap_bytes": 108310976,
+          "pss_kb": 459531,
+          "process_cpu_percent_one_core": 86.29191321499013,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 66.005,
+          "heap_bytes": 82878896,
+          "pss_kb": 384955,
+          "process_cpu_percent_one_core": 127.58620689655173,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 67.01,
+          "heap_bytes": 91726256,
+          "pss_kb": 360799,
+          "process_cpu_percent_one_core": 87.363184079602,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 68.122,
+          "heap_bytes": 101851568,
+          "pss_kb": 421879,
+          "process_cpu_percent_one_core": 87.05035971223022,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 69.151,
+          "heap_bytes": 109814192,
+          "pss_kb": 465695,
+          "process_cpu_percent_one_core": 92.71137026239067,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 70.232,
+          "heap_bytes": 85270944,
+          "pss_kb": 397575,
+          "process_cpu_percent_one_core": 127.19703977798335,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 71.296,
+          "heap_bytes": 89301408,
+          "pss_kb": 359335,
+          "process_cpu_percent_one_core": 47.838345864661655,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 72.348,
+          "heap_bytes": 92709280,
+          "pss_kb": 373867,
+          "process_cpu_percent_one_core": 55.32319391634981,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 73.403,
+          "heap_bytes": 95920544,
+          "pss_kb": 391355,
+          "process_cpu_percent_one_core": 52.985781990521325,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 74.463,
+          "heap_bytes": 99295648,
+          "pss_kb": 419955,
+          "process_cpu_percent_one_core": 55.84905660377358,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 75.524,
+          "heap_bytes": 102474144,
+          "pss_kb": 447659,
+          "process_cpu_percent_one_core": 54.288407163053726,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 106,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 76.588,
+          "heap_bytes": 105947552,
+          "pss_kb": 475829,
+          "process_cpu_percent_one_core": 57.70676691729323,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 77.648,
+          "heap_bytes": 109584800,
+          "pss_kb": 505629,
+          "process_cpu_percent_one_core": 57.16981132075472,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 78.701,
+          "heap_bytes": 112533920,
+          "pss_kb": 535853,
+          "process_cpu_percent_one_core": 59.25925925925926,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 79.771,
+          "heap_bytes": 81564096,
+          "pss_kb": 386669,
+          "process_cpu_percent_one_core": 95.88785046728972,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 80.881,
+          "heap_bytes": 84742592,
+          "pss_kb": 350689,
+          "process_cpu_percent_one_core": 47.927927927927925,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 81.912,
+          "heap_bytes": 93753792,
+          "pss_kb": 386953,
+          "process_cpu_percent_one_core": 85.25703200775946,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 82.989,
+          "heap_bytes": 102666688,
+          "pss_kb": 443625,
+          "process_cpu_percent_one_core": 82.82265552460538,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 84.052,
+          "heap_bytes": 79356352,
+          "pss_kb": 459317,
+          "process_cpu_percent_one_core": 103.85700846660396,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 85.067,
+          "heap_bytes": 88138176,
+          "pss_kb": 351437,
+          "process_cpu_percent_one_core": 112.11822660098522,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 106,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 86.107,
+          "heap_bytes": 96461248,
+          "pss_kb": 390477,
+          "process_cpu_percent_one_core": 81.53846153846153,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 87.114,
+          "heap_bytes": 105472448,
+          "pss_kb": 443780,
+          "process_cpu_percent_one_core": 87.88480635551142,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 88.179,
+          "heap_bytes": 79925536,
+          "pss_kb": 436052,
+          "process_cpu_percent_one_core": 115.39906103286386,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 89.179,
+          "heap_bytes": 88248736,
+          "pss_kb": 358113,
+          "process_cpu_percent_one_core": 129.2,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 90.259,
+          "heap_bytes": 96211360,
+          "pss_kb": 388638,
+          "process_cpu_percent_one_core": 93.51851851851852,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 91.285,
+          "heap_bytes": 102404512,
+          "pss_kb": 410151,
+          "process_cpu_percent_one_core": 65.49707602339181,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 92.318,
+          "heap_bytes": 111284640,
+          "pss_kb": 460982,
+          "process_cpu_percent_one_core": 89.44820909970959,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 93.341,
+          "heap_bytes": 85643712,
+          "pss_kb": 375892,
+          "process_cpu_percent_one_core": 127.37047898338221,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 94.372,
+          "heap_bytes": 94523840,
+          "pss_kb": 371568,
+          "process_cpu_percent_one_core": 87.87584869059165,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 95.434,
+          "heap_bytes": 102683072,
+          "pss_kb": 417408,
+          "process_cpu_percent_one_core": 89.92467043314501,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 96.443,
+          "heap_bytes": 111563200,
+          "pss_kb": 473059,
+          "process_cpu_percent_one_core": 87.21506442021804,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 97.524,
+          "heap_bytes": 86974912,
+          "pss_kb": 366269,
+          "process_cpu_percent_one_core": 151.1563367252544,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 98.568,
+          "heap_bytes": 94937536,
+          "pss_kb": 378952,
+          "process_cpu_percent_one_core": 84.96168582375479,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 99.653,
+          "heap_bytes": 104833472,
+          "pss_kb": 426664,
+          "process_cpu_percent_one_core": 89.12442396313364,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 100.881,
+          "heap_bytes": 113713600,
+          "pss_kb": 474976,
+          "process_cpu_percent_one_core": 70.76547231270358,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 101.947,
+          "heap_bytes": 81916352,
+          "pss_kb": 378040,
+          "process_cpu_percent_one_core": 103.18949343339587,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 102.997,
+          "heap_bytes": 84898240,
+          "pss_kb": 338448,
+          "process_cpu_percent_one_core": 47.904761904761905,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 104.06,
+          "heap_bytes": 88502720,
+          "pss_kb": 354408,
+          "process_cpu_percent_one_core": 57.76105362182502,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 105.125,
+          "heap_bytes": 91681216,
+          "pss_kb": 377656,
+          "process_cpu_percent_one_core": 53.708920187793424,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 106.18,
+          "heap_bytes": 95121856,
+          "pss_kb": 408540,
+          "process_cpu_percent_one_core": 56.30331753554503,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 107.24,
+          "heap_bytes": 98333120,
+          "pss_kb": 436836,
+          "process_cpu_percent_one_core": 53.58490566037736,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 108.302,
+          "heap_bytes": 101740992,
+          "pss_kb": 462524,
+          "process_cpu_percent_one_core": 54.143126177024484,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 109.355,
+          "heap_bytes": 104919488,
+          "pss_kb": 490932,
+          "process_cpu_percent_one_core": 53.27635327635328,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 106,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 110.415,
+          "heap_bytes": 108360128,
+          "pss_kb": 517868,
+          "process_cpu_percent_one_core": 54.81132075471698,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 111.49,
+          "heap_bytes": 80437696,
+          "pss_kb": 387744,
+          "process_cpu_percent_one_core": 108.37209302325581,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 112.521,
+          "heap_bytes": 88695232,
+          "pss_kb": 362340,
+          "process_cpu_percent_one_core": 78.27352085354025,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 113.568,
+          "heap_bytes": 97567168,
+          "pss_kb": 400568,
+          "process_cpu_percent_one_core": 83.57211079274117,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 114.664,
+          "heap_bytes": 105726400,
+          "pss_kb": 450830,
+          "process_cpu_percent_one_core": 92.88321167883211,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 115.741,
+          "heap_bytes": 82637248,
+          "pss_kb": 382930,
+          "process_cpu_percent_one_core": 127.20519962859795,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 116.76,
+          "heap_bytes": 91681216,
+          "pss_kb": 359458,
+          "process_cpu_percent_one_core": 93.22865554465162,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 117.863,
+          "heap_bytes": 100790720,
+          "pss_kb": 412418,
+          "process_cpu_percent_one_core": 82.50226654578422,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 118.875,
+          "heap_bytes": 109605312,
+          "pss_kb": 464237,
+          "process_cpu_percent_one_core": 85.17786561264822,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 119.967,
+          "heap_bytes": 83874240,
+          "pss_kb": 362520,
+          "process_cpu_percent_one_core": 140.2014652014652,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 121.296,
+          "heap_bytes": 91181504,
+          "pss_kb": 359156,
+          "process_cpu_percent_one_core": 71.85854025583146,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 122.393,
+          "heap_bytes": 100159936,
+          "pss_kb": 394226,
+          "process_cpu_percent_one_core": 82.22424794895169,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 123.406,
+          "heap_bytes": 108155328,
+          "pss_kb": 441914,
+          "process_cpu_percent_one_core": 83.02073050345508,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 124.437,
+          "heap_bytes": 83141056,
+          "pss_kb": 390218,
+          "process_cpu_percent_one_core": 119.49563530552861,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 125.482,
+          "heap_bytes": 91103680,
+          "pss_kb": 359694,
+          "process_cpu_percent_one_core": 99.04306220095694,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 126.557,
+          "heap_bytes": 100114880,
+          "pss_kb": 400124,
+          "process_cpu_percent_one_core": 83.16279069767442,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 127.657,
+          "heap_bytes": 108110272,
+          "pss_kb": 448775,
+          "process_cpu_percent_one_core": 85.81818181818181,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 128.683,
+          "heap_bytes": 81994176,
+          "pss_kb": 426131,
+          "process_cpu_percent_one_core": 117.83625730994152,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 129.709,
+          "heap_bytes": 91103680,
+          "pss_kb": 383443,
+          "process_cpu_percent_one_core": 113.54775828460039,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 131.053,
+          "heap_bytes": 100868544,
+          "pss_kb": 407887,
+          "process_cpu_percent_one_core": 71.50297619047619,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 132.109,
+          "heap_bytes": 104636864,
+          "pss_kb": 438208,
+          "process_cpu_percent_one_core": 54.92424242424242,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 133.164,
+          "heap_bytes": 107815360,
+          "pss_kb": 461458,
+          "process_cpu_percent_one_core": 51.56398104265403,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 134.225,
+          "heap_bytes": 111157696,
+          "pss_kb": 489210,
+          "process_cpu_percent_one_core": 55.32516493873704,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 135.307,
+          "heap_bytes": 80482752,
+          "pss_kb": 399510,
+          "process_cpu_percent_one_core": 93.3456561922366,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 136.391,
+          "heap_bytes": 83890624,
+          "pss_kb": 341250,
+          "process_cpu_percent_one_core": 63.46863468634686,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 137.446,
+          "heap_bytes": 87101888,
+          "pss_kb": 353994,
+          "process_cpu_percent_one_core": 53.74407582938389,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 138.507,
+          "heap_bytes": 90706368,
+          "pss_kb": 371110,
+          "process_cpu_percent_one_core": 56.833176248821864,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 139.563,
+          "heap_bytes": 93753792,
+          "pss_kb": 401154,
+          "process_cpu_percent_one_core": 55.871212121212125,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 140.622,
+          "heap_bytes": 97325504,
+          "pss_kb": 431766,
+          "process_cpu_percent_one_core": 61.9452313503305,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 141.672,
+          "heap_bytes": 103158208,
+          "pss_kb": 466426,
+          "process_cpu_percent_one_core": 63.714285714285715,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 142.701,
+          "heap_bytes": 111120832,
+          "pss_kb": 513514,
+          "process_cpu_percent_one_core": 88.43537414965986,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 143.779,
+          "heap_bytes": 87335360,
+          "pss_kb": 356650,
+          "process_cpu_percent_one_core": 148.4230055658627,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 144.842,
+          "heap_bytes": 95330752,
+          "pss_kb": 384518,
+          "process_cpu_percent_one_core": 85.0423330197554,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 145.919,
+          "heap_bytes": 104341952,
+          "pss_kb": 434966,
+          "process_cpu_percent_one_core": 90.25069637883009,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 146.965,
+          "heap_bytes": 112370112,
+          "pss_kb": 479526,
+          "process_cpu_percent_one_core": 84.4168260038241,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 148.061,
+          "heap_bytes": 88388032,
+          "pss_kb": 356058,
+          "process_cpu_percent_one_core": 144.7992700729927,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 1,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 149.108,
+          "heap_bytes": 97432000,
+          "pss_kb": 389482,
+          "process_cpu_percent_one_core": 94.17382999044891,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 150.15,
+          "heap_bytes": 105427392,
+          "pss_kb": 427186,
+          "process_cpu_percent_one_core": 90.01919385796545,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 151.213,
+          "heap_bytes": 113291712,
+          "pss_kb": 469566,
+          "process_cpu_percent_one_core": 76.6698024459078,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 152.278,
+          "heap_bytes": 85909952,
+          "pss_kb": 334014,
+          "process_cpu_percent_one_core": 134.17840375586854,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 153.319,
+          "heap_bytes": 94921152,
+          "pss_kb": 371382,
+          "process_cpu_percent_one_core": 92.0268972142171,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 154.381,
+          "heap_bytes": 103965120,
+          "pss_kb": 422442,
+          "process_cpu_percent_one_core": 88.4180790960452,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 130,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 155.426,
+          "heap_bytes": 111927744,
+          "pss_kb": 474194,
+          "process_cpu_percent_one_core": 88.13397129186603,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 156.505,
+          "heap_bytes": 85819840,
+          "pss_kb": 373478,
+          "process_cpu_percent_one_core": 143.3734939759036,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 157.552,
+          "heap_bytes": 93815232,
+          "pss_kb": 370454,
+          "process_cpu_percent_one_core": 85.29130850047756,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 158.612,
+          "heap_bytes": 102793664,
+          "pss_kb": 421538,
+          "process_cpu_percent_one_core": 92.64150943396227,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 159.675,
+          "heap_bytes": 110756288,
+          "pss_kb": 470238,
+          "process_cpu_percent_one_core": 88.14675446848541,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 160.761,
+          "heap_bytes": 82895296,
+          "pss_kb": 374250,
+          "process_cpu_percent_one_core": 140.6998158379374,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 161.819,
+          "heap_bytes": 87515584,
+          "pss_kb": 339502,
+          "process_cpu_percent_one_core": 85.82230623818525,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 162.878,
+          "heap_bytes": 90530240,
+          "pss_kb": 351974,
+          "process_cpu_percent_one_core": 48.725212464589234,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 163.942,
+          "heap_bytes": 94134720,
+          "pss_kb": 370102,
+          "process_cpu_percent_one_core": 60.150375939849624,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 165.003,
+          "heap_bytes": 97313216,
+          "pss_kb": 396126,
+          "process_cpu_percent_one_core": 55.136663524976434,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 166.067,
+          "heap_bytes": 100753856,
+          "pss_kb": 428018,
+          "process_cpu_percent_one_core": 61.37218045112782,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 167.136,
+          "heap_bytes": 103965120,
+          "pss_kb": 454502,
+          "process_cpu_percent_one_core": 55.37885874649205,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 142,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 168.192,
+          "heap_bytes": 107372992,
+          "pss_kb": 483210,
+          "process_cpu_percent_one_core": 58.80681818181818,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 169.259,
+          "heap_bytes": 110551488,
+          "pss_kb": 509522,
+          "process_cpu_percent_one_core": 56.13870665417057,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 106,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 170.331,
+          "heap_bytes": 79790528,
+          "pss_kb": 478798,
+          "process_cpu_percent_one_core": 88.43283582089552,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 171.405,
+          "heap_bytes": 83366336,
+          "pss_kb": 384782,
+          "process_cpu_percent_one_core": 81.47113594040968,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 172.416,
+          "heap_bytes": 90444224,
+          "pss_kb": 367774,
+          "process_cpu_percent_one_core": 80.21760633036597,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 173.462,
+          "heap_bytes": 99324352,
+          "pss_kb": 410826,
+          "process_cpu_percent_one_core": 92.63862332695984,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 174.509,
+          "heap_bytes": 107418048,
+          "pss_kb": 461138,
+          "process_cpu_percent_one_core": 87.77459407831901,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 175.589,
+          "heap_bytes": 84226496,
+          "pss_kb": 357650,
+          "process_cpu_percent_one_core": 142.03703703703704,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 176.647,
+          "heap_bytes": 93237696,
+          "pss_kb": 363130,
+          "process_cpu_percent_one_core": 92.24952741020795,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 177.677,
+          "heap_bytes": 101200320,
+          "pss_kb": 407554,
+          "process_cpu_percent_one_core": 85.63106796116504,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 178.721,
+          "heap_bytes": 110080448,
+          "pss_kb": 462782,
+          "process_cpu_percent_one_core": 93.67816091954023,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 178,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        },
+        {
+          "seconds": 179.783,
+          "heap_bytes": 84001216,
+          "pss_kb": 346378,
+          "process_cpu_percent_one_core": 141.61958568738228,
+          "battery_celsius": 39.3,
+          "battery_plugged": 2,
+          "thermal_status": 2,
+          "view_count": 160,
+          "cache_items": 96,
+          "cache_bytes": 4909056
+        }
+      ],
+      "search_ms": [
+        379.383884,
+        376.512346,
+        395.189461,
+        363.164731,
+        328.472885,
+        397.104615,
+        391.278692,
+        327.521731,
+        391.633538,
+        336.437077,
+        328.323,
+        675.931807,
+        331.343,
+        335.272692,
+        332.889192,
+        408.431385,
+        351.996192
+      ],
+      "heartbeat_delay_p95_ms": 50,
+      "heartbeat_delay_max_ms": 282,
+      "heap_after_gc_bytes": 62370096,
+      "workload": "10 scroll jumps/s; query every 10s; all items accessible; JPEG covers; USB connected"
+    }
+  },
+  "thermal_samples": [
+    {
+      "seconds": 0.10899999999674037,
+      "sensors": {
+        "AP": {
+          "celsius": 45.0,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 44.0,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.2,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 40.6,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 10.187000000005355,
+      "sensors": {
+        "AP": {
+          "celsius": 45.8,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 44.2,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 40.5,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 20.312000000005355,
+      "sensors": {
+        "AP": {
+          "celsius": 49.9,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.7,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.0,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 30.406000000002678,
+      "sensors": {
+        "AP": {
+          "celsius": 51.4,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.6,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.4,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 40.51499999999942,
+      "sensors": {
+        "AP": {
+          "celsius": 49.5,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.4,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.7,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 50.60899999999674,
+      "sensors": {
+        "AP": {
+          "celsius": 47.8,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.4,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.6,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 60.73399999999674,
+      "sensors": {
+        "AP": {
+          "celsius": 46.7,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.6,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.3,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 70.84299999999348,
+      "sensors": {
+        "AP": {
+          "celsius": 47.7,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.8,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.2,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 80.93700000000536,
+      "sensors": {
+        "AP": {
+          "celsius": 46.8,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.6,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.3,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 91.01499999999942,
+      "sensors": {
+        "AP": {
+          "celsius": 46.8,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.3,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.1,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 101.09299999999348,
+      "sensors": {
+        "AP": {
+          "celsius": 47.6,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.6,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.1,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 111.15600000000268,
+      "sensors": {
+        "AP": {
+          "celsius": 47.3,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.4,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.1,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 121.26499999999942,
+      "sensors": {
+        "AP": {
+          "celsius": 48.0,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.7,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.5,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.5,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.1,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.5,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 131.32799999999406,
+      "sensors": {
+        "AP": {
+          "celsius": 47.3,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.5,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.5,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.5,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.2,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.5,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 141.4210000000021,
+      "sensors": {
+        "AP": {
+          "celsius": 48.2,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.8,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.6,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.1,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 151.5,
+      "sensors": {
+        "AP": {
+          "celsius": 48.7,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.3,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.6,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.3,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 161.59299999999348,
+      "sensors": {
+        "AP": {
+          "celsius": 47.6,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.8,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.6,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.3,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.6,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 171.65600000000268,
+      "sensors": {
+        "AP": {
+          "celsius": 48.3,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.2,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.7,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.7,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.4,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.7,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 181.73399999999674,
+      "sensors": {
+        "AP": {
+          "celsius": 48.9,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.1,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.7,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.8,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 41.7,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.8,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 191.84299999999348,
+      "sensors": {
+        "AP": {
+          "celsius": 48.6,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.4,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.7,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.8,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 42.0,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.8,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 201.9210000000021,
+      "sensors": {
+        "AP": {
+          "celsius": 49.0,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.8,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.8,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.8,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 42.1,
+          "type": 3,
+          "status": 2
+        },
+        "MAINBATRAW": {
+          "celsius": 39.8,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 212.0,
+      "sensors": {
+        "AP": {
+          "celsius": 49.3,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 48.2,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.9,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.8,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 42.3,
+          "type": 3,
+          "status": 2
+        },
+        "MAINBATRAW": {
+          "celsius": 39.9,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 222.07799999999406,
+      "sensors": {
+        "AP": {
+          "celsius": 48.6,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 47.7,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.9,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.9,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 42.2,
+          "type": 3,
+          "status": 2
+        },
+        "MAINBATRAW": {
+          "celsius": 39.9,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 232.18700000000536,
+      "sensors": {
+        "AP": {
+          "celsius": 49.2,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 48.1,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.9,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 40.0,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 42.4,
+          "type": 3,
+          "status": 2
+        },
+        "MAINBATRAW": {
+          "celsius": 40.0,
+          "type": 2,
+          "status": 0
+        }
+      }
+    }
+  ],
+  "thermal_sampling": "adb thermalservice, every 10s throughout fixture preparation, verification and soak; reported sensors, USB connected"
+}

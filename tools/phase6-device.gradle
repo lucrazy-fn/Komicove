@@ -1,0 +1,11 @@
+// Isolated fixture app; apply with -I ../tools/phase6-device.gradle.
+allprojects { project ->
+    project.plugins.withId('com.android.application') {
+        project.androidComponents.finalizeDsl { android ->
+            android.defaultConfig.testInstrumentationRunner = 'com.lucrazy.komicove.LibraryPhase6Instrumentation'
+            android.buildTypes.debug.applicationIdSuffix = '.phase6test'
+            android.buildTypes.debug.manifestPlaceholders = [appLabel: 'Komicove Fase 6 Teste']
+            android.sourceSets.androidTest.manifest.srcFile(project.file('src/androidTest/AndroidManifest-phase6.xml'))
+        }
+    }
+}

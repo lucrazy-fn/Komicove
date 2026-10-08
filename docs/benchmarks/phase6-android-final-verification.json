@@ -1,0 +1,200 @@
+{
+  "result": {
+    "size": 10000,
+    "device": "SM-A266M",
+    "api": 36,
+    "language": "pt",
+    "first_ms": 2646.549998,
+    "search_median_ms": 298.523808,
+    "search_max_ms": 302.645154,
+    "sort_median_ms": 452.132538,
+    "heap_before_navigation_bytes": 63280304,
+    "heap_after_navigation_bytes": 73831696,
+    "max_view_count": 161,
+    "pss_kb": 310825,
+    "verified_last_selection": true,
+    "verified_navigation_cycles": 20,
+    "heap_warm_bytes": 62727408,
+    "heap_after_20_navigation_bytes": 72890960,
+    "cover_cache_bytes": 2607936,
+    "cover_cache_items": 51
+  },
+  "thermal_samples": [
+    {
+      "seconds": 0.125,
+      "sensors": {
+        "AP": {
+          "celsius": 43.2,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 41.9,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 39.3,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 10.25,
+      "sensors": {
+        "AP": {
+          "celsius": 49.3,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 44.8,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.4,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 39.5,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.4,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 20.344000000011874,
+      "sensors": {
+        "AP": {
+          "celsius": 50.6,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.5,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 40.4,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 30.438000000009197,
+      "sensors": {
+        "AP": {
+          "celsius": 50.1,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 46.4,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 40.6,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    },
+    {
+      "seconds": 40.54700000000594,
+      "sensors": {
+        "AP": {
+          "celsius": 46.8,
+          "type": 0,
+          "status": 0
+        },
+        "PA": {
+          "celsius": 45.1,
+          "type": 5,
+          "status": 0
+        },
+        "BAT": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        },
+        "USB": {
+          "celsius": 39.3,
+          "type": 4,
+          "status": 0
+        },
+        "SKIN": {
+          "celsius": 40.7,
+          "type": 3,
+          "status": 1
+        },
+        "MAINBATRAW": {
+          "celsius": 39.3,
+          "type": 2,
+          "status": 0
+        }
+      }
+    }
+  ],
+  "thermal_sampling": "adb thermalservice, every 10s throughout fixture preparation, verification and soak; reported sensors, USB connected"
+}

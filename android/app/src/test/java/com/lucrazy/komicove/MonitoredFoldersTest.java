@@ -27,6 +27,16 @@ public class MonitoredFoldersTest {
         context.getSharedPreferences("library_folders",0).edit().putStringSet("uris",Collections.singleton(ROOT.toString())).commit();
     }
     @After public void close(){for(File file:provider.files.values())file.delete();}
+    @Test public void noRootsSkipsWholeLibraryReconciliationAndPreservesJson()throws Exception{
+        context.getSharedPreferences("library_folders",0).edit().clear().commit();
+        JSONArray books=new JSONArray();for(int i=0;i<10000;i++)books.put(new JSONObject().put("id","local-"+i).put("title","Issue "+i).put("file","local.cbz").put("future_field",42));
+        String original=books.toString();context.getSharedPreferences("library",0).edit().putString("items",original).commit();
+        int[] writes={0};SharedPreferences.OnSharedPreferenceChangeListener listener=(prefs,key)->{if(key.equals("items"))writes[0]++;};
+        context.getSharedPreferences("library",0).registerOnSharedPreferenceChangeListener(listener);
+        try{for(int i=0;i<20;i++){MonitoredFolders.Result result=monitor.scan();assertFalse(result.changed);assertEquals(0,result.added);}
+            assertEquals(0,writes[0]);assertEquals(original,context.getSharedPreferences("library",0).getString("items",""));
+        }finally{context.getSharedPreferences("library",0).unregisterOnSharedPreferenceChangeListener(listener);}
+    }
     private File archive(String marker)throws Exception{File file=File.createTempFile("phase2-test-",".cbz",context.getCacheDir());try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(file))){zip.putNextEntry(new ZipEntry("001.jpg"));zip.write(new byte[]{1,2,3});zip.closeEntry();zip.putNextEntry(new ZipEntry("marker.txt"));zip.write(marker.getBytes());zip.closeEntry();}return file;}
     private void settle()throws Exception{monitor.scan();JSONObject observations=new JSONObject(context.getSharedPreferences("library_folders",0).getString("observations","{}"));Iterator<String> names=observations.keys();while(names.hasNext())observations.getJSONObject(names.next()).put("since",System.currentTimeMillis()-4000);context.getSharedPreferences("library_folders",0).edit().putString("observations",observations.toString()).commit();}
     @Test public void largeFolderDeduplicatesAndReusesMetadata()throws Exception{
@@ -117,7 +127,7 @@ public class MonitoredFoldersTest {
         context.getSharedPreferences("auth_state",0).edit().putString("mode","guest").commit();
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).create();
         try{
-            MainActivity activity=controller.get();android.view.View decor=activity.getWindow().getDecorView();
+            MainActivity activity=controller.get();awaitLibrary(activity);android.view.View decor=activity.getWindow().getDecorView();
             int exact=android.view.View.MeasureSpec.EXACTLY;decor.measure(android.view.View.MeasureSpec.makeMeasureSpec(1080,exact),android.view.View.MeasureSpec.makeMeasureSpec(1920,exact));decor.layout(0,0,1080,1920);
             android.view.View entry=findDescription(decor,"Pastas monitoradas / adicionar pasta");assertNotNull(entry);assertTrue(entry.getWidth()>0);assertTrue(entry.performClick());
             android.widget.Button add=findButton(decor,"Adicionar pasta");assertNotNull(add);assertTrue(add.performClick());
@@ -134,13 +144,37 @@ public class MonitoredFoldersTest {
         context.getSharedPreferences("library",0).edit().putString("items",books.toString()).commit();context.getSharedPreferences("auth_state",0).edit().putString("mode","guest").commit();
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).create().start().visible();
         try{
-            android.view.View decor=controller.get().getWindow().getDecorView();layout(decor);
+            awaitLibrary(controller.get());android.view.View decor=controller.get().getWindow().getDecorView();layout(decor);
             android.widget.ScrollView scroll=findScroll(decor);assertNotNull(scroll);scroll.scrollTo(0,2000);int position=scroll.getScrollY();assertTrue(position>0);
             android.widget.Button more=findButtonPrefix(decor,"Mostrar mais (");assertNotNull(more);assertTrue(more.performClick());layout(decor);Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
             assertSame(scroll,findScroll(decor));assertEquals(position,scroll.getScrollY());assertNull(findButtonPrefix(decor,"Mostrar mais ("));
         }finally{controller.stop().destroy();context.getSharedPreferences("auth_state",0).edit().clear().commit();}
     }
+    @Test public void collectionSearchReusesOrdersAndAliasChangesInvalidate()throws Exception{
+        context.getSharedPreferences("auth_state",0).edit().putString("mode","guest").commit();
+        JSONArray rows=new JSONArray();for(int i=0;i<1000;i++){LibraryStore.Book book=new LibraryStore.Book();book.id="query-"+i;book.file=book.id+".cbz";book.title="Issue "+i;book.series="Series "+i%20;rows.put(book.json());}
+        context.getSharedPreferences("library",0).edit().putString("items",rows.toString()).commit();
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).create();
+        try{
+            MainActivity activity=controller.get();awaitLibrary(activity);
+            java.lang.reflect.Field tab=MainActivity.class.getDeclaredField("tab"),filter=MainActivity.class.getDeclaredField("filter"),orders=MainActivity.class.getDeclaredField("collectionOrders"),matched=MainActivity.class.getDeclaredField("matchedGroups");
+            for(java.lang.reflect.Field field:new java.lang.reflect.Field[]{tab,filter,orders,matched})field.setAccessible(true);
+            java.lang.reflect.Method show=MainActivity.class.getDeclaredMethod("showLibrary");show.setAccessible(true);tab.set(activity,"Coleções");show.invoke(activity);awaitLibrary(activity);
+            java.util.Map<?,?> cache=(java.util.Map<?,?>)orders.get(activity);Object original=cache.get("name");assertNotNull(original);
+            filter.set(activity,"Series 19");show.invoke(activity);awaitLibrary(activity);assertSame(original,cache.get("name"));assertEquals(1,((java.util.List<?>)matched.get(activity)).size());
+            context.getSharedPreferences("library",0).edit().putString("alias:series:Series 19","Renamed").commit();filter.set(activity,"Renamed");show.invoke(activity);awaitLibrary(activity);
+            assertNotSame(original,cache.get("name"));assertEquals(1,((java.util.List<?>)matched.get(activity)).size());
+        }finally{controller.stop().destroy();}
+    }
     private void layout(android.view.View view){int exact=android.view.View.MeasureSpec.EXACTLY;view.measure(android.view.View.MeasureSpec.makeMeasureSpec(1080,exact),android.view.View.MeasureSpec.makeMeasureSpec(1920,exact));view.layout(0,0,1080,1920);}
+    private void awaitLibrary(MainActivity activity){
+        try{
+            java.lang.reflect.Field preparing=MainActivity.class.getDeclaredField("libraryPreparing");preparing.setAccessible(true);
+            long end=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            while(System.nanoTime()<end){Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();if(!preparing.getBoolean(activity))return;Thread.sleep(10);}
+            throw new AssertionError("Background library preparation timed out");
+        }catch(Exception error){throw new AssertionError(error);}
+    }
     private android.widget.ScrollView findScroll(android.view.View view){
         if(view instanceof android.widget.ScrollView)return (android.widget.ScrollView)view;
         if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++){android.widget.ScrollView result=findScroll(group.getChildAt(i));if(result!=null)return result;}}
