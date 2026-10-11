@@ -13,11 +13,13 @@ function translatePage() {
     document.querySelectorAll(`[data-i18n-${attribute}]`).forEach(node => node.setAttribute(attribute, t(node.getAttribute(`data-i18n-${attribute}`))));
   }
   document.querySelectorAll('[data-language]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.language === language)));
-  const prefix = page === 'apoie' ? 'supportPage' : page === 'tutoriais' ? 'tutorials' : 'docs';
-  document.title = t(`${prefix}.metaTitle`);
-  document.querySelector('meta[name="description"]').content = t(`${prefix}.metaDescription`);
-  document.querySelector('meta[property="og:title"]').content = t(`${prefix}.metaTitle`);
-  document.querySelector('meta[property="og:description"]').content = t(`${prefix}.metaDescription`);
+  const prefix = page === 'apoie' ? 'supportPage' : page === 'tutoriais' ? 'tutorials' : page === 'download' ? 'help.download' : 'docs';
+  const titleKey = page === 'download' ? `${prefix}MetaTitle` : `${prefix}.metaTitle`;
+  const descriptionKey = page === 'download' ? `${prefix}MetaDescription` : `${prefix}.metaDescription`;
+  document.title = t(titleKey);
+  document.querySelector('meta[name="description"]').content = t(descriptionKey);
+  document.querySelector('meta[property="og:title"]').content = t(titleKey);
+  document.querySelector('meta[property="og:description"]').content = t(descriptionKey);
   document.querySelector('meta[property="og:locale"]').content = language === 'en' ? 'en_US' : 'pt_BR';
   window.KomicoveTheme?.syncLabels();
 }

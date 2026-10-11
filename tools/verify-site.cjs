@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '../docs');
-const pages = ['index.html', 'novidades.html', 'docs.html', 'tutoriais.html', 'apoie.html'];
+const pages = ['index.html', 'novidades.html', 'docs.html', 'tutoriais.html', 'apoie.html', 'download.html'];
 const htmlByPage = Object.fromEntries(pages.map(file => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 const context = {window: {}};
 vm.runInNewContext(fs.readFileSync(path.join(root, 'translations.js'), 'utf8'), context);
@@ -25,15 +25,15 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.equal(new Set(ids).size, ids.length, `Duplicate HTML ids in ${file}`);
   for (const [, href] of html.matchAll(/href="(#[^"]+)"/g)) assert.ok(ids.includes(href.slice(1)), `Broken anchor in ${file}: ${href}`);
 
-  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
+  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|help\.|help-hub\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
     assert.ok(fs.existsSync(path.join(root, asset.split('?')[0])), `Missing asset in ${file}: ${asset}`);
   }
   assert.match(html, /data-theme-toggle/, `Missing theme control in ${file}`);
   assert.match(html, /komicove\.site\.theme/, `Missing early theme bootstrap in ${file}`);
-  for (const [, target, fragment] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html)#([^"?]+)"/g)) {
+  for (const [, target, fragment] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html|download\.html)#([^"?]+)"/g)) {
     assert.ok(htmlByPage[target].includes(`id="${fragment}"`), `Broken cross-page anchor in ${file}: ${target}#${fragment}`);
   }
-  for (const [, target] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html)"/g)) {
+  for (const [, target] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html|download\.html)"/g)) {
     assert.ok(htmlByPage[target], `Broken page link in ${file}: ${target}`);
   }
   assert.match(html, /class="brand-official" src="assets\/logo\.png"/, `Missing official logo in ${file}`);
@@ -70,6 +70,7 @@ assert.match(indexHtml, /supportPage\.costShort/, 'Missing known annual domain c
 const docsHtml = htmlByPage['docs.html'];
 const tutorialsHtml = htmlByPage['tutoriais.html'];
 const supportHtml = htmlByPage['apoie.html'];
+const downloadHtml = htmlByPage['download.html'];
 for (const id of ['android-guide', 'desktop-guide', 'biblioteca', 'leitor', 'arquivos', 'backup', 'ajuda']) {
   assert.ok(docsHtml.includes(`id="${id}"`), `Missing docs topic: ${id}`);
 }
@@ -78,12 +79,20 @@ for (const id of ['tutorial-android', 'tutorial-desktop', 'tutorial-reader', 'tu
 }
 assert.match(docsHtml, /data-i18n="docs\.backupNote"/, 'Docs must explain that comic files are not backed up');
 assert.match(supportHtml, /data-i18n="supportPage\.costAmount"/, 'Support page must show the known annual domain cost');
+for (const asset of ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip', 'Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Linux-0.2.1.1-x86_64.flatpak', 'Komicove-Android-0.2.1.1.apk']) {
+  assert.ok(downloadHtml.includes(`releases/download/v0.2.1.1/${asset}`), `Missing download page package: ${asset}`);
+}
+for (const id of ['get-android', 'get-windows', 'get-linux', 'before-install']) assert.ok(downloadHtml.includes(`id="${id}"`));
+for (const file of ['docs.html', 'tutoriais.html', 'download.html']) {
+  assert.match(htmlByPage[file], /href="help\.css\?v=\d+"/, `Missing help layout in ${file}`);
+  assert.match(htmlByPage[file], /src="help-hub\.js\?v=\d+"/, `Missing shared help navigation in ${file}`);
+}
 assert.match(messages.en['supportPage.costAmount'], /7\.08.*year/);
 assert.match(messages['pt-BR']['supportPage.costAmount'], /7,08.*ano/);
 for (const file of pages) {
   const nav = htmlByPage[file].match(/<nav id="menu"[\s\S]*?<\/nav>/)?.[0];
   assert.ok(nav, `Missing primary navigation in ${file}`);
-  for (const target of ['index.html#interface', 'docs.html', 'tutoriais.html', 'apoie.html', 'index.html#downloads']) {
+  for (const target of ['index.html#interface', 'docs.html', 'tutoriais.html', 'apoie.html', 'download.html']) {
     assert.ok(nav.includes(`href="${target}"`), `Missing primary destination in ${file}: ${target}`);
   }
 }
@@ -126,7 +135,7 @@ for (const [, asset] of visualCss.matchAll(/url\(['"]?(assets\/[^)'" ]+)/g)) {
   assert.ok(fs.existsSync(path.join(root, asset)), `Missing CSS artwork: ${asset}`);
 }
 
-for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js']) {
+for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'help-hub.js', 'float-nav.js', 'theme.js']) {
   new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), {filename: file});
 }
 const floatClasses = new Set();
@@ -255,7 +264,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /<html lang="en">/, `${file} must use English as its static language`);
   assert.doesNotMatch(html, /\u2014/, `${file} contains an em dash`);
 }
-for (const file of ['app.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'styles.css']) {
+for (const file of ['app.js', 'news.js', 'guide.js', 'help-hub.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'help.css', 'styles.css']) {
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\u2014/, `${file} contains an em dash`);
 }
 
