@@ -1,16 +1,23 @@
 # Komicove website
 
-The public site is `index.html` with no build step or runtime dependencies.
+The public site is static HTML with no build step or runtime dependencies.
 Existing technical documentation, release notes, and image assets are retained.
 
 ## Files
 
 - `styles.css`: existing shared layout and interaction styles, formatted for maintenance.
-- `design.css`: visual refinements, real app previews, language selector, platform downloads, and responsive layouts.
+- `cinematic.css`: visual system shared by every public page, including responsive layouts.
+- `assets/hero-noir.webp` and `assets/comic-cover.webp`: existing Komicove artwork optimized for the cover and feature story.
+- `assets/logo.png` and `assets/komicove.ico`: official Komicove artwork used in the site identity and favicon.
+- `assets/komicove-preview.mp4` and `assets/komicove-preview.webp`: 25-second, silent desktop tour cut from the supplied screen recording and its poster.
+- `assets/komicove-android-preview.mp4` and `assets/komicove-android-preview.webp`: 13-second, silent Android tour cut from the supplied mobile recording and its poster.
 - `translations.js`: shared English and Brazilian Portuguese messages.
-- `app.js`: translation, saved language preference, mobile navigation, gallery tabs, image fallback, dialog, and FAQ interactions.
+- `theme.js`: system theme detection, saved theme choice, theme controls, and tab synchronization.
+- `app.js`: translation, saved language preference, grouped mobile navigation, gallery tabs, image fallback, dialog, and FAQ interactions.
 - `novidades.html`: short bilingual release page for version 0.2.1.1.
 - `news.js`: language handling for the release page.
+- `docs.html`, `tutoriais.html`, and `apoie.html`: getting started documentation, text tutorials with future video slots, and transparent support information with Pix.
+- `guide.js`: language, navigation, and Pix copy interactions for the guide pages.
 - `assets/social-card.png`: 1200 x 630 preview used when the site is shared.
 
 English is the default. The EN / PT-BR selector saves the preference in
@@ -19,6 +26,26 @@ switching still works for the current visit. Changes propagate to other open
 tabs. Titles, descriptions, image alternatives, and accessibility labels are
 translated alongside visible content. Original app screenshots retain their
 original language; this is explained beside the previews.
+
+The first visit follows the system's light or dark setting. An inline head script
+sets the theme before styles load, avoiding a flash of the other theme. The toggle
+saves the choice under `komicove.site.theme` and applies it across all public
+pages. The administration page uses the same preference.
+
+The homepage leads from the full-width cover to task-based quick paths and
+downloads, then moves through desktop and Android video previews, screenshots, features, formats, installation
+notes, community, news, roadmap, project information, support, and FAQ. The
+header keeps the app, docs, tutorials, support, and downloads one click away;
+the mobile menu uses the same destinations. The support page explains proposed
+uses without claiming a fixed budget or allocation.
+Once the quick-path strip leaves the viewport, a floating three-line control
+opens the same four destinations. It closes on Escape, outside click, or when
+the original strip returns, and respects reduced-motion preferences.
+The desktop and Android tours sit side by side on large screens. Android leads
+when they stack on smaller screens. Only the video preferred for the viewport
+starts automatically while visible; both pause when the page is hidden, and
+neither starts automatically when reduced motion is preferred. Native video
+controls remain available for manual playback and fullscreen viewing.
 
 Download totals come from the public GitHub Releases API. The site sums the
 assets for each platform and caches the result for 15 minutes in local storage.
@@ -39,10 +66,10 @@ node tools/verify-site.cjs
 ```
 
 Preview: `http://127.0.0.1:4173`.
-Static verification checks translation parity, required sections, local assets,
-internal anchors, unique ids, and JavaScript syntax.
+Static verification checks translation parity, section order, download destinations,
+local assets, internal anchors, unique ids, JavaScript syntax, and theme behavior.
 
-Browser verification covered English and PT-BR, persistence after reload,
+When reviewing a visual change, check English and PT-BR, persistence after reload,
 keyboard gallery navigation, screenshot expansion and Escape, FAQ disclosure,
 mobile menu navigation, and layouts at desktop, 390px, and 320px widths.
 Downloads preserve the existing official GitHub release destinations; package

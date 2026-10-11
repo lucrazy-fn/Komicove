@@ -1,4 +1,5 @@
 const messages = window.KOMICOVE_MESSAGES;
+document.documentElement.classList.add('js');
 const languageKey = 'komicove.site.language';
 let language = 'en';
 try { if (localStorage.getItem(languageKey) === 'pt-BR') language = 'pt-BR'; } catch { /* Storage may be unavailable. */ }
@@ -16,6 +17,7 @@ function translateNews() {
   document.querySelector('meta[property="og:title"]').content = t('release.metaTitle');
   document.querySelector('meta[property="og:description"]').content = t('release.metaDescription');
   document.querySelector('meta[property="og:locale"]').content = language === 'en' ? 'en_US' : 'pt_BR';
+  window.KomicoveTheme?.syncLabels();
 }
 
 function changeLanguage(next, persist = true) {
@@ -26,4 +28,19 @@ function changeLanguage(next, persist = true) {
 
 document.querySelectorAll('[data-language]').forEach(button => button.addEventListener('click', () => changeLanguage(button.dataset.language)));
 window.addEventListener('storage', event => { if (event.key === languageKey) changeLanguage(event.newValue, false); });
+const menu = document.querySelector('#menu');
+const toggle = document.querySelector('.menu-toggle');
+const mobileMenu = matchMedia('(max-width:900px)');
+function setMenu(open) {
+  menu.classList.toggle('open', open);
+  menu.inert = !open && mobileMenu.matches;
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-label', t(open ? 'nav.close' : 'nav.open'));
+}
+toggle.addEventListener('click', () => setMenu(toggle.getAttribute('aria-expanded') !== 'true'));
+menu.addEventListener('click', event => { if (event.target.closest('a')) setMenu(false); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') setMenu(false); });
+document.addEventListener('click', event => { if (!event.target.closest('.nav')) setMenu(false); });
+mobileMenu.addEventListener('change', () => setMenu(false));
+setMenu(false);
 translateNews();

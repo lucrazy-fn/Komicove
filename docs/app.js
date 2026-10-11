@@ -15,6 +15,8 @@ function translatePage() {
   for (const selector of ['meta[name="description"]', 'meta[name="twitter:description"]', 'meta[property="og:description"]']) document.querySelector(selector).content = t('meta.description');
   for (const selector of ['meta[name="twitter:title"]', 'meta[property="og:title"]']) document.querySelector(selector).content = t('meta.title');
   document.querySelector('meta[property="og:locale"]').content = language === 'en' ? 'en_US' : 'pt_BR';
+  window.KomicoveTheme?.syncLabels();
+  window.KomicoveFloat?.syncLabels();
 }
 translatePage();
 const screens = {
@@ -81,6 +83,55 @@ async function loadDownloadCounts() {
 
 loadDownloadCounts();
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+const demoVideos = [...document.querySelectorAll('.demo-video')];
+const androidDemo = document.querySelector('#android-demo');
+const androidDemoPlay = document.querySelector('#android-demo-play');
+if (androidDemo && androidDemoPlay) {
+  const syncAndroidPlay = () => androidDemo.parentElement.classList.toggle('is-playing', !androidDemo.paused);
+  androidDemoPlay.addEventListener('click', () => androidDemo.play().catch(() => {}));
+  androidDemo.addEventListener('play', syncAndroidPlay);
+  androidDemo.addEventListener('pause', syncAndroidPlay);
+}
+if (demoVideos.length === 2 && 'IntersectionObserver' in window) {
+  const compactDemo = matchMedia('(max-width:800px)');
+  const visibleDemos = new Set();
+  let autoDemo = null;
+  const syncDemoPlayback = () => {
+    if (reduced.matches || document.hidden) {
+      demoVideos.forEach(video => video.pause());
+      autoDemo = null;
+      return;
+    }
+    const preferred = compactDemo.matches ? demoVideos[1] : demoVideos[0];
+    if (autoDemo && (autoDemo !== preferred || !visibleDemos.has(autoDemo))) {
+      autoDemo.pause();
+      autoDemo = null;
+    }
+    if (!visibleDemos.has(preferred) || demoVideos.some(video => video !== preferred && !video.paused)) return;
+    if (!autoDemo && preferred.paused) {
+      autoDemo = preferred;
+      preferred.play().catch(() => { if (autoDemo === preferred) autoDemo = null; });
+    }
+  };
+  const demoObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) visibleDemos.add(entry.target);
+      else visibleDemos.delete(entry.target);
+    }
+    syncDemoPlayback();
+  }, {threshold: .35});
+  demoVideos.forEach(video => {
+    demoObserver.observe(video);
+    video.addEventListener('play', () => {
+      demoVideos.forEach(other => { if (other !== video) other.pause(); });
+      if (autoDemo && autoDemo !== video) autoDemo = null;
+    });
+  });
+  reduced.addEventListener('change', syncDemoPlayback);
+  compactDemo.addEventListener('change', syncDemoPlayback);
+  document.addEventListener('visibilitychange', syncDemoPlayback);
+}
+const mobileMenu = matchMedia('(max-width:900px)');
 document.documentElement.classList.add('js');
 const menu = document.querySelector('#menu');
 const toggle = document.querySelector('.menu-toggle');
@@ -88,12 +139,15 @@ function setMenu(open) {
   toggle.setAttribute('aria-expanded', String(open));
   toggle.setAttribute('aria-label', t(open ? 'nav.close' : 'nav.open'));
   menu.classList.toggle('open', open);
-  menu.inert = !open && matchMedia('(max-width:760px)').matches;
+  menu.inert = !open && mobileMenu.matches;
 }
 toggle.addEventListener('click', () => setMenu(toggle.getAttribute('aria-expanded') !== 'true'));
 menu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setMenu(false)));
-document.addEventListener('keydown', e => {if (e.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {setMenu(false); toggle.focus();}});
-matchMedia('(max-width:760px)').addEventListener('change', () => setMenu(false));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (toggle.getAttribute('aria-expanded') === 'true') { setMenu(false); toggle.focus(); }
+});
+mobileMenu.addEventListener('change', () => setMenu(false));
 setMenu(false);
 
 if ('IntersectionObserver' in window && !reduced.matches) {
@@ -106,22 +160,6 @@ if ('IntersectionObserver' in window && !reduced.matches) {
   }), {threshold: .12});
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 }
-
-const art = document.querySelector('.hero-art');
-const tilt = document.querySelector('.tilt');
-let raf;
-art.addEventListener('pointermove', e => {
-  if (reduced.matches || !matchMedia('(hover:hover) and (pointer:fine) and (min-width:761px)').matches) return;
-  cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(() => {
-    const rect = art.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - .5;
-    const y = (e.clientY - rect.top) / rect.height - .5;
-    tilt.style.transform = `rotate(-5deg) rotateY(${x * 8}deg) rotateX(${-y * 6}deg)`;
-  });
-});
-art.addEventListener('pointerleave', () => {cancelAnimationFrame(raf); tilt.style.transform = '';});
-reduced.addEventListener('change', () => {cancelAnimationFrame(raf); tilt.style.transform = '';});
 
 const tabs = [...document.querySelectorAll('[data-tab]')];
 const tablist = document.querySelector('.gallery-controls');
@@ -244,10 +282,16 @@ window.addEventListener('storage', event => { if (event.key === languageKey) cha
 
 // Keep the menu usable with keyboards and close it when clicking outside.
 document.addEventListener('click', event => {
-  if (!event.target.closest('.header') && toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+  if (!event.target.closest('.header')) {
+    if (toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+    more.open = false;
+  }
 });
 document.addEventListener('focusin', event => {
-  if (!event.target.closest('.header') && toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+  if (!event.target.closest('.header')) {
+    if (toggle.getAttribute('aria-expanded') === 'true') setMenu(false);
+    more.open = false;
+  }
 });
 
 document.querySelectorAll('.questions details').forEach(details => {

@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '../docs');
-const pages = ['index.html', 'novidades.html'];
+const pages = ['index.html', 'novidades.html', 'docs.html', 'tutoriais.html', 'apoie.html'];
 const htmlByPage = Object.fromEntries(pages.map(file => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 const context = {window: {}};
 vm.runInNewContext(fs.readFileSync(path.join(root, 'translations.js'), 'utf8'), context);
@@ -25,9 +25,19 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.equal(new Set(ids).size, ids.length, `Duplicate HTML ids in ${file}`);
   for (const [, href] of html.matchAll(/href="(#[^"]+)"/g)) assert.ok(ids.includes(href.slice(1)), `Broken anchor in ${file}: ${href}`);
 
-  for (const [, asset] of html.matchAll(/(?:src|href)="((?:assets\/|screenshots\/|styles\.|design\.|app\.|news\.|translations\.)[^"]+)"/g)) {
+  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
     assert.ok(fs.existsSync(path.join(root, asset.split('?')[0])), `Missing asset in ${file}: ${asset}`);
   }
+  assert.match(html, /data-theme-toggle/, `Missing theme control in ${file}`);
+  assert.match(html, /komicove\.site\.theme/, `Missing early theme bootstrap in ${file}`);
+  for (const [, target, fragment] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html)#([^"?]+)"/g)) {
+    assert.ok(htmlByPage[target].includes(`id="${fragment}"`), `Broken cross-page anchor in ${file}: ${target}#${fragment}`);
+  }
+  for (const [, target] of html.matchAll(/href="(index\.html|novidades\.html|docs\.html|tutoriais\.html|apoie\.html)"/g)) {
+    assert.ok(htmlByPage[target], `Broken page link in ${file}: ${target}`);
+  }
+  assert.match(html, /class="brand-official" src="assets\/logo\.png"/, `Missing official logo in ${file}`);
+  assert.match(html, /href="apoie\.html"/, `Missing support link in ${file}`);
 }
 
 const indexHtml = htmlByPage['index.html'];
@@ -35,6 +45,35 @@ const indexIds = [...indexHtml.matchAll(/\bid="([^"]+)"/g)].map(match => match[1
 for (const id of ['conteudo', 'recursos', 'novidades', 'interface', 'roadmap', 'community', 'formatos', 'faq', 'downloads', 'linux', 'android', 'lightbox']) {
   assert.ok(indexIds.includes(id), `Missing section: ${id}`);
 }
+assert.ok(indexHtml.indexOf('class="journey-index"') < indexHtml.indexOf('id="downloads"'), 'Quick paths should precede downloads');
+assert.ok(indexHtml.indexOf('id="downloads"') < indexHtml.indexOf('id="interface"'), 'Downloads should be available before the product tour');
+assert.ok(indexHtml.indexOf('id="interface"') < indexHtml.indexOf('id="recursos"'), 'Interface should precede feature details');
+assert.ok(indexHtml.indexOf('id="community"') < indexHtml.indexOf('id="novidades"'), 'Project news should follow community');
+assert.ok(indexHtml.indexOf('class="support-spotlight"') < indexHtml.indexOf('id="faq"'), 'Support should precede the final help section');
+assert.match(indexHtml, /class="hero cinematic-hero"/, 'Missing cinematic cover');
+assert.match(indexHtml, /class="hero-scene"/, 'Missing cover artwork');
+assert.match(indexHtml, /<video id="product-demo"[^>]*controls muted loop playsinline/, 'Missing accessible product video');
+assert.match(indexHtml, /<video id="android-demo"[^>]*controls muted loop playsinline/, 'Missing accessible Android video');
+assert.match(indexHtml, /id="android-demo-play"[^>]*aria-controls="android-demo"/, 'Missing Android play control');
+assert.match(indexHtml, /class="demo-duo"/, 'Desktop and Android videos should share the same section');
+assert.ok(indexHtml.indexOf('id="product-demo"') < indexHtml.indexOf('class="gallery-controls"'), 'Product video should precede screenshot gallery');
+assert.match(indexHtml, /class="journey-float" inert/, 'Missing floating quick paths');
+assert.match(indexHtml, /class="journey-float-bars" aria-hidden="true"><span><\/span><span><\/span><span><\/span>/, 'Missing three-line floating control');
+assert.match(indexHtml, /id="journey-float-panel"[^>]+hidden/, 'Floating menu should start closed');
+for (const href of ['#downloads', '#interface', 'docs.html', 'novidades.html']) {
+  assert.ok(indexHtml.match(/<nav id="journey-float-panel"[\s\S]*?<\/nav>/)?.[0].includes(`href="${href}"`), `Missing floating quick path: ${href}`);
+}
+assert.match(indexHtml, /class="nav-primary"/, 'Missing direct primary navigation');
+for (const file of pages) {
+  const nav = htmlByPage[file].match(/<nav id="menu"[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(nav, `Missing primary navigation in ${file}`);
+  for (const target of ['index.html#interface', 'docs.html', 'tutoriais.html', 'apoie.html', 'index.html#downloads']) {
+    assert.ok(nav.includes(`href="${target}"`), `Missing primary destination in ${file}: ${target}`);
+  }
+}
+assert.match(indexHtml, /data-open-support/, 'Missing existing Pix dialog trigger');
+assert.match(indexHtml, /id="support-dialog"/, 'Missing existing Pix dialog');
+assert.ok(indexHtml.includes('class="wrap footer-grid"'), 'Missing footer navigation');
 
 for (const asset of [
   'Komicove-Setup-0.2.1.1.exe',
@@ -58,14 +97,149 @@ for (const [name, file] of Object.entries(screenshots)) {
   }
 }
 
-for (const file of ['app.js', 'translations.js', 'news.js']) {
+for (const asset of ['hero-noir.webp', 'comic-cover.webp']) {
+  assert.ok(fs.existsSync(path.join(root, 'assets', asset)), `Missing cinematic artwork: ${asset}`);
+}
+for (const asset of ['logo.png', 'komicove.ico', 'pix-qr.png']) assert.ok(fs.existsSync(path.join(root, 'assets', asset)), `Missing official asset: ${asset}`);
+const socialCard = fs.readFileSync(path.join(root, 'assets', 'social-card.png'));
+assert.equal(socialCard.readUInt32BE(16), 1200, 'Social card width');
+assert.equal(socialCard.readUInt32BE(20), 630, 'Social card height');
+const visualCss = fs.readFileSync(path.join(root, 'cinematic.css'), 'utf8');
+assert.equal((visualCss.match(/{/g) || []).length, (visualCss.match(/}/g) || []).length, 'Unbalanced visual CSS');
+for (const [, asset] of visualCss.matchAll(/url\(['"]?(assets\/[^)'" ]+)/g)) {
+  assert.ok(fs.existsSync(path.join(root, asset)), `Missing CSS artwork: ${asset}`);
+}
+
+for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js']) {
   new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), {filename: file});
 }
+const floatClasses = new Set();
+const floatHandlers = {};
+const floatButton = {
+  attrs: {'aria-expanded': 'false'}, handlers: {}, tabIndex: -1, focused: false,
+  setAttribute(name, value) {this.attrs[name] = value;},
+  getAttribute(name) {return this.attrs[name];},
+  addEventListener(name, handler) {this.handlers[name] = handler;},
+  focus() {this.focused = true;}
+};
+const floatPanel = {
+  hidden: true, handlers: {},
+  addEventListener(name, handler) {this.handlers[name] = handler;},
+  querySelector() {return null;}
+};
+const floatRoot = {
+  inert: true,
+  classList: {
+    contains(name) {return floatClasses.has(name);},
+    toggle(name, enabled) {if (enabled) floatClasses.add(name); else floatClasses.delete(name);}
+  },
+  querySelector(selector) {return selector === '.journey-float-toggle' ? floatButton : floatPanel;},
+  contains(target) {return target === floatButton || target === floatPanel;}
+};
+const floatSection = {bottom: 400, getBoundingClientRect() {return {bottom: this.bottom};}};
+const floatDocument = {
+  documentElement: {lang: 'en'},
+  querySelector(selector) {return selector === '.journey-index' ? floatSection : floatRoot;},
+  addEventListener(name, handler) {floatHandlers[name] = handler;}
+};
+const floatWindow = {
+  KOMICOVE_MESSAGES: messages,
+  addEventListener(name, handler) {floatHandlers[name] = handler;}
+};
+vm.runInNewContext(fs.readFileSync(path.join(root, 'float-nav.js'), 'utf8'), {
+  window: floatWindow, document: floatDocument, requestAnimationFrame: callback => callback()
+});
+assert.equal(floatRoot.inert, true, 'Floating control should begin inactive');
+floatSection.bottom = 80;
+floatHandlers.scroll();
+assert.equal(floatRoot.inert, false, 'Floating control should appear after the quick paths leave');
+assert.ok(floatClasses.has('is-visible'));
+floatButton.handlers.click({detail: 1});
+assert.equal(floatPanel.hidden, false, 'Floating menu should open');
+assert.equal(floatButton.attrs['aria-expanded'], 'true');
+floatHandlers.keydown({key: 'Escape'});
+assert.equal(floatPanel.hidden, true, 'Escape should close the floating menu');
+assert.equal(floatButton.focused, true, 'Escape should restore focus');
+floatButton.handlers.click({detail: 1});
+floatHandlers.pointerdown({target: {}});
+assert.equal(floatPanel.hidden, true, 'Outside click should close the floating menu');
+floatDocument.documentElement.lang = 'pt-BR';
+floatWindow.KomicoveFloat.syncLabels();
+assert.equal(floatButton.attrs['aria-label'], messages['pt-BR']['journey.floatOpen']);
+floatButton.handlers.click({detail: 1});
+floatSection.bottom = 400;
+floatHandlers.scroll();
+assert.equal(floatRoot.inert, true, 'Floating control should disappear when the quick paths return');
+assert.equal(floatPanel.hidden, true, 'Floating menu should close when the quick paths return');
+for (const [file, html] of Object.entries(htmlByPage)) {
+  const boot = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(boot, `Missing inline theme bootstrap in ${file}`);
+  for (const [preference, systemDark, expected] of [[null, true, 'dark'], [null, false, 'light'], ['light', true, 'light'], ['dark', false, 'dark']]) {
+    const page = {documentElement: {dataset: {}}};
+    vm.runInNewContext(boot, {document: page, localStorage: {getItem: () => preference}, matchMedia: () => ({matches: systemDark})});
+    assert.equal(page.documentElement.dataset.theme, expected, `Wrong initial theme in ${file}`);
+  }
+}
+const themeButton = {
+  attrs: {}, handlers: {},
+  setAttribute(name, value) {this.attrs[name] = value;},
+  addEventListener(name, handler) {this.handlers[name] = handler;}
+};
+const themeRoot = {dataset: {theme: 'dark'}, style: {}, lang: 'en'};
+const themeMeta = {content: ''};
+const themeIcon = {href: ''};
+const themeStorage = new Map();
+const themeWindow = {KOMICOVE_MESSAGES: messages, addEventListener() {}};
+vm.runInNewContext(fs.readFileSync(path.join(root, 'theme.js'), 'utf8'), {
+  window: themeWindow,
+  document: {
+    documentElement: themeRoot,
+    querySelectorAll: () => [themeButton],
+    querySelector: selector => selector.includes('theme-color') ? themeMeta : themeIcon
+  },
+  localStorage: {getItem: key => themeStorage.get(key) ?? null, setItem: (key, value) => themeStorage.set(key, value)},
+  matchMedia: () => ({matches: true, addEventListener() {}})
+});
+assert.equal(themeButton.attrs['aria-label'], messages.en['theme.toLight']);
+themeButton.handlers.click();
+assert.equal(themeRoot.dataset.theme, 'light');
+assert.equal(themeStorage.get('komicove.site.theme'), 'light');
+assert.equal(themeIcon.href, 'assets/komicove.ico');
+themeRoot.lang = 'pt-BR';
+themeWindow.KomicoveTheme.syncLabels();
+assert.equal(themeButton.attrs['aria-label'], messages['pt-BR']['theme.toDark']);
+const adminHtml = fs.readFileSync(path.join(__dirname, '../komicove_backend/web/moderators.html'), 'utf8');
+assert.match(adminHtml, /id="panelTheme"/, 'Missing admin theme control');
+assert.match(adminHtml, /brand-emblem/, 'Missing admin K mark');
+const adminScripts = [...adminHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+for (const source of adminScripts) new vm.Script(source);
+const adminRoot = {dataset: {theme: 'light'}, style: {}};
+const adminSymbol = {textContent: ''};
+const adminControl = {
+  attrs: {}, handlers: {},
+  setAttribute(name, value) {this.attrs[name] = value;},
+  addEventListener(name, handler) {this.handlers[name] = handler;},
+  querySelector: () => adminSymbol
+};
+const adminLanguage = {addEventListener() {}};
+const adminStorage = new Map();
+vm.runInNewContext(adminScripts[1], {
+  document: {documentElement: adminRoot, getElementById: id => id === 'panelTheme' ? adminControl : adminLanguage},
+  localStorage: {getItem: key => adminStorage.get(key) ?? null, setItem: (key, value) => adminStorage.set(key, value)},
+  matchMedia: () => ({matches: false, addEventListener() {}}),
+  window: {addEventListener() {}},
+  panelLanguage: 'en'
+});
+adminControl.handlers.click();
+assert.equal(adminRoot.dataset.theme, 'dark', 'Admin theme toggle');
+assert.equal(adminControl.attrs['aria-label'], 'Switch to light mode');
+assert.equal(adminStorage.get('komicove.site.theme'), 'dark', 'Admin theme persistence');
+assert.doesNotMatch(adminHtml, /\u2014/, 'Admin page contains an em dash');
 for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /<html lang="en">/, `${file} must use English as its static language`);
   assert.doesNotMatch(html, /\u2014/, `${file} contains an em dash`);
 }
-for (const file of ['app.js', 'news.js', 'translations.js', 'design.css', 'styles.css']) {
+for (const file of ['app.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'styles.css']) {
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\u2014/, `${file} contains an em dash`);
 }
 
