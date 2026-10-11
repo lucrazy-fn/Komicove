@@ -1,0 +1,184 @@
+/* A compact reading edition for phones and small tablets. */
+.mobile-android-link{display:none}
+
+@media(max-width:900px){
+  html{scroll-padding-top:82px}
+  .header,.news-page .header{margin-bottom:-70px}
+  .guide-page .header{margin-bottom:0}
+  .nav,.js .nav{height:70px;min-height:70px;flex-wrap:nowrap;gap:10px}
+  .brand-official{width:88px;height:59px}
+  .nav-tools{gap:7px}
+  .theme-toggle{width:40px;height:40px;flex:none}
+  .language-switch button{min-width:32px;min-height:36px}
+  .menu-toggle,.js .menu-toggle{display:flex;align-items:center;width:44px;height:44px;flex:none;padding:9px}
+  .js .nav #menu{
+    position:fixed;top:70px;right:0;bottom:0;left:0;z-index:80;
+    display:flex;flex-direction:column;align-items:stretch;gap:0;
+    width:100%;height:calc(100dvh - 70px);max-height:none;
+    overflow-y:auto;overscroll-behavior:contain;
+    padding:20px max(24px,calc((100vw - 700px)/2)) calc(28px + env(safe-area-inset-bottom));
+    border-top:1px solid #ffffff25;background:#14171c;
+    box-shadow:0 30px 60px #0009;
+  }
+  .nav-primary{display:grid;gap:0;border-top:0}
+  .nav-primary a{display:flex;align-items:center;min-height:62px;padding:10px 0;border-bottom:1px solid #ffffff27;color:#fff;font-size:clamp(1.35rem,4vw,2rem);font-weight:800;letter-spacing:-.045em}
+  .nav-primary a:hover{color:#ff777c}
+  .js .nav #menu>.header-support-link{display:flex;align-items:center;justify-content:space-between;min-height:58px;width:100%;margin:11px 0 0;padding:10px 0;border:0;border-bottom:1px solid #ffffff27;color:#ff9397;font-size:1rem;font-weight:800}
+  .js .nav #menu>.header-download{display:flex;justify-content:space-between;width:100%;min-height:54px;margin-top:22px;padding:13px 18px;font-size:.92rem}
+  body:has(#menu.open){overflow:hidden}
+  body:has(#menu.open) .journey-float{opacity:0;visibility:hidden;pointer-events:none}
+  .section-heading{gap:18px}
+  .section-heading h2{line-height:.98}
+  .section-heading>p,.section-heading>div:last-child p{line-height:1.55}
+  .download-card .button,.android-card .button{min-height:50px}
+  .guide-hero-grid{align-items:start}
+  .guide-index{max-width:none}
+  .guide-hero-note{display:none}
+  .support-uses,.pix-layout{gap:26px}
+  .support-spotlight-inner{gap:24px}
+}
+
+@media(max-width:640px){
+  .wrap{width:calc(100% - 36px)}
+  .header,.news-page .header{margin-bottom:-66px}
+  .nav,.js .nav{height:66px;min-height:66px}
+  .brand-official{width:80px;height:54px}
+  .nav-tools{gap:4px}
+  .theme-toggle{width:37px;height:37px}
+  .language-switch{padding:1px}
+  .language-switch button{min-width:28px;min-height:34px;padding:3px}
+  .js .nav #menu{top:66px;height:calc(100dvh - 66px);padding-inline:22px}
+  .section{padding-block:62px}
+  .section-heading{margin-bottom:27px}
+  .section-heading h2{font-size:clamp(2.35rem,10.2vw,3.8rem);letter-spacing:-.065em}
+  .eyebrow{font-size:.64rem;letter-spacing:.13em}
+
+  /* Let the artwork lead, then give the copy its own dark reading space. */
+  .hero.cinematic-hero{display:block;min-height:0;padding:clamp(320px,47svh,440px) 0 32px;background:#090b0f}
+  .hero-scene{background-color:#090b0f;background-size:auto clamp(390px,56svh,525px);background-position:73% top}
+  .cinematic-hero::after{background:linear-gradient(180deg,#090b0f2e 0%,#090b0f0d 25%,#090b0ff5 45%,#090b0f 67%)}
+  .hero-content{align-items:stretch}
+  .hero .eyebrow{margin-bottom:11px}
+  .hero h1{max-width:11ch;font-size:clamp(2.85rem,12vw,4.65rem);line-height:.94;letter-spacing:-.075em}
+  .hero .lead{max-width:37ch;margin:19px 0 21px;font-size:.96rem;line-height:1.5}
+  .hero .actions{display:flex;flex-direction:column;align-items:stretch;gap:0;width:100%}
+  .hero-platform-link{display:none}
+  .hero .mobile-android-link{display:inline-flex;justify-content:space-between;width:100%;min-height:54px;font-size:.9rem}
+  .hero .text-link{align-self:flex-start;min-height:44px;margin-top:8px;padding-top:11px}
+  .hero-footer{display:flex;align-items:flex-start;flex-direction:column;gap:8px;margin-top:17px;padding-top:15px;border-top:1px solid #ffffff33}
+  .hero-trust,.platform{font-size:.72rem;line-height:1.35}
+
+  /* Quick paths become an index instead of a second row of cards. */
+  .journey-index{padding-top:27px}
+  .journey-index .eyebrow{margin-bottom:12px}
+  .journey-grid{display:block;border-top:1px solid var(--line)}
+  .journey-grid>a,.journey-grid>a:first-child,.journey-grid>a:nth-child(odd){display:grid;grid-template-columns:27px minmax(0,1fr) 22px;align-items:center;gap:0 10px;min-height:68px;padding:12px 3px;border:0;border-bottom:1px solid var(--line)}
+  .journey-number{grid-column:1;grid-row:1 / span 2;align-self:start;padding-top:6px}
+  .journey-grid strong{grid-column:2;grid-row:1;max-width:none;margin:0;font-size:1.08rem}
+  .journey-grid p{grid-column:2;grid-row:2;max-width:none;margin:2px 0 0;font-size:.71rem}
+  .journey-arrow{position:static;grid-column:3;grid-row:1 / span 2;justify-self:end}
+
+  /* Android is the first and clearest download on a phone. */
+  .downloads{padding:60px 18px 68px}
+  .journey-index+.downloads{padding-top:60px}
+  .downloads .section-heading{margin-bottom:23px}
+  .download-total{margin-top:13px}
+  .download-grid{display:flex;flex-direction:column;gap:0}
+  .download-card,.android-card{position:relative;display:flex;align-items:stretch;min-height:0;margin:0;padding:24px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+  .download-card:last-child{border-bottom:1px solid var(--line)}
+  .download-card.android-card{order:-1;margin:0 -18px 12px;padding:24px 18px;border:1px solid var(--line);border-left:4px solid var(--red);background:var(--paper)}
+  .download-icon{position:absolute;top:23px;right:0;width:30px;height:30px;margin:0}
+  .android-card .download-icon{right:18px}
+  .download-version{margin-bottom:6px}
+  .download-card h3{margin:0 0 6px;font-size:2.3rem;line-height:1}
+  .download-card p{max-width:35ch;margin-top:3px}
+  .download-card .button{width:100%;margin-top:14px}
+  .recommended-badge{align-self:flex-start;margin:0 0 10px}
+  .download-details{display:inline-flex;align-items:center;min-height:42px;margin-top:5px;font-size:.79rem}
+
+  .interface{padding-block:60px}
+  .demo-feature{margin-bottom:36px}
+  .demo-duo{gap:25px}
+  .demo-topline{gap:3px}
+  .demo-topline span{font-size:.62rem}
+  .demo-label{min-height:39px}
+  .demo-label small{font-size:.56rem}
+  .demo-phone-frame,.demo-frame{width:calc(100% + 36px);margin-left:-18px;border-right:0;border-left:0}
+  .demo-phone-frame{height:min(70svh,620px);min-height:390px}
+  .demo-phone-frame .demo-video{width:min(100%,285px)}
+  .demo-caption{padding:14px 0 18px}
+  .demo-caption strong{font-size:1.55rem}
+  .gallery-intro{margin-bottom:12px}
+  .gallery-body,.placeholder{min-height:0}
+  .gallery-body img{max-width:100%;height:auto}
+
+  #recursos .features{display:block}
+  #recursos .feature{min-height:0;margin:0;padding:22px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;box-shadow:none}
+  #recursos .feature.featured{min-height:300px;margin:0 -18px;padding:26px 18px;border:0;background-color:#15191e;background-size:cover}
+  #recursos .feature.featured>*{max-width:85%}
+  #recursos .feature:not(.featured) h3{font-size:1.55rem}
+  #novidades{padding:62px 18px}
+  .formats{gap:0}
+  .formats article{border-radius:0}
+  #linux,#android{width:calc(100% - 36px);margin:18px auto;padding:27px 19px;border-radius:10px}
+  #linux h2,#android h2{font-size:clamp(2.3rem,10vw,3.6rem);line-height:1}
+  .android-install-preview{width:min(230px,76%);height:410px;margin:26px auto 0}
+  .install-steps article{padding:14px}
+  .support-callout{gap:10px}
+  .support-button{justify-content:space-between;min-height:48px}
+  .support-spotlight-inner .button{width:100%}
+  .closing .actions{align-items:stretch;flex-direction:column;gap:15px}
+  .closing .button{width:100%}
+  .footer{padding:48px 0 calc(25px + env(safe-area-inset-bottom))}
+  .footer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:30px 15px}
+  .footer-intro{grid-column:1/-1;padding-bottom:15px;border-bottom:1px solid var(--line)}
+  .footer-column a{min-height:28px}
+  .footer-bottom{flex-wrap:wrap;margin-top:38px}
+
+  /* Guides and support keep their actions close to the introduction. */
+  .guide-hero{padding:105px 0 43px}
+  .guide-hero h1{max-width:12ch;margin:10px 0 18px;font-size:clamp(2.8rem,12vw,4.5rem);line-height:.94}
+  .guide-hero .lead{font-size:.98rem;line-height:1.5}
+  .guide-hero-grid{gap:26px}
+  .guide-index{padding-top:16px}
+  .guide-index nav{gap:12px}
+  .guide-index a{display:flex;align-items:center;min-height:38px;font-size:.78rem}
+  .guide-body{padding-top:10px;padding-bottom:65px}
+  .guide-chapter{gap:8px;padding:35px 0 42px}
+  .guide-chapter h2{font-size:2.2rem}
+  .guide-chapter p{font-size:.94rem;line-height:1.6}
+  .chapter-links a,.guide-end-links a{min-height:44px}
+  .tutorial-list{padding-top:10px}
+  .tutorial-row{padding:27px 0}
+  .tutorial-row h2{font-size:1.8rem}
+  .support-uses,.pix-section{padding-block:55px}
+  .support-uses h2,.pix-section h2,.support-other h2{font-size:2.5rem}
+  .support-use-list article{grid-template-columns:32px 1fr;gap:10px}
+  .pix-panel{display:flex;flex-direction:column;gap:20px;padding:18px}
+  .pix-panel>div{order:0}
+  .pix-panel>img{order:1;width:min(220px,100%);margin:0 auto}
+  .pix-panel .button{min-height:48px}
+  .support-other{gap:15px}
+  .news-page .news-hero{padding:105px 18px 48px}
+  .news-hero h1{font-size:clamp(2.8rem,11vw,4.3rem)}
+  .news-visual{margin:0}
+
+  dialog{width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:19px;border-radius:12px}
+  .support-content{gap:18px}
+  .pix-qr{width:min(230px,100%)}
+  .international-support{padding:14px}
+  .journey-float{right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom))}
+  .journey-float-toggle{width:54px;height:54px}
+  .journey-float-panel{width:min(340px,calc(100vw - 28px))}
+}
+
+@media(max-width:370px){
+  .brand-official{width:68px;height:47px}
+  .nav-tools{gap:2px}
+  .theme-toggle{width:35px;height:35px}
+  .language-switch button{min-width:26px}
+  .menu-toggle,.js .menu-toggle{width:41px}
+  .hero h1{font-size:2.75rem}
+  .guide-index nav{grid-template-columns:1fr}
+  .footer-grid{gap:25px 10px}
+}

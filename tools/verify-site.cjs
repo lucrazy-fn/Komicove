@@ -25,7 +25,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.equal(new Set(ids).size, ids.length, `Duplicate HTML ids in ${file}`);
   for (const [, href] of html.matchAll(/href="(#[^"]+)"/g)) assert.ok(ids.includes(href.slice(1)), `Broken anchor in ${file}: ${href}`);
 
-  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
+  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
     assert.ok(fs.existsSync(path.join(root, asset.split('?')[0])), `Missing asset in ${file}: ${asset}`);
   }
   assert.match(html, /data-theme-toggle/, `Missing theme control in ${file}`);
@@ -38,6 +38,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   }
   assert.match(html, /class="brand-official" src="assets\/logo\.png"/, `Missing official logo in ${file}`);
   assert.match(html, /href="apoie\.html"/, `Missing support link in ${file}`);
+  assert.match(html, /href="mobile\.css\?v=\d+"/, `Missing phone layout in ${file}`);
 }
 
 const indexHtml = htmlByPage['index.html'];
@@ -52,6 +53,7 @@ assert.ok(indexHtml.indexOf('id="community"') < indexHtml.indexOf('id="novidades
 assert.ok(indexHtml.indexOf('class="support-spotlight"') < indexHtml.indexOf('id="faq"'), 'Support should precede the final help section');
 assert.match(indexHtml, /class="hero cinematic-hero"/, 'Missing cinematic cover');
 assert.match(indexHtml, /class="hero-scene"/, 'Missing cover artwork');
+assert.match(indexHtml, /class="button mobile-android-link"[^>]*Komicove-Android-0\.2\.1\.1\.apk/, 'Missing direct phone download in the cover');
 assert.match(indexHtml, /<video id="product-demo"[^>]*controls muted loop playsinline/, 'Missing accessible product video');
 assert.match(indexHtml, /<video id="android-demo"[^>]*controls muted loop playsinline/, 'Missing accessible Android video');
 assert.match(indexHtml, /id="android-demo-play"[^>]*aria-controls="android-demo"/, 'Missing Android play control');
