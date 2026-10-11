@@ -126,3 +126,45 @@ html[data-theme='dark'] .support-spotlight{background:#38282a;color:#fff}html[da
 @media(max-width:800px){.demo-duo{display:flex;flex-direction:column;gap:34px}.demo-desktop-column,.demo-phone-column{width:100%}.demo-phone-column{order:-1}.demo-frame{height:auto;aspect-ratio:1280/674}.demo-phone-frame{height:min(86svh,650px)}.demo-caption{min-height:0}}
 @media(max-width:600px){.demo-feature{margin-bottom:54px}.demo-topline{flex-wrap:wrap;gap:3px 20px}.demo-frame{width:calc(100% + 36px);margin-left:-18px;border-right:0;border-left:0}.demo-phone-frame{width:calc(100% + 36px);margin-left:-18px;border-right:0;border-left:0}}
 @media(max-width:600px){.gallery-controls{width:100%;overflow-x:auto;scrollbar-width:none}.gallery-controls::-webkit-scrollbar{display:none}.gallery-controls button{flex:0 0 auto;white-space:nowrap}}
+
+/* Task-based documentation and honest project costs. */
+.guide-main .guide-hero h1{max-width:13ch}
+.guide-route-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:27px 0}
+.guide-route-grid a{display:grid;grid-template-columns:1fr auto;gap:10px;min-height:118px;padding:17px;border:1px solid var(--line);background:var(--paper);color:var(--ink);transition:border-color .2s,transform .2s}
+.guide-route-grid a:hover{border-color:var(--red);transform:translateY(-2px)}
+.guide-route-grid a>span:first-child{grid-column:1/-1;color:var(--red);font-size:.66rem;font-weight:900;letter-spacing:.1em}
+.guide-route-grid strong{align-self:end;font-size:1.28rem;letter-spacing:-.04em}
+.guide-route-grid a>span:last-child{align-self:end;color:var(--red)}
+.guide-note{max-width:680px!important;margin-top:22px!important;padding:15px 18px;border-left:3px solid var(--red);background:var(--surface);font-size:.85rem!important}
+.guide-action-list,.guide-bullet-list{display:grid;gap:0;max-width:720px;margin:23px 0 12px;padding:0;list-style:none;counter-reset:guide-step}
+.guide-action-list li{position:relative;min-height:54px;padding:13px 0 13px 46px;border-top:1px solid var(--line);color:var(--ink);font-size:.94rem;line-height:1.55;counter-increment:guide-step}
+.guide-action-list li::before{content:counter(guide-step,decimal-leading-zero);position:absolute;top:15px;left:0;color:var(--red);font-size:.73rem;font-weight:900}
+.guide-bullet-list li{position:relative;padding:12px 0 12px 24px;border-top:1px solid var(--line);color:var(--ink);font-size:.94rem;line-height:1.55}
+.guide-bullet-list li::before{content:'+';position:absolute;left:0;color:var(--red);font-weight:900}
+.guide-shot{max-width:690px;margin:26px 0 8px;padding:7px;border:1px solid var(--line);background:var(--paper)}
+.guide-shot img{display:block;width:100%;height:auto}
+.guide-shot figcaption{padding:10px 8px 4px;color:var(--muted);font-size:.73rem}
+.guide-shot-phone{max-width:260px}
+.guide-format-list{max-width:760px;margin-top:26px;border-top:1px solid var(--line)}
+.guide-format-list>div{display:grid;grid-template-columns:minmax(150px,.55fr) minmax(0,1.45fr);gap:20px;padding:16px 0;border-bottom:1px solid var(--line)}
+.guide-format-list strong{color:var(--ink);font-size:.85rem}
+.guide-format-list span{color:var(--muted);font-size:.86rem;line-height:1.55}
+.guide-help-list{max-width:760px;margin:26px 0;border-top:1px solid var(--line)}
+.guide-help-list details{padding:0;border-bottom:1px solid var(--line)}
+.guide-help-list summary{min-height:55px;padding:16px 28px 16px 0;color:var(--ink);font-weight:800;cursor:pointer}
+.guide-help-list details p{margin:0 0 17px;font-size:.87rem}
+.tutorial-main .tutorial-list{padding-block:15px 55px}
+.tutorial-main .tutorial-row{scroll-margin-top:95px}
+.tutorial-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 22px;max-width:760px;margin:25px 0 0;padding:0;list-style:none;counter-reset:tutorial-step}
+.tutorial-steps li{position:relative;min-height:75px;padding:13px 0 14px 34px;border-top:1px solid var(--line);color:var(--ink);font-size:.85rem;line-height:1.55;counter-increment:tutorial-step}
+.tutorial-steps li::before{content:counter(tutorial-step,decimal-leading-zero);position:absolute;top:15px;left:0;color:var(--red);font-size:.72rem;font-weight:900}
+.tutorial-result{max-width:760px!important;margin:9px 0 0!important;padding:13px 16px;border-left:3px solid var(--red);background:var(--surface);font-size:.83rem!important}
+.tutorial-result strong{color:var(--ink)}
+.support-cost{max-width:420px;margin:25px 0 0;padding:17px 19px;border:1px solid var(--line);border-left:4px solid var(--red);background:var(--paper)}
+.support-cost-label{color:var(--red);font-size:.65rem;font-weight:900;letter-spacing:.12em}
+.support-cost>div{display:flex;align-items:baseline;justify-content:space-between;gap:15px;margin:14px 0 7px}
+.support-cost strong{color:var(--ink);font-size:1rem}
+.support-cost>div span{color:var(--red);font-size:1.17rem;font-weight:900;white-space:nowrap}
+.support-cost p{margin:0;color:var(--muted);font-size:.78rem;line-height:1.5}
+.support-spotlight .support-cost-inline{margin:12px 0 0;color:#982c34;font-size:.8rem;font-weight:900}
+html[data-theme='dark'] .support-spotlight .support-cost-inline{color:#ff9198}

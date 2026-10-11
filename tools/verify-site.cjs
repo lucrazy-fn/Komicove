@@ -66,6 +66,20 @@ for (const href of ['#downloads', '#interface', 'docs.html', 'novidades.html']) 
   assert.ok(indexHtml.match(/<nav id="journey-float-panel"[\s\S]*?<\/nav>/)?.[0].includes(`href="${href}"`), `Missing floating quick path: ${href}`);
 }
 assert.match(indexHtml, /class="nav-primary"/, 'Missing direct primary navigation');
+assert.match(indexHtml, /supportPage\.costShort/, 'Missing known annual domain cost on the homepage');
+const docsHtml = htmlByPage['docs.html'];
+const tutorialsHtml = htmlByPage['tutoriais.html'];
+const supportHtml = htmlByPage['apoie.html'];
+for (const id of ['android-guide', 'desktop-guide', 'biblioteca', 'leitor', 'arquivos', 'backup', 'ajuda']) {
+  assert.ok(docsHtml.includes(`id="${id}"`), `Missing docs topic: ${id}`);
+}
+for (const id of ['tutorial-android', 'tutorial-desktop', 'tutorial-reader', 'tutorial-library', 'tutorial-backup', 'tutorial-help']) {
+  assert.ok(tutorialsHtml.includes(`id="${id}"`), `Missing tutorial: ${id}`);
+}
+assert.match(docsHtml, /data-i18n="docs\.backupNote"/, 'Docs must explain that comic files are not backed up');
+assert.match(supportHtml, /data-i18n="supportPage\.costAmount"/, 'Support page must show the known annual domain cost');
+assert.match(messages.en['supportPage.costAmount'], /7\.08.*year/);
+assert.match(messages['pt-BR']['supportPage.costAmount'], /7,08.*ano/);
 for (const file of pages) {
   const nav = htmlByPage[file].match(/<nav id="menu"[\s\S]*?<\/nav>/)?.[0];
   assert.ok(nav, `Missing primary navigation in ${file}`);
@@ -241,7 +255,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /<html lang="en">/, `${file} must use English as its static language`);
   assert.doesNotMatch(html, /\u2014/, `${file} contains an em dash`);
 }
-for (const file of ['app.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'styles.css']) {
+for (const file of ['app.js', 'news.js', 'guide.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'styles.css']) {
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\u2014/, `${file} contains an em dash`);
 }
 

@@ -143,6 +143,10 @@
   .guide-index{padding-top:16px}
   .guide-index nav{gap:12px}
   .guide-index a{display:flex;align-items:center;min-height:38px;font-size:.78rem}
+  .guide-route-grid{grid-template-columns:1fr;gap:8px;margin:20px 0}
+  .guide-route-grid a{min-height:82px}
+  .guide-shot-phone{max-width:220px}
+  .guide-format-list>div{grid-template-columns:1fr;gap:4px;padding:13px 0}
   .guide-body{padding-top:10px;padding-bottom:65px}
   .guide-chapter{gap:8px;padding:35px 0 42px}
   .guide-chapter h2{font-size:2.2rem}
@@ -151,9 +155,14 @@
   .tutorial-list{padding-top:10px}
   .tutorial-row{padding:27px 0}
   .tutorial-row h2{font-size:1.8rem}
+  .tutorial-steps{grid-template-columns:1fr;margin-top:19px}
+  .tutorial-steps li{min-height:0;padding-block:12px}
+  .tutorial-result{margin-top:6px!important}
   .support-uses,.pix-section{padding-block:55px}
   .support-uses h2,.pix-section h2,.support-other h2{font-size:2.5rem}
   .support-use-list article{grid-template-columns:32px 1fr;gap:10px}
+  .support-cost{margin-top:20px}
+  .support-cost>div{align-items:flex-start;flex-direction:column;gap:4px}
   .pix-panel{display:flex;flex-direction:column;gap:20px;padding:18px}
   .pix-panel>div{order:0}
   .pix-panel>img{order:1;width:min(220px,100%);margin:0 auto}

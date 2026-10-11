@@ -7,6 +7,7 @@ Existing technical documentation, release notes, and image assets are retained.
 
 - `styles.css`: existing shared layout and interaction styles, formatted for maintenance.
 - `cinematic.css`: visual system shared by every public page, including responsive layouts.
+- `mobile.css`: phone-specific navigation, Android-first downloads, guide layouts, and touch spacing.
 - `assets/hero-noir.webp` and `assets/comic-cover.webp`: existing Komicove artwork optimized for the cover and feature story.
 - `assets/logo.png` and `assets/komicove.ico`: official Komicove artwork used in the site identity and favicon.
 - `assets/komicove-preview.mp4` and `assets/komicove-preview.webp`: 25-second, silent desktop tour cut from the supplied screen recording and its poster.
@@ -16,7 +17,8 @@ Existing technical documentation, release notes, and image assets are retained.
 - `app.js`: translation, saved language preference, grouped mobile navigation, gallery tabs, image fallback, dialog, and FAQ interactions.
 - `novidades.html`: short bilingual release page for version 0.2.1.1.
 - `news.js`: language handling for the release page.
-- `docs.html`, `tutoriais.html`, and `apoie.html`: getting started documentation, text tutorials with future video slots, and transparent support information with Pix.
+- `docs.html`, `tutoriais.html`, and `apoie.html`: task-based device guides, six complete text tutorials ready for future videos, and support information with Pix and the known annual domain cost.
+- `GRAVACOES_TUTORIAIS.md`: the creator's two-day recording checklist for site review and tutorial footage.
 - `guide.js`: language, navigation, and Pix copy interactions for the guide pages.
 - `assets/social-card.png`: 1200 x 630 preview used when the site is shared.
 
@@ -36,8 +38,10 @@ The homepage leads from the full-width cover to task-based quick paths and
 downloads, then moves through desktop and Android video previews, screenshots, features, formats, installation
 notes, community, news, roadmap, project information, support, and FAQ. The
 header keeps the app, docs, tutorials, support, and downloads one click away;
-the mobile menu uses the same destinations. The support page explains proposed
-uses without claiming a fixed budget or allocation.
+the mobile menu uses the same destinations. On phones, Android is the first
+download and the cover offers a direct APK link. The support page shows the
+confirmed R$ 7.08 yearly cost of the komicove.online domain and explains other
+proposed uses without claiming a fixed budget or allocation.
 Once the quick-path strip leaves the viewport, a floating three-line control
 opens the same four destinations. It closes on Escape, outside click, or when
 the original strip returns, and respects reduced-motion preferences.
