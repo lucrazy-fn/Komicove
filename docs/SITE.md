@@ -10,6 +10,7 @@ Existing technical documentation, release notes, and image assets are retained.
 - `mobile.css`: phone-specific navigation, Android-first downloads, guide layouts, and touch spacing.
 - `help.css` and `help-hub.js`: the Reader's Desk layout for Docs, Tutorials, and Downloads, with a sticky grouped index, topic finder, and a phone drawer.
 - `download-versions.css` and `download-versions.js`: version selection on the homepage and download page, release asset links, package availability, and per-version counts. The catalog also includes earlier PANEL releases and counts every release asset in the project total.
+- `home-url.js`, `sitemap.xml`, and `robots.txt`: clean homepage URLs, direct file preview links, and search discovery for the canonical domain.
 - `assets/hero-noir.webp` and `assets/comic-cover.webp`: existing Komicove artwork optimized for the cover and feature story.
 - `assets/logo.png` and `assets/komicove.ico`: official Komicove artwork used in the site identity and favicon.
 - `assets/komicove-preview.mp4` and `assets/komicove-preview.webp`: 25-second, silent desktop tour cut from the supplied screen recording and its poster.

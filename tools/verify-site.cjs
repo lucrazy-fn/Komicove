@@ -24,8 +24,11 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length, `Duplicate HTML ids in ${file}`);
   for (const [, href] of html.matchAll(/href="(#[^"]+)"/g)) assert.ok(ids.includes(href.slice(1)), `Broken anchor in ${file}: ${href}`);
+  for (const [, fragment] of html.matchAll(/href="\.\/#([^"]+)"/g)) assert.ok(htmlByPage['index.html'].includes(`id="${fragment}"`), `Broken homepage anchor in ${file}: ${fragment}`);
+  assert.ok(!html.includes('href="index.html'), `Legacy homepage link in ${file}`);
+  assert.match(html, /src="home-url\.js\?v=\d+"/, `Missing clean homepage URL helper in ${file}`);
 
-  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|help\.|help-hub\.|download-versions\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
+  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|help\.|help-hub\.|home-url\.|download-versions\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
     assert.ok(fs.existsSync(path.join(root, asset.split('?')[0])), `Missing asset in ${file}: ${asset}`);
   }
   assert.match(html, /data-theme-toggle/, `Missing theme control in ${file}`);
@@ -42,6 +45,11 @@ for (const [file, html] of Object.entries(htmlByPage)) {
 }
 
 const indexHtml = htmlByPage['index.html'];
+assert.match(indexHtml, /rel="canonical" href="https:\/\/komicove\.online\/"/, 'Homepage canonical URL');
+const sitemap = fs.readFileSync(path.join(root, 'sitemap.xml'), 'utf8');
+assert.match(sitemap, /<loc>https:\/\/komicove\.online\/<\/loc>/, 'Clean homepage URL in sitemap');
+assert.doesNotMatch(sitemap, /index\.html/, 'Legacy homepage URL in sitemap');
+assert.match(fs.readFileSync(path.join(root, 'robots.txt'), 'utf8'), /Sitemap: https:\/\/komicove\.online\/sitemap\.xml/, 'Sitemap discovery');
 const indexIds = [...indexHtml.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 for (const id of ['conteudo', 'recursos', 'novidades', 'interface', 'roadmap', 'community', 'formatos', 'faq', 'downloads', 'linux', 'android', 'lightbox']) {
   assert.ok(indexIds.includes(id), `Missing section: ${id}`);
@@ -104,7 +112,7 @@ assert.match(messages['pt-BR']['supportPage.costAmount'], /7,08.*ano/);
 for (const file of pages) {
   const nav = htmlByPage[file].match(/<nav id="menu"[\s\S]*?<\/nav>/)?.[0];
   assert.ok(nav, `Missing primary navigation in ${file}`);
-  for (const target of ['index.html#interface', 'docs.html', 'tutoriais.html', 'apoie.html', 'download.html']) {
+  for (const target of ['./#interface', 'docs.html', 'tutoriais.html', 'apoie.html', 'download.html']) {
     assert.ok(nav.includes(`href="${target}"`), `Missing primary destination in ${file}: ${target}`);
   }
 }
@@ -149,9 +157,23 @@ for (const [, asset] of visualCss.matchAll(/url\(['"]?(assets\/[^)'" ]+)/g)) {
   assert.ok(fs.existsSync(path.join(root, asset)), `Missing CSS artwork: ${asset}`);
 }
 
-for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'help-hub.js', 'download-versions.js', 'float-nav.js', 'theme.js']) {
+for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'help-hub.js', 'home-url.js', 'download-versions.js', 'float-nav.js', 'theme.js']) {
   new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), {filename: file});
 }
+const homepageUrlScript = fs.readFileSync(path.join(root, 'home-url.js'), 'utf8');
+let cleanedHomepageUrl = '';
+vm.runInNewContext(homepageUrlScript, {
+  location: {protocol: 'https:', pathname: '/index.html', search: '?from=search', hash: '#downloads'},
+  history: {state: null, replaceState(_state, _title, url) {cleanedHomepageUrl = url;}},
+  document: {}
+});
+assert.equal(cleanedHomepageUrl, '/?from=search#downloads');
+const localHomeLink = {href: './#downloads', getAttribute() {return this.href;}, setAttribute(_name, value) {this.href = value;}};
+vm.runInNewContext(homepageUrlScript, {
+  location: {protocol: 'file:'},
+  document: {querySelectorAll: () => [localHomeLink]}
+});
+assert.equal(localHomeLink.href, 'index.html#downloads');
 const floatClasses = new Set();
 const floatHandlers = {};
 const floatButton = {
@@ -278,7 +300,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /<html lang="en">/, `${file} must use English as its static language`);
   assert.doesNotMatch(html, /\u2014/, `${file} contains an em dash`);
 }
-for (const file of ['app.js', 'news.js', 'guide.js', 'help-hub.js', 'download-versions.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'help.css', 'download-versions.css', 'styles.css']) {
+for (const file of ['app.js', 'news.js', 'guide.js', 'help-hub.js', 'home-url.js', 'download-versions.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'help.css', 'download-versions.css', 'styles.css']) {
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\u2014/, `${file} contains an em dash`);
 }
 
