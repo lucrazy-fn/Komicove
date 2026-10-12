@@ -79,3 +79,28 @@ def test_late_moderation_list_does_not_update_new_screen():
     library_views.LibraryWindow._moderation_loaded(app, [], None, generation=1)
 
     assert status.config_calls == []
+
+
+def test_filter_uses_loaded_items_without_reloading_queue():
+    class FakeButton:
+        def __init__(self, kind):
+            self.kind = kind
+            self.draws = 0
+
+        def _draw(self, _hover):
+            self.draws += 1
+
+    buttons = {"pending_review": FakeButton("primary"), "approved": FakeButton("secondary")}
+    rendered = []
+    app = SimpleNamespace(
+        _moderation_filter="pending_review",
+        _moderation_filter_buttons=buttons,
+        _render_moderation_results=lambda: rendered.append(True),
+    )
+
+    library_views.LibraryWindow._set_moderation_filter(app, "approved")
+
+    assert app._moderation_filter == "approved"
+    assert buttons["pending_review"].kind == "secondary"
+    assert buttons["approved"].kind == "primary"
+    assert rendered == [True]
