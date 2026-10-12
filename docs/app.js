@@ -24,64 +24,6 @@ const screens = {
   leitor: {image: 'screenshots/desktop-leitor.png'},
   pastas: {image: 'screenshots/desktop-pastas.png'}
 };
-const releaseDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases/tags/v0.2.1.1';
-const allReleasesDownloadEndpoint = 'https://api.github.com/repos/lucrazy-fn/PANEL-ComicBookReader/releases?per_page=100';
-const downloadStatsCacheKey = 'komicove.downloads.v0.2.1.1.v2';
-const downloadAssetGroups = {
-  windows: ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
-  linux: ['Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Linux-0.2.1.1-x86_64.flatpak'],
-  android: ['Komicove-Android-0.2.1.1.apk']
-};
-let downloadStats = null;
-
-function renderDownloadCounts() {
-  if (!downloadStats) return;
-  const formatter = new Intl.NumberFormat(language === 'pt-BR' ? 'pt-BR' : 'en');
-  const total = document.querySelector('#download-total');
-  total.querySelector('[data-download-total]').textContent = formatter.format(downloadStats.total);
-  total.querySelector('[data-download-total-label]').textContent = t(downloadStats.total === 1 ? 'downloads.totalSingle' : 'downloads.totalPlural');
-  const allTotal = downloadStats.allTotal ?? downloadStats.total;
-  total.querySelector('[data-download-all-total]').textContent = formatter.format(allTotal);
-  total.querySelector('[data-download-all-count]').textContent = t(allTotal === 1 ? 'downloads.countSingle' : 'downloads.countPlural');
-  total.hidden = false;
-  for (const [platform, count] of Object.entries(downloadStats.platforms)) {
-    const counter = document.querySelector(`[data-download-count="${platform}"]`);
-    counter.querySelector('strong').textContent = formatter.format(count);
-    counter.querySelector('span').textContent = t(count === 1 ? 'downloads.countSingle' : 'downloads.countPlural');
-    counter.hidden = false;
-  }
-}
-
-async function loadDownloadCounts() {
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem(downloadStatsCacheKey)); } catch { /* Fetch current data when cache is unavailable. */ }
-  const hasCompleteCache = cached?.stats && Number.isFinite(cached.stats.allTotal);
-  if (hasCompleteCache && Date.now() - cached.savedAt < 15 * 60 * 1000) {
-    downloadStats = cached.stats;
-    renderDownloadCounts();
-    return;
-  }
-  try {
-    const [response, allResponse] = await Promise.all([fetch(releaseDownloadEndpoint), fetch(allReleasesDownloadEndpoint)]);
-    if (!response.ok || !allResponse.ok) throw new Error('GitHub API request failed');
-    const [release, allReleases] = await Promise.all([response.json(), allResponse.json()]);
-    const counts = Object.fromEntries(release.assets.map(asset => [asset.name, Number(asset.download_count) || 0]));
-    downloadStats = {
-      total: Object.values(counts).reduce((sum, count) => sum + count, 0),
-      allTotal: allReleases.reduce((sum, item) => sum + item.assets.reduce((assetSum, asset) => assetSum + (Number(asset.download_count) || 0), 0), 0),
-      platforms: Object.fromEntries(Object.entries(downloadAssetGroups).map(([platform, assets]) => [platform, assets.reduce((sum, asset) => sum + (counts[asset] || 0), 0)]))
-    };
-    try { localStorage.setItem(downloadStatsCacheKey, JSON.stringify({savedAt: Date.now(), stats: downloadStats})); } catch { /* Live values are still shown without cache. */ }
-    renderDownloadCounts();
-  } catch {
-    if (hasCompleteCache) {
-      downloadStats = cached.stats;
-      renderDownloadCounts();
-    }
-  }
-}
-
-loadDownloadCounts();
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const demoVideos = [...document.querySelectorAll('.demo-video')];
 const androidDemo = document.querySelector('#android-demo');
@@ -269,7 +211,6 @@ function changeLanguage(next, persist = true) {
   language = next === 'pt-BR' ? 'pt-BR' : 'en';
   if (persist) { try { localStorage.setItem(languageKey, language); } catch { /* Language switching still works without storage. */ } }
   translatePage();
-  renderDownloadCounts();
   setMenu(toggle.getAttribute('aria-expanded') === 'true');
   selectTab(selected);
   if (lightbox.open) {

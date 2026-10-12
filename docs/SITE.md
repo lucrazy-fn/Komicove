@@ -9,6 +9,7 @@ Existing technical documentation, release notes, and image assets are retained.
 - `cinematic.css`: visual system shared by every public page, including responsive layouts.
 - `mobile.css`: phone-specific navigation, Android-first downloads, guide layouts, and touch spacing.
 - `help.css` and `help-hub.js`: the Reader's Desk layout for Docs, Tutorials, and Downloads, with a sticky grouped index, topic finder, and a phone drawer.
+- `download-versions.css` and `download-versions.js`: version selection on the homepage and download page, release asset links, package availability, and per-version counts. The catalog also includes earlier PANEL releases and counts every release asset in the project total.
 - `assets/hero-noir.webp` and `assets/comic-cover.webp`: existing Komicove artwork optimized for the cover and feature story.
 - `assets/logo.png` and `assets/komicove.ico`: official Komicove artwork used in the site identity and favicon.
 - `assets/komicove-preview.mp4` and `assets/komicove-preview.webp`: 25-second, silent desktop tour cut from the supplied screen recording and its poster.
@@ -56,9 +57,15 @@ starts automatically while visible; both pause when the page is hidden, and
 neither starts automatically when reduced motion is preferred. Native video
 controls remain available for manual playback and fullscreen viewing.
 
-Download totals come from the public GitHub Releases API. The site sums the
-assets for each platform and caches the result for 15 minutes in local storage.
-If the API is unavailable, the counters stay hidden or use the last cached value.
+The homepage and download page share a saved release selection. The menu uses
+the public GitHub Releases API to add releases with downloadable files,
+including earlier PANEL versions. It updates links to the actual assets,
+hides missing package types, and shows counts for the selected release and
+every public release asset combined. The catalog is cached
+for 15 minutes in local storage. Seventeen confirmed versions and their links are
+bundled for offline or rate-limited access. If live counts are unavailable,
+the counters stay hidden or use the last cached values. The unselected latest
+release remains usable without JavaScript.
 
 For new interface copy, add the same message key in both dictionaries and use
 `data-i18n="key"`, `data-i18n-alt="key"`, or `data-i18n-aria-label="key"`.

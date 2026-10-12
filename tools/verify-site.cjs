@@ -25,7 +25,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.equal(new Set(ids).size, ids.length, `Duplicate HTML ids in ${file}`);
   for (const [, href] of html.matchAll(/href="(#[^"]+)"/g)) assert.ok(ids.includes(href.slice(1)), `Broken anchor in ${file}: ${href}`);
 
-  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|help\.|help-hub\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
+  for (const [, asset] of html.matchAll(/(?:src|href|poster)="((?:assets\/|screenshots\/|styles\.|cinematic\.|mobile\.|help\.|help-hub\.|download-versions\.|app\.|news\.|guide\.|float-nav\.|theme\.|translations\.)[^"]+)"/g)) {
     assert.ok(fs.existsSync(path.join(root, asset.split('?')[0])), `Missing asset in ${file}: ${asset}`);
   }
   assert.match(html, /data-theme-toggle/, `Missing theme control in ${file}`);
@@ -71,6 +71,18 @@ const docsHtml = htmlByPage['docs.html'];
 const tutorialsHtml = htmlByPage['tutoriais.html'];
 const supportHtml = htmlByPage['apoie.html'];
 const downloadHtml = htmlByPage['download.html'];
+for (const file of ['index.html', 'download.html']) {
+  const html = htmlByPage[file];
+  assert.match(html, /data-download-picker/, `Missing version picker with no-JavaScript fallback in ${file}`);
+  assert.match(html, /data-download-current>v0\.2\.1\.1/, `Missing static latest release in ${file}`);
+  assert.match(html, /data-download-options/, `Missing release options in ${file}`);
+  assert.match(html, /src="download-versions\.js\?v=\d+"/, `Missing release selector logic in ${file}`);
+  assert.match(html, /href="download-versions\.css\?v=\d+"/, `Missing release selector styles in ${file}`);
+  assert.match(html, /data-download-release-link/, `Missing selected release destination in ${file}`);
+  for (const kind of ['android', 'windows', 'portable', 'linux', 'flatpak']) {
+    assert.ok(html.includes(`data-download-asset="${kind}"`), `Missing ${kind} package control in ${file}`);
+  }
+}
 for (const id of ['android-guide', 'desktop-guide', 'biblioteca', 'leitor', 'arquivos', 'backup', 'ajuda']) {
   assert.ok(docsHtml.includes(`id="${id}"`), `Missing docs topic: ${id}`);
 }
@@ -131,11 +143,13 @@ assert.equal(socialCard.readUInt32BE(16), 1200, 'Social card width');
 assert.equal(socialCard.readUInt32BE(20), 630, 'Social card height');
 const visualCss = fs.readFileSync(path.join(root, 'cinematic.css'), 'utf8');
 assert.equal((visualCss.match(/{/g) || []).length, (visualCss.match(/}/g) || []).length, 'Unbalanced visual CSS');
+const versionsCss = fs.readFileSync(path.join(root, 'download-versions.css'), 'utf8');
+assert.equal((versionsCss.match(/{/g) || []).length, (versionsCss.match(/}/g) || []).length, 'Unbalanced release selector CSS');
 for (const [, asset] of visualCss.matchAll(/url\(['"]?(assets\/[^)'" ]+)/g)) {
   assert.ok(fs.existsSync(path.join(root, asset)), `Missing CSS artwork: ${asset}`);
 }
 
-for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'help-hub.js', 'float-nav.js', 'theme.js']) {
+for (const file of ['app.js', 'translations.js', 'news.js', 'guide.js', 'help-hub.js', 'download-versions.js', 'float-nav.js', 'theme.js']) {
   new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), {filename: file});
 }
 const floatClasses = new Set();
@@ -264,7 +278,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /<html lang="en">/, `${file} must use English as its static language`);
   assert.doesNotMatch(html, /\u2014/, `${file} contains an em dash`);
 }
-for (const file of ['app.js', 'news.js', 'guide.js', 'help-hub.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'help.css', 'styles.css']) {
+for (const file of ['app.js', 'news.js', 'guide.js', 'help-hub.js', 'download-versions.js', 'float-nav.js', 'theme.js', 'translations.js', 'cinematic.css', 'mobile.css', 'help.css', 'download-versions.css', 'styles.css']) {
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\u2014/, `${file} contains an em dash`);
 }
 
