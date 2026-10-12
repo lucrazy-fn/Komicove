@@ -1,4 +1,5 @@
 fastapi>=0.115,<1
+boto3>=1.35,<2
 uvicorn[standard]>=0.30,<1
 sqlalchemy>=2,<3
 psycopg[binary]>=3.2,<4

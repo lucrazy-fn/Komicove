@@ -17,6 +17,7 @@ import requests
 from fastapi import UploadFile
 from PIL import Image
 from komicove_backend.config_env import setting
+from komicove_backend.catalog import b2_storage
 
 ALLOWED_EXTENSIONS = {".cbz", ".zip", ".cbr", ".rar", ".pdf"}
 
@@ -37,8 +38,7 @@ class UnsafeAssetError(ValueError):
     pass
 
 
-class RemoteStorageError(RuntimeError):
-    pass
+RemoteStorageError = b2_storage.RemoteStorageError
 
 
 def storage_dir() -> Path:
@@ -113,11 +113,14 @@ def _remote_get_json(base: str, key: str, bucket: str, name: str) -> dict | None
     try:
         value = response.json()
     except ValueError as exc:
-        raise RemoteStorageError("Manifesto remoto inválido.") from exc
+        raise RemoteStorageError("Manifesto remoto inv�lido.") from exc
     return value if isinstance(value, dict) else None
 
 
 def _remote_upload(path: Path, name: str) -> None:
+    if b2_storage.configured():
+        b2_storage.upload(path, name)
+        return
     config = _remote_config()
     if not config:
         return
@@ -157,7 +160,7 @@ def _remote_upload(path: Path, name: str) -> None:
             try:
                 _remote_delete_object(base, key, bucket, part_name)
             except requests.RequestException:
-                log.warning("Não foi possível limpar a parte incompleta %s", part_name)
+                log.warning("N�o foi poss�vel limpar a parte incompleta %s", part_name)
         raise
 
 
@@ -169,6 +172,8 @@ def asset_exists(stored_name: str) -> bool:
     """Check availability without downloading the complete comic archive."""
     local = storage_dir() / Path(stored_name).name
     if local.is_file():
+        return True
+    if b2_storage.configured() and b2_storage.exists(Path(stored_name).name):
         return True
     config = _remote_config()
     if not config:
@@ -227,6 +232,8 @@ def resolve_cover(stored_name: str) -> Path | None:
 
 
 def _remote_download(name: str, target: Path) -> None:
+    if b2_storage.configured() and b2_storage.download(name, target):
+        return
     config = _remote_config()
     if not config:
         raise FileNotFoundError(name)
@@ -254,13 +261,13 @@ def _remote_download(name: str, target: Path) -> None:
     if manifest is None:
         raise FileNotFoundError(name)
     if manifest.get("format") != "komicove.multipart.v1":
-        raise RemoteStorageError("Formato multipart remoto não reconhecido.")
+        raise RemoteStorageError("Formato multipart remoto n�o reconhecido.")
     parts = manifest.get("parts")
     expected_size = manifest.get("size")
     expected_hash = manifest.get("sha256")
     if (not isinstance(parts, list) or not isinstance(expected_size, int)
             or expected_size < 0 or expected_size > MAX_UPLOAD_BYTES):
-        raise RemoteStorageError("Manifesto multipart remoto inválido.")
+        raise RemoteStorageError("Manifesto multipart remoto inv�lido.")
 
     written = 0
     digest = hashlib.sha256()
@@ -269,7 +276,7 @@ def _remote_download(name: str, target: Path) -> None:
             for index, part in enumerate(parts):
                 expected_name = _part_name(name, index)
                 if not isinstance(part, dict) or part.get("name") != expected_name:
-                    raise RemoteStorageError("Parte remota inválida.")
+                    raise RemoteStorageError("Parte remota inv�lida.")
                 part_response = requests.get(
                     _remote_url(base, bucket, expected_name),
                     headers=_remote_headers(key), timeout=120, stream=True,
@@ -302,6 +309,9 @@ def delete_remote(name: str) -> None:
     local_name = Path(name).name
     (storage_dir() / local_name).unlink(missing_ok=True)
     (storage_dir() / _cover_name(local_name)).unlink(missing_ok=True)
+    if b2_storage.configured():
+        b2_storage.delete(local_name)
+        b2_storage.delete(_cover_name(local_name))
     config = _remote_config()
     if not config:
         return
@@ -311,7 +321,7 @@ def delete_remote(name: str) -> None:
     try:
         manifest = _remote_get_json(base, key, bucket, manifest_name)
     except requests.RequestException:
-        log.warning("Não foi possível consultar o manifesto de %s durante a remoção", name)
+        log.warning("N�o foi poss�vel consultar o manifesto de %s durante a remo��o", name)
     for remote_name in (Path(name).name, _cover_name(name)):
         _remote_delete_object(base, key, bucket, remote_name)
     if isinstance(manifest, dict):
@@ -327,7 +337,7 @@ async def save_upload(upload: UploadFile) -> tuple[str, str, int, str]:
     original = Path(upload.filename or "quadrinho").name
     extension = Path(original).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise UnsafeAssetError("Formato não permitido. Use CBZ, CBR, ZIP, RAR ou PDF.")
+        raise UnsafeAssetError("Formato n�o permitido. Use CBZ, CBR, ZIP, RAR ou PDF.")
 
     fd, temporary = tempfile.mkstemp(prefix="upload-", suffix=extension, dir=storage_dir())
     digest = hashlib.sha256()
@@ -378,18 +388,18 @@ def _validate_file(path: Path, extension: str) -> None:
             for info in archive.infolist():
                 member = PurePosixPath(info.filename.replace("\\", "/"))
                 if member.is_absolute() or ".." in member.parts:
-                    raise UnsafeAssetError("O arquivo contém caminhos inseguros.")
+                    raise UnsafeAssetError("O arquivo cont�m caminhos inseguros.")
                 total += info.file_size
                 if total > MAX_UNCOMPRESSED_BYTES:
-                    raise UnsafeAssetError("Conteúdo descompactado excede o limite seguro.")
+                    raise UnsafeAssetError("Conte�do descompactado excede o limite seguro.")
                 if info.compress_size and info.file_size / info.compress_size > 200:
-                    raise UnsafeAssetError("Taxa de compressão suspeita (possível ZIP bomb).")
+                    raise UnsafeAssetError("Taxa de compress�o suspeita (poss�vel ZIP bomb).")
     elif header.startswith(b"Rar!"):
         return
     elif extension == ".pdf" and header.startswith(b"%PDF-"):
         return
     else:
-        raise UnsafeAssetError("O conteúdo não corresponde a um quadrinho suportado.")
+        raise UnsafeAssetError("O conte�do n�o corresponde a um quadrinho suportado.")
 
 
 def cover_jpeg(path: Path, max_size: tuple[int, int] = (360, 520)) -> bytes:
@@ -403,7 +413,7 @@ def cover_jpeg(path: Path, max_size: tuple[int, int] = (360, 520)) -> bytes:
                 key=str.casefold,
             )
             if not names:
-                raise UnsafeAssetError("O quadrinho não contém imagens.")
+                raise UnsafeAssetError("O quadrinho n�o cont�m imagens.")
             image_data = archive.read(names[0])
     elif extension in {".cbr", ".rar"}:
         import rarfile
@@ -413,14 +423,14 @@ def cover_jpeg(path: Path, max_size: tuple[int, int] = (360, 520)) -> bytes:
                 key=str.casefold,
             )
             if not names:
-                raise UnsafeAssetError("O quadrinho não contém imagens.")
+                raise UnsafeAssetError("O quadrinho n�o cont�m imagens.")
             image_data = archive.read(names[0])
     elif extension == ".pdf":
         import pymupdf
         document = pymupdf.open(path)
         try:
             if document.page_count == 0:
-                raise UnsafeAssetError("PDF sem páginas.")
+                raise UnsafeAssetError("PDF sem p�ginas.")
             pixmap = document[0].get_pixmap(matrix=pymupdf.Matrix(1.2, 1.2), alpha=False)
             image_data = pixmap.tobytes("png")
         finally:

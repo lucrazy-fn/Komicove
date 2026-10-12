@@ -20,6 +20,7 @@ dependencies = [
 ai = ["onnxruntime>=1.30,<2", "numpy>=2,<3"]
 build = ["pyinstaller>=6,<7"]
 server = [
+  "boto3>=1.35,<2",
   "markdown-it-py>=3,<5",
   "fastapi>=0.115,<1",
   "sqlalchemy>=2,<3",
