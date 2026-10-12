@@ -77,13 +77,45 @@ def _error_details(exc: Exception) -> tuple[str, int | None]:
     return type(exc).__name__, None
 
 
+def _error_reason(exc: Exception) -> str:
+    """Classify server messages without logging values that may contain secrets."""
+    current: BaseException | None = exc
+    for _ in range(4):
+        if current is None:
+            break
+        response = getattr(current, "response", None)
+        if isinstance(response, dict):
+            error = response.get("Error", {})
+            message = error.get("Message", "") if isinstance(error, dict) else ""
+            if isinstance(message, str):
+                lowered = message.lower()
+                if "credential" in lowered and "malformed" in lowered:
+                    return "malformed_credentials"
+                if "checksum" in lowered:
+                    return "checksum"
+                if "chunk" in lowered:
+                    return "chunked_encoding"
+                if "region" in lowered:
+                    return "region"
+                if "bucket" in lowered:
+                    return "bucket"
+                if "signature" in lowered:
+                    return "signature"
+                if "authorization" in lowered:
+                    return "authorization"
+                if "access key" in lowered or "application key" in lowered:
+                    return "access_key"
+        current = current.__cause__ or current.__context__
+    return "other"
+
+
 def upload(path: Path, name: str) -> None:
     client, bucket = _client()
     try:
         client.upload_file(str(path), bucket, name)
     except Exception as exc:
         code, status = _error_details(exc)
-        log.warning("B2 upload failed: code=%s status=%s", code, status)
+        log.warning("B2 upload failed: code=%s status=%s reason=%s", code, status, _error_reason(exc))
         raise RemoteStorageError("O Backblaze B2 recusou ou interrompeu o envio.") from exc
 
 
@@ -96,7 +128,7 @@ def exists(name: str) -> bool:
         if _missing(exc):
             return False
         code, status = _error_details(exc)
-        log.warning("B2 lookup failed: code=%s status=%s", code, status)
+        log.warning("B2 lookup failed: code=%s status=%s reason=%s", code, status, _error_reason(exc))
         return False
 
 
