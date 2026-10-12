@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -20,6 +21,14 @@ from komicove_backend.moderation.db_models import ModerationRecordRow
 router = APIRouter(prefix="/moderation", tags=["moderation"])
 
 
+def _asset_availability(names: list[str]) -> dict[str, bool]:
+    unique_names = list(dict.fromkeys(names))
+    if not unique_names:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(unique_names))) as pool:
+        return dict(zip(unique_names, pool.map(asset_exists, unique_names)))
+
+
 @router.get("/queue", response_model=list[ModerationQueueItem])
 def queue(
     include_decided: bool = False,
@@ -37,6 +46,9 @@ def queue(
     if not include_decided:
         query = query.where(ModerationRecordRow.manual_override_status.is_(None))
     rows = db.execute(query).all()
+    available = _asset_availability([
+        asset.stored_name for _, _, _, _, asset in rows if asset is not None
+    ])
     return [
         ModerationQueueItem(
             record_id=record.id,
@@ -52,7 +64,7 @@ def queue(
             confidence=record.confidence,
             justification=record.internal_justification,
             created_at=record.created_at,
-            has_file=bool(asset is not None and asset_exists(asset.stored_name)),
+            has_file=bool(asset is not None and available[asset.stored_name]),
             original_filename=asset.original_filename if asset else None,
             status=(record.manual_override_status or "pending_review"),
             decision_reason=record.manual_override_reason,
