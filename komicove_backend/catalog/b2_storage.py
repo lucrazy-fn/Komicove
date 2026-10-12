@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,7 +22,7 @@ def configured() -> bool:
     if not any(values.values()):
         return False
     if not all(values.values()):
-        raise RemoteStorageError("Configura��o do Backblaze B2 incompleta no servidor.")
+        raise RemoteStorageError("Configuração do Backblaze B2 incompleta no servidor.")
     return True
 
 
@@ -30,7 +31,7 @@ def _client():
         import boto3
         from botocore.config import Config
     except ImportError as exc:
-        raise RemoteStorageError("Depend�ncia boto3 ausente no servidor.") from exc
+        raise RemoteStorageError("Dependência boto3 ausente no servidor.") from exc
 
     endpoint = os.environ["B2_ENDPOINT"].strip().rstrip("/")
     parsed = urlsplit(endpoint)
@@ -57,11 +58,32 @@ def _missing(exc: Exception) -> bool:
     return code in {"404", "NoSuchKey", "NotFound"}
 
 
+def _error_details(exc: Exception) -> tuple[str, int | None]:
+    """Return only safe S3 error metadata, never request headers or keys."""
+    current: BaseException | None = exc
+    for _ in range(4):
+        if current is None:
+            break
+        response = getattr(current, "response", None)
+        if isinstance(response, dict):
+            error = response.get("Error", {})
+            metadata = response.get("ResponseMetadata", {})
+            code = error.get("Code") if isinstance(error, dict) else None
+            status = metadata.get("HTTPStatusCode") if isinstance(metadata, dict) else None
+            safe_code = str(code) if code and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", str(code)) else "unknown"
+            safe_status = status if isinstance(status, int) and 100 <= status <= 599 else None
+            return safe_code, safe_status
+        current = current.__cause__ or current.__context__
+    return type(exc).__name__, None
+
+
 def upload(path: Path, name: str) -> None:
     client, bucket = _client()
     try:
         client.upload_file(str(path), bucket, name)
     except Exception as exc:
+        code, status = _error_details(exc)
+        log.warning("B2 upload failed: code=%s status=%s", code, status)
         raise RemoteStorageError("O Backblaze B2 recusou ou interrompeu o envio.") from exc
 
 
@@ -73,7 +95,8 @@ def exists(name: str) -> bool:
     except Exception as exc:
         if _missing(exc):
             return False
-        log.warning("N�o foi poss�vel consultar o arquivo %s no B2: %s", name, type(exc).__name__)
+        code, status = _error_details(exc)
+        log.warning("B2 lookup failed: code=%s status=%s", code, status)
         return False
 
 
@@ -87,7 +110,7 @@ def download(name: str, target: Path) -> bool:
     except Exception as exc:
         if _missing(exc):
             return False
-        raise RemoteStorageError("N�o foi poss�vel baixar o arquivo do Backblaze B2.") from exc
+        raise RemoteStorageError("Não foi possível baixar o arquivo do Backblaze B2.") from exc
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -97,4 +120,4 @@ def delete(name: str) -> None:
     try:
         client.delete_object(Bucket=bucket, Key=name)
     except Exception as exc:
-        raise RemoteStorageError("N�o foi poss�vel excluir o arquivo do Backblaze B2.") from exc
+        raise RemoteStorageError("Não foi possível excluir o arquivo do Backblaze B2.") from exc
