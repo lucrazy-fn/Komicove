@@ -182,10 +182,10 @@ class LibraryWindow(tk.Tk):
             self._schedule_sync()
             return
         self._sync_running = True
-        progress, favorites, state = sync_snapshot()
-        paths = self._folder_index.paths(visible_only=False)
         def worker():
             try:
+                progress, favorites, state = sync_snapshot()
+                paths = self._folder_index.paths(visible_only=False)
                 payload, paths_by_id = build_sync_payload(progress, favorites, paths, state, self._folder_index.snapshot()["books"])
                 # Bound requests to the API batch limit, including large libraries.
                 merged = {}
