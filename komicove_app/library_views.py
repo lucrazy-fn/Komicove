@@ -524,8 +524,13 @@ class LibraryWindow(tk.Tk):
         self._render_moderation_results()
 
     def _set_moderation_filter(self, value):
+        if value == self._moderation_filter:
+            return
         self._moderation_filter = value
-        self._render_moderation_tab()
+        for key, button in getattr(self, "_moderation_filter_buttons", {}).items():
+            button.kind = "primary" if key == value else "secondary"
+            button._draw(False)
+        self._render_moderation_results()
 
     def _paint_moderation_hero(self):
         hero = getattr(self, "_moderation_hero", None)
