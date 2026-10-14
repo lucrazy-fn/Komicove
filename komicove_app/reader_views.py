@@ -4,6 +4,8 @@ from komicove_app.guided import DetectionCache, reading_regions
 from komicove_app.guided_ai import LocalPanelAI
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from queue import SimpleQueue, Empty
+from bisect import bisect_right
 from komicove_app.panel_editor import PanelEditor
 from komicove_app.design.icons import lucide_icon
 from komicove_app.design.styles import KomicoveButton, KomicoveCard
@@ -174,7 +176,8 @@ class ThumbnailStrip(tk.Frame):
 
 
 class WebtoonContent:
-    def __init__(self, parent, loader: SmartPageLoader, width=800, height=900):
+    def __init__(self, parent, loader: SmartPageLoader, width=800, height=900,
+                 page=0, offset=0., ratio=1.4, on_position=None):
         super().__init__(parent)
         if not getattr(self,'_embedded',False):
             self.title(ui('Komicove - Modo Webtoon', 'Komicove - Webtoon Mode'))
@@ -182,35 +185,87 @@ class WebtoonContent:
         bg = THEME["canvas_bg"]
         self.configure(bg=bg)
         self._loader = loader
-        self._tw = width - 40
-        self._labels = {}
+        self._tw = max(1, width - 40)
+        self._labels = {}  # Only canvas items near the viewport.
         self._loaded = set()
-        self._placeholders = {}
+        self._photos = {}
+        self._images = {}
+        self._tiles = {}
+        self._ratios = [1.4] * loader.count
+        self._tops = []
+        self._future = None
+        self._cancel = None
+        self._request = None
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='webtoon')
+        self._failed = set()
+        self._stopped = False
+        self._fullscreen_animation = None
+        self._fullscreen_bar_height = None
+        self._on_position = on_position
+        self._last_position = None
+        self._position_changed = time.monotonic()
+        self._initial_position = (max(0, min(page, max(0, loader.count-1))), max(0., min(.999, offset)))
+        if loader.count:
+            self._ratios[self._initial_position[0]] = ratio
+        loader.release_pages()
 
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0)
         self.scrollbar = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set, yscrollincrement=24)
         self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
 
-        self.inner = tk.Frame(self.canvas, bg=bg)
-        self.canvas.create_window((width // 2, 0), window=self.inner, anchor="n")
-        self.inner.bind("<Configure>",
-                        lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind('<Configure>', self._resize)
         self.canvas.bind("<MouseWheel>", self._wheel)
         self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._wheel))
         self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
+        self.canvas.bind('<Button-4>', lambda e: self._scroll(-3))
+        self.canvas.bind('<Button-5>', lambda e: self._scroll(3))
+        self.bind('<Destroy>', lambda e: self._stop_loading() if e.widget is self else None, add='+')
 
-        self._build_placeholders(bg)
-        self.after(60, self._check_visible)
+        self._reflow(self._initial_position)
+        self._poll=self.after(60, self._check_visible)
         if not getattr(self, '_embedded', False):
             self.bind('<F11>', lambda _e: self._fullscreen())
             self.bind('<Escape>', lambda _e: self._escape())
 
     def _fullscreen(self):
         host = self.winfo_toplevel()
-        host.attributes('-fullscreen', not host.attributes('-fullscreen'))
-        self._apply_fullscreen_layout()
+        fullscreen = not host.attributes('-fullscreen')
+        if self._fullscreen_animation:
+            self.after_cancel(self._fullscreen_animation)
+            self._fullscreen_animation = None
+        bar = getattr(self, '_bar', None)
+        if bar:
+            self.update_idletasks()
+            if self._fullscreen_bar_height is None:
+                self._fullscreen_bar_height = bar.winfo_reqheight()
+            start_height = bar.winfo_height() if bar.winfo_ismapped() else 0
+            bar.pack_propagate(False)
+            bar.configure(height=max(1, start_height))
+            bar.pack(fill='x', before=self.canvas)
+        host.attributes('-fullscreen', fullscreen)
+        if fullscreen:
+            self.scrollbar.pack_forget()
+        else:
+            self.scrollbar.pack(side='right', fill='y')
+        started = time.perf_counter()
+        def frame():
+            self._fullscreen_animation = None
+            if self._stopped:
+                return
+            progress = min(1., (time.perf_counter() - started) / .18)
+            if bar:
+                target = 0 if fullscreen else self._fullscreen_bar_height
+                bar.configure(height=max(1, round(start_height + (target-start_height)*ease_out(progress))))
+            if progress < 1:
+                self._fullscreen_animation = self.after(16, frame)
+            else:
+                if bar:
+                    bar.configure(height=self._fullscreen_bar_height)
+                    bar.pack_propagate(True)
+                self._apply_fullscreen_layout()
+        self._fullscreen_animation = self.after(0, frame)
 
     def _apply_fullscreen_layout(self):
         if self.winfo_toplevel().attributes('-fullscreen'):
@@ -226,54 +281,154 @@ class WebtoonContent:
         else:
             self.destroy()
 
-    def _build_placeholders(self, bg=None):
-        if bg is None:
-            bg = THEME["canvas_bg"]
-        ph_text = THEME["text_muted"]
-        est_h = int(self._tw * 1.4)
-        for idx in range(self._loader.count):
-            lbl = tk.Label(self.inner, bg=bg, text=f"··· {idx+1} ···",
-                           fg=ph_text, height=int(est_h / 18))
-            lbl.pack(side="top", fill="x", pady=0)
-            self._labels[idx] = lbl
+    def _position(self):
+        top = max(0., self.canvas.canvasy(0))
+        idx = max(0, min(self._loader.count-1, bisect_right(self._tops, top)-1))
+        height = max(1, self._tops[idx+1]-self._tops[idx]) if self._loader.count else 1
+        return idx, max(0., min(.999, (top-self._tops[idx])/height)) if self._loader.count else 0.
+
+    def _reflow(self, anchor):
+        self._tops = [0]
+        for ratio in self._ratios:
+            self._tops.append(self._tops[-1]+max(1, int(self._tw*ratio)))
+        self.canvas.configure(scrollregion=(0, 0, self._tw, max(1, self._tops[-1])))
+        for idx, item in self._labels.items():
+            self.canvas.coords(item, self.canvas.winfo_width()/2, self._tops[idx]+self._tiles.get(idx,(0,0,0))[1])
+        if self._loader.count:
+            idx, offset = anchor
+            self.canvas.yview_moveto((self._tops[idx]+offset*(self._tops[idx+1]-self._tops[idx]))/max(1,self._tops[-1]))
+
+    def _resize(self, _event):
+        width = max(1, self.canvas.winfo_width()-40)
+        if width == self._tw:
+            return
+        anchor = self._initial_position or self._position()
+        self._initial_position = None
+        self._tw = width
+        if self._cancel:
+            self._cancel.set()
+        # Keep viewport images visible while sharper replacements decode.
+        self._loaded.clear(); self._failed.clear()
+        self._reflow(anchor)
+        self._paint_visible()
 
     def _wheel(self, e):
-        self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-        self.after(40, self._check_visible)
+        self._scroll(int(-e.delta/120)*3)
+
+    def _scroll(self, units):
+        self._initial_position = None
+        self.canvas.yview_scroll(units, 'units')
 
     def _check_visible(self):
-        pass
-        if not self.winfo_exists():
+        if self._stopped or not self.winfo_exists():
             return
         top = self.canvas.canvasy(0)
         bot = top + self.canvas.winfo_height()
-        margin = self.canvas.winfo_height()
-        for idx, lbl in self._labels.items():
-            if idx in self._loaded or not lbl.winfo_exists():
-                continue
-            ly = lbl.winfo_y()
-            lh = lbl.winfo_height()
-            if (ly + lh) >= (top - margin) and ly <= (bot + margin):
-                self._load_page(idx)
-
-    def _load_page(self, idx):
-        self._loaded.add(idx)
-        def work():
+        first = max(0, bisect_right(self._tops, top)-1)
+        last = min(self._loader.count-1, bisect_right(self._tops, bot)-1)
+        wanted = set(range(max(0, first-1), min(self._loader.count, last+2)))
+        for idx in set(self._labels)-wanted:
+            self.canvas.delete(self._labels.pop(idx)); self._photos.pop(idx,None); self._loaded.discard(idx); self._failed.discard(idx)
+            image=self._images.pop(idx,None)
+            if image:image.close()
+            self._tiles.pop(idx,None)
+        for idx in wanted-set(self._labels):
+            self._labels[idx] = self.canvas.create_text(self.canvas.winfo_width()/2, self._tops[idx],
+                text=f'··· {idx+1} ···', fill=THEME['text_muted'], anchor='n')
+        if self._request and (self._request[0] not in wanted or self._request[1] != self._tw):
+            self._cancel.set()
+        if self._future and self._future.done():
+            idx, width = self._request
             try:
-                pil = self._loader.get_pil(idx).convert("RGB")
-                pil.thumbnail((self._tw, 99999), Image.LANCZOS)
-                def apply():
-                    if not self.winfo_exists():
-                        return
-                    tk_img = ImageTk.PhotoImage(pil)
-                    lbl = self._labels.get(idx)
-                    if lbl and lbl.winfo_exists():
-                        lbl.config(image=tk_img, text="", height=0)
-                        lbl.image = tk_img
-                self.after(0, apply)
-            except Exception as e:
-                print("webtoon load err:", e)
-        threading.Thread(target=work, daemon=True).start()
+                image, ratio = self._future.result()
+                try:
+                    if not self._cancel.is_set() and idx in wanted and width == self._tw:
+                        anchor = self._position()
+                        self._ratios[idx] = ratio
+                        self._reflow(anchor)
+                        previous=self._images.get(idx)
+                        self._images[idx]=image
+                        self._tiles.pop(idx,None)
+                        if previous is not None:previous.close()
+                        self._loaded.add(idx)
+                finally:
+                    if self._images.get(idx) is not image:image.close()
+            except Exception:
+                if not self._cancel.is_set() and idx in wanted:
+                    self._failed.add(idx)
+                    self.canvas.itemconfigure(self._labels[idx],text=ui('Página indisponível','Page unavailable'))
+            self._future = None; self._request = None
+        if self._future is None:
+            order = list(range(first,last+1))+[last+1,first-1]
+            for idx in order:
+                if idx in wanted and idx not in self._loaded and idx not in self._failed:
+                    self._cancel = Event(); self._request = (idx,self._tw)
+                    self._future = self._executor.submit(self._loader.get_scaled,idx,self._tw,self._cancel)
+                    break
+        self._paint_visible()
+        position = self._position()
+        if position != self._last_position:
+            self._last_position = position; self._position_changed = time.monotonic()
+        elif self._on_position and time.monotonic()-self._position_changed >= .25:
+            self._notify_position(); self._position_changed = float('inf')
+        self._poll=self.after(16,self._check_visible)
+
+    def _paint_visible(self):
+        # Tk gets a viewport tile, never a huge upscaled Webtoon bitmap.
+        top=self.canvas.canvasy(0); bottom=top+self.canvas.winfo_height()
+        for idx,image in self._images.items():
+            height=self._tops[idx+1]-self._tops[idx]
+            start=max(0,int((top-self._tops[idx]-256)//256)*256)
+            end=min(height,int((bottom-self._tops[idx]+511)//256)*256)
+            if end<=start:
+                if idx in self._photos:
+                    self.canvas.delete(self._labels[idx]);self._photos.pop(idx);self._tiles.pop(idx,None)
+                    self._labels[idx]=self.canvas.create_text(self.canvas.winfo_width()/2,self._tops[idx],text='',anchor='n')
+                continue
+            key=(self._tw,start,end)
+            if self._tiles.get(idx)==key:continue
+            tile=image.resize((self._tw,end-start),Image.Resampling.BILINEAR,
+                              box=(0,start*image.height/height,image.width,end*image.height/height))
+            try:photo=ImageTk.PhotoImage(tile,master=self.canvas)
+            finally:tile.close()
+            self.canvas.delete(self._labels[idx]);self._photos[idx]=photo;self._tiles[idx]=key
+            self._labels[idx]=self.canvas.create_image(self.canvas.winfo_width()/2,self._tops[idx]+start,image=photo,anchor='n')
+
+    def _notify_position(self):
+        if self._on_position and self._loader.count:
+            idx, offset = self._position()
+            self._on_position(idx,offset,self._ratios[idx])
+
+    def _stop_loading(self):
+        if self._stopped:
+            return
+        try:self._notify_position()
+        except tk.TclError:pass
+        self._stopped = True
+        if self._fullscreen_animation:
+            self.after_cancel(self._fullscreen_animation)
+            self._fullscreen_animation = None
+        if self._poll:
+            try:self.after_cancel(self._poll)
+            except tk.TclError:pass
+            self._poll=None
+        if self._cancel:
+            self._cancel.set()
+        if self._future:
+            def dispose(future):
+                try:future.result()[0].close()
+                except Exception:pass
+            self._future.add_done_callback(dispose)
+        self._executor.shutdown(wait=False,cancel_futures=True)
+        try:self.canvas.delete('all')
+        except tk.TclError:pass
+        for image in self._images.values():image.close()
+        self._images.clear(); self._tiles.clear()
+        self._photos.clear(); self._loaded.clear(); self._labels.clear()
+
+    def destroy(self):
+        self._stop_loading()
+        super().destroy()
 
 
 class WebtoonViewer(WebtoonContent,tk.Toplevel):
@@ -305,6 +460,9 @@ class ReaderContent:
         self._brightness = 1.0
         self._double    = False
         self._immersive = False
+        self._fullscreen_animation = None
+        self._resize_render = None
+        self._chrome_geometry = None
         self._fading    = False
         self._page_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='reader-page')
         self._slider    = None
@@ -334,6 +492,12 @@ class ReaderContent:
         self._detection_cancel = Event()
         self._detection_poll = None
         self._detection_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="guided")
+        self._translation_regions = []
+        self._translation_page = -1
+        self._translation_view = prefs.get("translation_view", "original")
+        self._translation_transform = None
+        self._translation_checked = None
+        self._translation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="translation-cache")
         self._editor_future = None
         self._editor_poll = None
         self._editor_cancel = Event()
@@ -377,14 +541,19 @@ class ReaderContent:
         self._thumb_visible = False
 
         self._build()
-        self.after(80, self._initial_render)
-        self._prefetch_neighbors()
+        if reader_state.get('vertical_active',False):
+            self.after(80,self._open_webtoon)
+        else:
+            self.after(80, self._initial_render)
+            self._prefetch_neighbors()
 
     @property
     def _count(self):
         return self._loader.count
 
     def _build(self):
+        self._cancel_fullscreen_animation()
+        self._chrome_geometry = None
         for w in self.winfo_children():
             w.destroy()
         c = THEME
@@ -426,6 +595,8 @@ class ReaderContent:
         self._overview_btn.pack(side="right", padx=3)
         self._mkbtn(right, ui('Preferências', 'Preferences'), self._reader_preferences,
                     icon_name="sliders-horizontal").pack(side="right", padx=3)
+        self._mkbtn(right, ui('OCR e tradução', 'OCR and translation'), self._translation_dialog,
+                    icon_name="book-open").pack(side="right", padx=3)
         self._mkbtn(right, ui('Editar quadros', 'Edit panels'), self._edit_panels,
                     icon_name="pencil").pack(side="right", padx=3)
         self._mkbtn(right, ui('Modo claro', 'Light mode') if IS_DARK else ui('Modo escuro', 'Dark mode'), self._toggle_theme,
@@ -442,6 +613,7 @@ class ReaderContent:
         self._guided_heading=KomicoveButton(guide_row,ui('Se localizar','Find your place'),self._toggle_overview,guide_palette,compact=True,icon_name='book-open')
         self._guide_status = tk.Label(guide_row, font=("Segoe UI", 9), bg=c["surface"], fg=c["text_dim"])
         self._guided_header_items=[self._guided_heading,self._guide_status,
+            self._mkbtn(guide_row,ui('Traduzir','Translate'),self._translation_dialog,icon_name='book-open'),
             self._mkbtn(guide_row,ui('Redetectar','Redetect'),self._redetect_panels,icon_name='refresh-cw'),
             self._mkbtn(guide_row,ui('Editar quadros','Edit panels'),self._edit_panels,icon_name='pencil'),
             self._mkbtn(guide_row,ui('Sair','Exit'),self._toggle_guided,icon_name='maximize')]
@@ -559,7 +731,7 @@ class ReaderContent:
         self._cv.bind("<B1-Motion>",      self._drag_move)
         self._cv.bind("<ButtonRelease-1>",self._drag_end)
         self._cv.bind("<MouseWheel>",     self._wheel)
-        self._cv.bind("<Configure>",      lambda e: self.after(80, lambda: self._show(reset=False)))
+        self._cv.bind("<Configure>", self._schedule_resize_render)
         self.bind("<Left>",   lambda e: self._prev())
         self.bind("<Right>",  lambda e: self._next())
         self.bind("<Prior>",  lambda e: self._prev())
@@ -657,6 +829,9 @@ class ReaderContent:
         return combo
 
     def _show(self, reset=True, alpha=1.0):
+        webtoon=getattr(self,'_webtoon',None)
+        if webtoon is not None and not webtoon._stopped:
+            return
         cw = self._cv.winfo_width() or 800
         ch = self._cv.winfo_height() or 600
         frame_key = (self._idx, cw, ch, self._rotation, self._effective_brightness(),
@@ -669,6 +844,9 @@ class ReaderContent:
             return
         img = self._compose_pages()
         iw, ih = img.size
+        self._translation_transform = None
+        if self._translation_view == 'overlay' and self._translation_page != self._idx and not self._double:
+            self._request_translation_cache()
         if not self._guide_motion:
             record_page_read(
                 self._content_key, self._idx, self._count,
@@ -704,6 +882,11 @@ class ReaderContent:
                 sampling = Image.Resampling.BILINEAR if self._guide_motion else Image.Resampling.LANCZOS
                 full, scale = _guided_crop(source, rect, cw, ch, self._guided_zoom, sampling)
                 self._guide_render_scale = scale * source.width / iw
+                pw = (rect[2] - rect[0]) * source.width * scale
+                ph = (rect[3] - rect[1]) * source.height * scale
+                self._translation_transform = ((cw - pw) / 2 - rect[0] * source.width * scale,
+                                               (ch - ph) / 2 - rect[1] * source.height * scale,
+                                               source.width * scale, source.height * scale)
                 self._rendered_key, self._rendered_frame = frame_key, full
                 self._present_frame(full, alpha)
                 if not self._guide_motion:
@@ -730,6 +913,8 @@ class ReaderContent:
                     draw.rectangle(tuple(v+(-padding if i<2 else padding) for i,v in enumerate(bounds)),outline=(255,40,65,opacity),width=2)
                 draw.rectangle(bounds,outline=THEME["accent"],width=3)
                 full=Image.alpha_composite(full.convert("RGBA"),overlay).convert("RGB")
+                self._translation_transform = ((cw - crop.width) / 2, (ch - crop.height) / 2,
+                                               crop.width, crop.height)
             self._rendered_key, self._rendered_frame = frame_key, full
             self._present_frame(full, alpha)
             if not self._guide_motion:
@@ -765,12 +950,18 @@ class ReaderContent:
         px = cw // 2 + int(self._offset[0]) - nw // 2
         py = ch // 2 + int(self._offset[1]) - nh // 2
         full.paste(resized.convert("RGB"), (px, py))
+        self._translation_transform = (px, py, nw, nh)
 
         self._rendered_key, self._rendered_frame = frame_key, full
         self._present_frame(full, alpha)
         self._hud()
 
     def _present_frame(self, full, alpha=1.0):
+        if (self._translation_view == 'overlay' and self._translation_page == self._idx
+                and self._translation_regions and self._translation_transform and not self._double):
+            from komicove_app.translation_views import draw_translation_overlay
+            full = draw_translation_overlay(full, self._translation_regions, self._translation_transform,
+                                            self._regions[self._region_index] if self._guided and self._regions and not self._guide_overview else None)
         if alpha < 1.0:
             background = THEME['canvas_bg'] if self._guided else ((7, 7, 14) if IS_DARK else (232, 228, 222))
             full = Image.blend(Image.new('RGB', full.size, background), full, alpha)
@@ -824,6 +1015,9 @@ class ReaderContent:
         animate()
 
     def _prefetch_neighbors(self):
+        webtoon=getattr(self,'_webtoon',None)
+        if webtoon is not None and not webtoon._stopped:
+            return
         self._loader.prefetch(self._idx + 1)
         self._loader.prefetch(self._idx + 2)
         self._loader.prefetch(self._idx - 1)
@@ -935,6 +1129,10 @@ class ReaderContent:
     def _dispose_detection(self,event):
         if event.widget is not self:
             return
+        self._cancel_fullscreen_animation()
+        if self._resize_render:
+            self.after_cancel(self._resize_render)
+            self._resize_render = None
         self._detection_cancel.set()
         self._editor_cancel.set()
         if self._editor_poll:
@@ -1254,6 +1452,64 @@ class ReaderContent:
     def _initial_render(self):
         self._show(reset=False)
 
+    def _translation_dialog(self):
+        from komicove_app.translation_views import TranslationDialog
+        existing = getattr(self, '_translation_window', None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        self._translation_window = TranslationDialog(self)
+
+    def _apply_translation_rows(self, page, rows):
+        if self.winfo_exists() and page == self._idx:
+            self._translation_page = page
+            self._translation_regions = rows
+            self._show(reset=False)
+
+    def _request_translation_cache(self):
+        prefs = load_prefs()
+        key = (self._idx, self._rotation, prefs.get('translation_source', 'auto'),
+               prefs.get('translation_target', 'pt'), prefs.get('translation_provider', 'local'),
+               prefs.get('translation_model', ''), prefs.get('translation_endpoint', ''),
+               prefs.get('translation_glossary', '{}'), prefs.get('translation_ocr', 'eng'),
+               self._manga, prefs.get('translation_vision', False))
+        if self._translation_checked == key:
+            return
+        self._translation_checked = key
+        page, rotation = self._idx, self._rotation
+        def load():
+            from komicove_app.comic_translation import read_cache, rotate_regions
+            import json
+            image = self._loader.get_pil(page).copy()
+            if rotation:
+                image = image.rotate(-rotation, expand=True)
+            try:
+                glossary = json.loads(key[7])
+            except ValueError:
+                glossary = {}
+            rows = read_cache(self._content_key, page, image, *key[2:7], glossary, key[8], key[9], key[10],
+                              turns=rotation // 90)
+            if rows is None and rotation:
+                original = self._loader.get_pil(page).copy()
+                rows = read_cache(self._content_key, page, original, *key[2:7],
+                                  glossary, key[8], key[9], key[10])
+                if rows is not None:
+                    rows = rotate_regions(rows, rotation // 90)
+            return rows
+        future = self._translation_executor.submit(load)
+        def done():
+            if not future.done():
+                if self.winfo_exists():
+                    self.after(100, done)
+                return
+            try:
+                rows = future.result()
+            except Exception:
+                return
+            if rows is not None:
+                self._apply_translation_rows(page, rows)
+        self.after(100, done)
+
     def _reader_preferences(self):
         dialog = tk.Toplevel(self)
         dialog.title(ui('Preferências do leitor', 'Reader preferences'))
@@ -1270,6 +1526,11 @@ class ReaderContent:
                  bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w", pady=(3,0))
         KomicoveButton(header, ui('Fechar', 'Close'), dialog.destroy, THEME, kind="secondary",
                        compact=True, icon_name="x").pack(side="right", padx=24)
+        def translation_settings():
+            dialog.destroy()
+            self._translation_dialog()
+        KomicoveButton(header, ui('OCR e tradução', 'OCR and translation'), translation_settings,
+                       THEME, kind="secondary", compact=True, icon_name="book-open").pack(side="right", padx=6)
         body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=24,pady=18)
         persist = self._own_variable(tk.BooleanVar(master=self,value=self._persist_zoom))
         position = self._own_variable(tk.BooleanVar(master=self,value=self._persist_position))
@@ -1438,6 +1699,13 @@ class ReaderContent:
 
     def _rotate(self):
         self._rotation = (self._rotation + 90) % 360
+        if self._translation_page == self._idx and self._translation_regions:
+            from komicove_app.comic_translation import rotate_regions
+            rotated = rotate_regions(self._translation_regions, 1)
+            self._translation_regions = rotated
+            window = getattr(self, '_translation_window', None)
+            if window is not None and window.winfo_exists():
+                window._show_regions(rotated)
         self._show(reset=True)
 
     def _effective_brightness(self):
@@ -1716,6 +1984,25 @@ class ReaderContent:
     def _fullscreen(self):
         self._immersive_toggle()
 
+    def _schedule_resize_render(self, _event=None):
+        if self._resize_render:
+            self.after_cancel(self._resize_render)
+        def render():
+            self._resize_render = None
+            if not getattr(self, '_closing', False):
+                self._show(reset=False)
+        self._resize_render = self.after(16, render)
+
+    def _cancel_fullscreen_animation(self):
+        if self._fullscreen_animation:
+            self.after_cancel(self._fullscreen_animation)
+            self._fullscreen_animation = None
+        if self._chrome_geometry:
+            for widget, height, propagate in self._chrome_geometry:
+                if widget.winfo_exists():
+                    widget.configure(height=height)
+                    widget.pack_propagate(propagate)
+
     def _apply_immersive_layout(self):
         if self._immersive:
             for widget in (self._top, self._header_divider, self._bot, self._thumb_frame):
@@ -1728,10 +2015,42 @@ class ReaderContent:
                 self._thumb_frame.pack(fill="x", before=self._bot)
 
     def _immersive_toggle(self):
+        self._cancel_fullscreen_animation()
+        if not self._immersive:
+            self.update_idletasks()
+            self._chrome_geometry = [(widget, widget.winfo_height(), widget.pack_propagate())
+                                     for widget in (self._top, self._header_divider, self._bot, self._thumb_frame)
+                                     if widget.winfo_ismapped()]
         self._immersive = not self._immersive
+        if not self._immersive:
+            self._apply_immersive_layout()
+            if not self._chrome_geometry:
+                self.update_idletasks()
+                self._chrome_geometry = [(widget, widget.winfo_height(), widget.pack_propagate())
+                                         for widget in (self._top, self._header_divider, self._bot, self._thumb_frame)
+                                         if widget.winfo_ismapped()]
+        for widget, height, _propagate in self._chrome_geometry or []:
+            widget.pack_propagate(False)
+            widget.configure(height=height if self._immersive else 1)
         self.attributes("-fullscreen", self._immersive)
-        self._apply_immersive_layout()
-        self.after(60, lambda: self._show(reset=False))
+        started = time.perf_counter()
+        def frame():
+            self._fullscreen_animation = None
+            if getattr(self, '_closing', False):
+                return
+            progress = min(1., (time.perf_counter() - started) / .18)
+            amount = ease_out(progress)
+            for widget, height, _propagate in self._chrome_geometry or []:
+                widget.configure(height=max(1, round(height * (1 - amount if self._immersive else amount))))
+            self.update_idletasks()
+            if progress < 1:
+                self._fullscreen_animation = self.after(16, frame)
+            else:
+                self._cancel_fullscreen_animation()
+                self._apply_immersive_layout()
+                self.update_idletasks()
+            self._show(reset=False)
+        self._fullscreen_animation = self.after(0, frame)
 
     def _escape(self):
         if self.attributes("-fullscreen"):
@@ -1764,8 +2083,33 @@ class ReaderContent:
         self.after(80, lambda: self._show(reset=False))
 
     def _open_webtoon(self):
-        WebtoonViewer(self, self._loader,
-                      width=self.winfo_width(), height=self.winfo_height())
+        viewer=WebtoonViewer(self, self._loader, width=self.winfo_width(), height=self.winfo_height(),
+                            **self._webtoon_options())
+        self._webtoon=viewer
+        def closed(event):
+            if event.widget is viewer:
+                self._webtoon=None
+                if not getattr(self,'_closing',False):
+                    save_reader_state(self._content_key,vertical_active=False)
+                    self.after(80,lambda:self._show(reset=False))
+        viewer.bind('<Destroy>',closed,add='+')
+
+    def _vertical_position(self, page, offset, ratio):
+        self._idx=page
+        save_progress(self._path,page)
+        save_reader_state(self._content_key,page=page,vertical_page=page,vertical_offset=offset,vertical_ratio=ratio)
+        record_page_read(self._content_key,page,self._count,path=self._path,metadata=self._statistics_metadata)
+
+    def _webtoon_options(self):
+        state=load_reader_state(self._content_key)
+        resume=state.get('vertical_page')==self._idx
+        save_reader_state(self._content_key,vertical_active=True)
+        self._detection_cancel.set(); self._editor_cancel.set(); self._guide_pending=False
+        self._processed_key=None; self._processed_image=None
+        self._rendered_key=None; self._rendered_frame=None
+        self._tk_img=None; self._cv.delete('all')
+        return dict(page=self._idx,offset=state.get('vertical_offset',0.) if resume else 0.,
+                    ratio=state.get('vertical_ratio',1.4) if resume else 1.4,on_position=self._vertical_position)
 
     def _toggle_thumbnails(self):
         if self._thumb_visible:
@@ -1781,6 +2125,9 @@ class ReaderContent:
             self._open_thumbnails()
 
     def _open_thumbnails(self):
+        self._thumb_generation = getattr(self, '_thumb_generation', 0) + 1
+        generation = self._thumb_generation
+        self._thumb_queue = SimpleQueue()
         self._thumb_visible = True
         self._thumb_btn.pill_set_text(ui('Páginas', 'Pages'))
         self._thumb_btn.pill_set_active(True)
@@ -1792,26 +2139,55 @@ class ReaderContent:
         self._thumb_strip.pack(fill="both", expand=True)
         if not self._immersive and not self._thumb_frame.winfo_ismapped():
             self._thumb_frame.pack(fill="x", before=self._bot)
-        threading.Thread(target=self._load_thumbs_bg, daemon=True).start()
+        threading.Thread(target=self._load_thumbs_bg, args=(generation, self._thumb_queue), daemon=True).start()
+        self.after(50, lambda: self._drain_thumbs(generation))
 
-    def _load_thumbs_bg(self):
+    def _load_thumbs_bg(self, generation, output):
         TW, TH = 60, 84
         for i in range(self._count):
+            webtoon=getattr(self,'_webtoon',None)
+            if webtoon is not None and not webtoon._stopped:
+                return
             try:
                 pil = self._loader.get_thumbnail_pil(i, TW, TH)
-                def add(idx=i, p=pil):
-                    if self._thumb_strip and self._thumb_strip.winfo_exists():
-                        tk_img = ImageTk.PhotoImage(p)
-                        self._thumb_strip.add_thumbnail(tk_img, idx)
-                        self._thumb_strip.highlight(self._idx)
-                self.after(0, add)
+                if generation != self._thumb_generation:
+                    return
+                output.put((i, pil))
             except Exception:
                 pass
+        output.put(None)
+
+    def _drain_thumbs(self, generation):
+        if getattr(self, '_closing', False) or generation != self._thumb_generation:
+            return
+        finished = False
+        while True:
+            try:
+                item = self._thumb_queue.get_nowait()
+            except Empty:
+                break
+            if item is None:
+                finished = True
+                break
+            index, pil = item
+            if self._thumb_strip and self._thumb_strip.winfo_exists():
+                self._thumb_strip.add_thumbnail(ImageTk.PhotoImage(pil), index)
+                self._thumb_strip.highlight(self._idx)
+        if not finished and self.winfo_exists():
+            self.after(50, lambda: self._drain_thumbs(generation))
 
     def _close(self):
         if getattr(self,'_closing',False):
             return
         self._closing=True
+        self._translation_executor.shutdown(wait=False, cancel_futures=True)
+        self._cancel_fullscreen_animation()
+        if self._resize_render:
+            self.after_cancel(self._resize_render)
+            self._resize_render = None
+        webtoon=getattr(self,'_webtoon',None)
+        if webtoon is not None and webtoon.winfo_exists():
+            webtoon._stop_loading()
         self._save_guided_position()
         save_progress(self._path, self._idx)
         save_reader_state(self._content_key, page=self._idx,
@@ -1909,11 +2285,13 @@ class EmbeddedReader(ReaderContent,tk.Frame):
         def back():
             self._webtoon=None
             if not self._destroyed:
+                if not getattr(self,'_closing',False):
+                    save_reader_state(self._content_key,vertical_active=False)
                 self.pack(fill='both',expand=True)
                 self.focus_set()
                 self.after(80,lambda:self._show(reset=False))
         self._webtoon=EmbeddedWebtoon(self.master,self._loader,
-            width=self.winfo_width(),height=self.winfo_height(),on_close=back)
+            width=self.winfo_width(),height=self.winfo_height(),on_close=back,**self._webtoon_options())
         self.pack_forget()
         self._webtoon.pack(fill='both',expand=True)
 
@@ -1923,12 +2301,12 @@ class EmbeddedWebtoon(WebtoonContent,tk.Frame):
     after=EmbeddedReader.after
     after_cancel=EmbeddedReader.after_cancel
 
-    def __init__(self,master,loader,width,height,on_close):
+    def __init__(self,master,loader,width,height,on_close,**options):
         self._scheduled=set();self._destroyed=False
         self._return=on_close
         self._host=master.winfo_toplevel();self._escape_binding=None
         self._previous_fullscreen=self._host.attributes('-fullscreen')
-        super().__init__(master,loader,width,height)
+        super().__init__(master,loader,width,height,**options)
         bar=tk.Frame(self,bg=THEME['surface'])
         self._bar=bar
         bar.pack(fill='x',before=self.canvas)

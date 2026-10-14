@@ -137,6 +137,17 @@ final class BookSource implements Closeable {
         }
         StringBuilder key=new StringBuilder();for(byte value:digest.digest())key.append(String.format(Locale.ROOT,"%02x",value&255));return key.toString();
     }
+    float aspectRatio(int index)throws Exception {
+        lifecycle.readLock().lockInterruptibly();
+        try {
+            checkCancelled();if(closed)throw new IOException("Arquivo indisponível.");
+            if(pdf!=null){synchronized(pdfLock){try(PdfRenderer.Page p=pdf.openPage(index)){return (float)p.getHeight()/p.getWidth();}}}
+            BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+            try(InputStream in=open(index)){BitmapFactory.decodeStream(in,null,bounds);}
+            checkCancelled();if(bounds.outWidth<=0||bounds.outHeight<=0)throw new IOException("Imagem inválida.");
+            return (float)bounds.outHeight/bounds.outWidth;
+        }finally{lifecycle.readLock().unlock();}
+    }
     Bitmap page(int index,int target)throws IOException {
         try{lifecycle.readLock().lockInterruptibly();}catch(InterruptedException e){Thread.currentThread().interrupt();throw new InterruptedIOException();}
         Bitmap decoded=null;

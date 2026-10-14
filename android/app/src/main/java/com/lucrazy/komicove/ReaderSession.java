@@ -14,6 +14,7 @@ final class ReaderSession implements Closeable {
     private final LibraryStore store;private final LibraryStore.Book book;
     private final ConcurrentMap<Integer,java.util.concurrent.locks.ReentrantLock> decodeLocks=new ConcurrentHashMap<>();
     private volatile boolean closed;private volatile BookSource source;
+    final ConcurrentMap<Integer,Float> verticalRatios=new ConcurrentHashMap<>();
     final PanelDetector.Cache detections;
     PanelDetector.Result detection(int page,Bitmap bitmap,boolean manga,boolean force)throws InterruptedIOException{
         BookSource.checkCancelled();if(closed)throw new InterruptedIOException();

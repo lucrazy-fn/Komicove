@@ -1,5 +1,6 @@
 from __future__ import annotations
-import io, os, re, threading, zipfile, shutil, subprocess
+import io, os, re, threading, zipfile, shutil, subprocess, sys, time
+from concurrent.futures import CancelledError
 from pathlib import Path
 from PIL import Image, ImageDraw
 from .translations import ui
@@ -15,20 +16,49 @@ IMG_EXTS={".jpg",".jpeg",".png",".webp",".gif",".bmp"}
 SUPPORTED_EXTENSIONS=(".cbz", ".cbr", ".zip", ".rar", ".pdf", ".7z", ".cb7", ".tar", ".cbt", ".epub")
 
 def find_7zip():
+    bundled = Path(getattr(sys, "_MEIPASS", "")) / "7zz" if getattr(sys, "_MEIPASS", None) else None
     candidates = [os.environ.get("KOMICOVE_7ZIP_PATH"), os.environ.get("PANEL_7ZIP_PATH"),
-                  shutil.which("7z"), shutil.which("7zz"),
+                  bundled, shutil.which("7zz"), shutil.which("7z"),
                   r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe"]
     return next((str(p) for p in candidates if p and Path(p).is_file()), None)
 
-def run_7zip(executable, arguments):
+def run_7zip(executable, arguments, cancel=None):
     try:
-        result = subprocess.run([executable, *arguments], stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if cancel is None:
+            result = subprocess.run([executable, *arguments], stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            with subprocess.Popen([executable, *arguments], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as process:
+                deadline=time.monotonic()+60
+                try:
+                    while True:
+                        if cancel.is_set():raise CancelledError()
+                        if time.monotonic()>=deadline:raise subprocess.TimeoutExpired(process.args,60)
+                        try:
+                            stdout,stderr=process.communicate(timeout=.1)
+                            result=subprocess.CompletedProcess(process.args,process.returncode,stdout,stderr)
+                            break
+                        except subprocess.TimeoutExpired:pass
+                finally:
+                    if process.poll() is None:process.kill();process.communicate()
     except subprocess.TimeoutExpired as exc:
         raise ValueError(ui("O 7-Zip demorou demais para abrir o arquivo.", "7-Zip took too long to open the file.")) from exc
     if result.returncode != 0:
-        raise ValueError(ui("O 7-Zip não conseguiu ler o arquivo. Verifique se está íntegro e sem senha.", "7-Zip could not read the file. Make sure it is intact and not password-protected."))
+        # Some older RARs produce a 7-Zip warning after successfully writing
+        # the selected image to stdout. Accept only a recognizable image.
+        data = result.stdout
+        image = (data.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF87a", b"GIF89a", b"BM"))
+                 or data.startswith(b"RIFF") and data[8:12] == b"WEBP")
+        if not (result.returncode == 1 and arguments and arguments[0] == "x" and image):
+            detail = (result.stderr or result.stdout).decode("utf-8", "replace").strip()[-500:]
+            code = ui("código", "code")
+            raise ValueError(ui("O 7-Zip não conseguiu ler o arquivo.",
+                                "7-Zip could not read the file.") +
+                             (f" ({code} {result.returncode}: {detail})" if detail else
+                              f" ({code} {result.returncode})"))
     return result.stdout
 def natural_key(value): return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(value))]
 class ArchiveBackend:
@@ -81,14 +111,81 @@ class ArchiveBackend:
         if self.kind=="rar":
             with rarfile.RarFile(self.path) as source:return source.read(self.names[index])
         if self.kind=="7zip":
-            return run_7zip(self._seven_zip,["x","-so","-spd","--",str(Path(self.path).resolve()),self.names[index]])
+            return self._read_7zip_page(index)
         page=self._pdf_doc.load_page(index); return page.get_pixmap(matrix=fitz.Matrix(2,2)).tobytes("png")
+    def _read_7zip_page(self, index, cancel=None):
+        try:
+            arguments = ["x", "-so", "-spd", "--", str(Path(self.path).resolve()), self.names[index]]
+            return (run_7zip(self._seven_zip, arguments) if cancel is None else
+                    run_7zip(self._seven_zip, arguments, cancel))
+        except ValueError as original:
+            if Path(self.path).suffix.lower() not in {".rar", ".cbr"} or rarfile is None:
+                raise
+            try:
+                with rarfile.RarFile(self.path) as source:
+                    return source.read(self.names[index])
+            except Exception as fallback:
+                raise ValueError(ui("Falha ao extrair a página RAR com 7-Zip e rarfile.",
+                                    "Could not extract the RAR page with 7-Zip or rarfile.")
+                                 + f" 7-Zip: {original}; rarfile: {fallback}") from fallback
     def close(self):
         with self._read_lock:
             self._closed = True
             if self._zip_source:
                 self._zip_source.close(); self._zip_source = None
             if self._pdf_doc: self._pdf_doc.close(); self._pdf_doc=None
+    def read_scaled(self, index, width, cancel):
+        def check():
+            if cancel.is_set():
+                raise CancelledError()
+        check()
+        with self._read_lock:
+            check()
+            if self._closed:
+                raise ValueError('Archive is closed')
+            if self.kind == 'pdf':
+                page = self._pdf_doc.load_page(index)
+                ratio = page.rect.height / page.rect.width
+                scale = min(width / page.rect.width, (8_000_000 / (page.rect.width * page.rect.height)) ** .5)
+                pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                check()
+                return Image.frombytes('RGB', (pix.width, pix.height), pix.samples), ratio
+            if self.kind == 'zip':
+                if self._zip_source is None:
+                    self._zip_source = zipfile.ZipFile(self.path)
+                with self._zip_source.open(self.names[index]) as source:
+                    data = io.BytesIO()
+                    while True:
+                        check()
+                        chunk = source.read(65536)
+                        if not chunk:
+                            break
+                        data.write(chunk)
+                data.seek(0)
+            elif self.kind == '7zip':
+                data=io.BytesIO(self._read_7zip_page(index,cancel))
+            else:
+                data=io.BytesIO()
+                with rarfile.RarFile(self.path) as archive, archive.open(self.names[index]) as source:
+                    while True:
+                        check();chunk=source.read(65536)
+                        if not chunk:break
+                        data.write(chunk)
+                data.seek(0)
+        check()
+        with Image.open(data) as original:
+            ratio = original.height / original.width
+            target = min(width, original.width, max(1, int((8_000_000 / ratio) ** .5)))
+            size = (target, max(1, int(target * ratio)))
+            original.draft('RGB', size)
+            check()
+            original.thumbnail(size, Image.Resampling.LANCZOS)
+            check()
+            image = original.convert('RGB')
+        if cancel.is_set():
+            image.close()
+            raise CancelledError()
+        return image, ratio
 def extract_cover_only(path):
     backend=ArchiveBackend(path)
     try:
@@ -102,18 +199,23 @@ def rounded_image(image,radius):
     out=Image.new("RGBA",image.size); out.paste(image.convert("RGBA"),mask=mask); return out
 class SmartPageLoader:
     WINDOW=4
-    def __init__(self,path): self.backend=ArchiveBackend(path); self._cache={}; self._lock=threading.Lock(); self._prefetching=set()
+    def __init__(self,path): self.backend=ArchiveBackend(path); self._cache={}; self._lock=threading.Lock(); self._prefetching=set(); self._cache_generation=0
     @property
     def count(self):return self.backend.count
     @property
     def names(self):return self.backend.names
     @property
     def entries(self):return self.backend.names
-    def get_pil(self,index):
+    def get_pil(self,index,*,generation=None):
         with self._lock:
             if index in self._cache:return self._cache[index]
+            started_generation=self._cache_generation
         image=pil_from_bytes(self.backend.read_page(index))
         with self._lock:
+            if generation is not None and generation != self._cache_generation:
+                image.close()
+                raise CancelledError()
+            if started_generation != self._cache_generation:return image
             self._cache[index]=image
             for key in list(self._cache):
                 if abs(key-index)>self.WINDOW:self._cache.pop(key,None)
@@ -123,11 +225,19 @@ class SmartPageLoader:
         with self._lock:
             if index in self._cache or index in self._prefetching:return
             self._prefetching.add(index)
+            generation=self._cache_generation
         def work():
-            try:self.get_pil(index)
+            try:self.get_pil(index,generation=generation)
+            except CancelledError:pass
             finally:
                 with self._lock:self._prefetching.discard(index)
         threading.Thread(target=work,daemon=True).start()
+    def release_pages(self):
+        with self._lock:
+            self._cache_generation += 1
+            self._cache.clear()
+    def get_scaled(self,index,width,cancel):
+        return self.backend.read_scaled(index,max(1,int(width)),cancel)
     def get_thumbnail_pil(self,index,width,height):
         image=self.get_pil(index).convert("RGB"); image.thumbnail((width,height),Image.BILINEAR); return image
     def close(self):self.backend.close(); self._cache.clear()

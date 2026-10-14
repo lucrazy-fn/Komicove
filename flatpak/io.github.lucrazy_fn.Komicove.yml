@@ -15,8 +15,13 @@ finish-args:
   - --socket=x11
   - --device=dri
   - --filesystem=home
+  - --filesystem=/mnt:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --talk-name=org.freedesktop.secrets
   - --env=KOMICOVE_APPDATA_DIR=
   - --env=KOMICOVE_PANEL_MODEL=/app/local_models/inkwell.onnx
+  - --env=TESSDATA_PREFIX=/app/share/tessdata
 
 cleanup:
   - /include
@@ -136,6 +141,50 @@ modules:
       - type: file
         url: https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl
         sha256: 0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+
+  - name: python3-langdetect
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST}
+        --no-deps --no-build-isolation six==1.17.0 langdetect==1.0.9
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2569554f7c70f4a3c27712f40e3284d483e88094cc0e/langdetect-1.0.9.tar.gz
+        sha256: cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0
+      - type: file
+        url: https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl
+        sha256: 4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+
+  - name: leptonica
+    buildsystem: autotools
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz
+        sha256: c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DBUILD_TESTS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.2.tar.gz
+        sha256: 6235ea0dae45ea137f59c09320406f5888383741924d98855bd2ce0d16b54f21
+
+  - name: tessdata-fast
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 eng.traineddata ${FLATPAK_DEST}/share/tessdata/eng.traineddata
+      - install -Dm644 por.traineddata ${FLATPAK_DEST}/share/tessdata/por.traineddata
+    sources:
+      - type: file
+        url: https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata
+        sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+      - type: file
+        url: https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/por.traineddata
+        sha256: c4932b937207a9514b7514d518b931a99938c02a28a5a5a553f8599ed58b7deb
 
   # ---------------------------------------------------------------------
   # O app em si. Troque "url"/"tag" pela branch/tag real que você quer

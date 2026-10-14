@@ -13,12 +13,6 @@ android {
         targetSdk 36
         versionCode 10722
         versionName '0.2.1.1'
-        def selectedAbis = providers.gradleProperty('komicoveAbis').getOrNull()
-        if (selectedAbis) {
-            def abis = selectedAbis.split(',').collect { it.trim() }
-            if (!abis.every { it in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] }) throw new GradleException('Unsupported Android ABI.')
-            ndk { abiFilters.addAll(abis) }
-        }
         manifestPlaceholders = [appLabel: 'Komicove']
         testInstrumentationRunner providers.gradleProperty('fullscreenTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderFullscreenInstrumentation' : providers.gradleProperty('authLanguageTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.AuthLanguageInstrumentation' : providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderPhase4Instrumentation' : providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
     }
@@ -42,11 +36,15 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes {
         debug {
+            if (providers.gradleProperty('phasePre9Test').getOrElse('false').toBoolean()) {
+                applicationIdSuffix '.pre9test'
+                manifestPlaceholders = [appLabel: 'Komicove Pré-9 Teste']
+            }
             if (providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) {
                 applicationIdSuffix '.phase4test'
                 manifestPlaceholders = [appLabel: 'Komicove Fase 4 Teste']
             }
-            if (!providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) manifestPlaceholders = [appLabel: 'Komicove']
+            if (!providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() && !providers.gradleProperty('phasePre9Test').getOrElse('false').toBoolean()) manifestPlaceholders = [appLabel: 'Komicove']
             if (providers.gradleProperty('guidedAiTest').getOrElse('false').toBoolean()) {
                 applicationIdSuffix '.aitest'
                 manifestPlaceholders = [appLabel: 'Komicove IA Teste']
@@ -77,6 +75,12 @@ tasks.register('copyNamedDebugApk', Copy) {
 
 dependencies {
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.30.0'
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
+    implementation 'com.google.mlkit:language-id:17.0.6'
+    implementation 'com.google.mlkit:translate:17.0.3'
     if (providers.gradleProperty('guidedAiNativeTest').getOrElse('false').toBoolean()) {
         testRuntimeOnly 'com.microsoft.onnxruntime:onnxruntime:1.30.0'
     }

@@ -14,10 +14,12 @@ dependencies = [
   "rarfile>=4,<5",
   "PyMuPDF>=1.24,<2",
   "requests>=2.32,<3",
+  "langdetect>=1.0.9,<2",
 ]
 
 [project.optional-dependencies]
 ai = ["onnxruntime>=1.30,<2", "numpy>=2,<3"]
+translation = ["argostranslate>=1.9,<2"]
 build = ["pyinstaller>=6,<7"]
 server = [
   "boto3>=1.35,<2",

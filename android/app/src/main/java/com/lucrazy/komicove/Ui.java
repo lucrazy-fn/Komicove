@@ -19,6 +19,7 @@ final class Ui {
             SURFACE_HOVER=0xff202b38, BORDER=0xff344152, TEXT=0xfff8f9fb,
             MUTED=0xffaebbd0, RED=0xffef2638, RED_BRIGHT=0xffff4050;
     static final int SUCCESS=0xff35d58b, WARNING=0xfff6c453, ERROR=0xffff5665;
+    static final int GOLD=0xffe8b23d, GOLD_BRIGHT=0xffffca4f, GOLD_DARK=0xff7d5c0f;
     static final int RADIUS_SMALL=10, RADIUS_MEDIUM=14, RADIUS_LARGE=20, RADIUS_PILL=28;
     static final int SPACE_XS=4, SPACE_SM=8, SPACE_MD=12, SPACE_LG=16, SPACE_XL=24;
 
@@ -38,6 +39,13 @@ final class Ui {
         GradientDrawable halo=bordered(c,0x22ff2638,0x66ff2638,radius+2);
         GradientDrawable core=bordered(c,color,RED_BRIGHT,radius);
         return new LayerDrawable(new Drawable[]{halo,core});
+    }
+    static Drawable supportPanel(Context c) {
+        GradientDrawable halo=shape(0x20ffca4f,dp(c,RADIUS_LARGE+2));
+        GradientDrawable core=bordered(c,SURFACE,GOLD_BRIGHT,RADIUS_LARGE);
+        LayerDrawable layers=new LayerDrawable(new Drawable[]{halo,core});
+        layers.setLayerInset(1,dp(c,2),dp(c,2),dp(c,2),dp(c,2));
+        return layers;
     }
     static LinearLayout column(Context c) { LinearLayout v=new LinearLayout(c); v.setOrientation(LinearLayout.VERTICAL); return v; }
     static LinearLayout row(Context c) { LinearLayout v=new LinearLayout(c); v.setOrientation(LinearLayout.HORIZONTAL); v.setGravity(android.view.Gravity.CENTER_VERTICAL); return v; }
@@ -62,6 +70,12 @@ final class Ui {
         states.addState(new int[]{android.R.attr.state_pressed},glow(c,0xffc91f30,RADIUS_MEDIUM));
         states.addState(new int[]{},glow(c,RED,RADIUS_MEDIUM));
         b.setBackground(states);b.setTextColor(Color.WHITE);return b;
+    }
+    static Button supportButton(Context c,String s,Runnable action) {
+        Button b=button(c,s,action);StateListDrawable states=new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed},bordered(c,0xffc99628,GOLD_BRIGHT,RADIUS_MEDIUM));
+        states.addState(new int[]{},bordered(c,GOLD,GOLD_BRIGHT,RADIUS_MEDIUM));
+        b.setBackground(states);b.setTextColor(0xff17120a);return b;
     }
     static Button chip(Context c,String s,int icon,boolean active,Runnable action) {
         Button b=active?primaryButton(c,s,action):button(c,s,action);b.setTextSize(12);b.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);

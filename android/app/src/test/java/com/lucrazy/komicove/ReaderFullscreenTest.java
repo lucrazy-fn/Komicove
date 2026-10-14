@@ -34,6 +34,7 @@ public class ReaderFullscreenTest {
     private void ready(ReaderActivity a)throws Exception{long deadline=System.currentTimeMillis()+15000;do{Shadows.shadowOf(Looper.getMainLooper()).idle();if(field(a,"source")!=null&&!(boolean)field(a,"loading"))return;Thread.sleep(10);}while(System.currentTimeMillis()<deadline);fail("Reader not ready");}
     private void layout(ReaderActivity a)throws Exception{View v=(View)field(a,"root");v.measure(View.MeasureSpec.makeMeasureSpec(720,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(1600,View.MeasureSpec.EXACTLY));v.layout(0,0,720,1600);}
     private void fullscreen(ReaderActivity a)throws Exception{
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300));
         layout(a);assertTrue((boolean)field(a,"immersiveControls"));View root=(View)field(a,"root"),canvas=(View)field(a,"canvas");
         for(String name:new String[]{"top","guidedHeader","bottomShell"})assertEquals(name,View.GONE,((View)field(a,name)).getVisibility());
         assertEquals(0,root.getPaddingTop());assertEquals(0,root.getPaddingBottom());assertEquals(root.getHeight(),canvas.getHeight());assertEquals(root.getWidth(),canvas.getWidth());
@@ -46,7 +47,7 @@ public class ReaderFullscreenTest {
                 ReaderActivity a=c.get();ready(a);layout(a);int page=(int)field(a,"index");
                 call(a,"toggleControls");Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse((boolean)field(a,"immersiveControls"));assertEquals(View.VISIBLE,((View)field(a,"top")).getVisibility());
                 call(a,"toggleControls");Shadows.shadowOf(Looper.getMainLooper()).idle();call(a,"toggleFullscreen");fullscreen(a);
-                assertEquals(page,field(a,"index"));a.onBackPressed();layout(a);assertFalse(a.isFinishing());assertFalse((boolean)field(a,"immersiveControls"));assertEquals(View.VISIBLE,((View)field(a,"top")).getVisibility());assertEquals(View.VISIBLE,((View)field(a,"bottomShell")).getVisibility());
+                assertEquals(page,field(a,"index"));a.onBackPressed();Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300));layout(a);assertFalse(a.isFinishing());assertFalse((boolean)field(a,"immersiveControls"));assertEquals(View.VISIBLE,((View)field(a,"top")).getVisibility());assertEquals(View.VISIBLE,((View)field(a,"bottomShell")).getVisibility());
                 call(a,"toggleFullscreen");fullscreen(a);call(a,"toggleControls");assertFalse((boolean)field(a,"immersiveControls"));assertEquals(page,field(a,"index"));
             }
         }
@@ -58,6 +59,20 @@ public class ReaderFullscreenTest {
             View button=fullscreenButton((View)field(a,"guidedZoom"),lang.equals("pt")?"Tela cheia":"Full screen");assertNotNull(button);assertTrue(button.isShown());assertTrue(button.getWidth()>0);assertTrue(button.performClick());call(a,"updateCounter");fullscreen(a);
             c.recreate();a=c.get();ready(a);fullscreen(a);assertTrue((boolean)field(a,"guided"));
             call(a,"toggleControls");layout(a);assertEquals(View.VISIBLE,((View)field(a,"guidedHeader")).getVisibility());assertEquals(View.GONE,((View)field(a,"top")).getVisibility());
+        }
+    }
+    @Test public void fullscreenAnimatesAndCanReverseWithoutLosingThePage()throws Exception{
+        try(ActivityController<ReaderActivity> c=Robolectric.buildActivity(ReaderActivity.class,new Intent(store.context,ReaderActivity.class).putExtra("book",book.id)).setup().visible()){
+            ReaderActivity a=c.get();ready(a);layout(a);int page=(int)field(a,"index");View bottom=(View)field(a,"bottomShell");int height=bottom.getHeight();
+            call(a,"toggleFullscreen");assertEquals(View.VISIBLE,bottom.getVisibility());
+            android.animation.ValueAnimator animation=(android.animation.ValueAnimator)field(a,"fullscreenAnimator");assertNotNull(animation);animation.setCurrentPlayTime(80);layout(a);
+            assertTrue("Height should be between expanded and hidden: "+bottom.getHeight()+" / "+height,bottom.getHeight()>0&&bottom.getHeight()<height);
+            call(a,"updateCounter");assertEquals(View.VISIBLE,bottom.getVisibility());
+            call(a,"toggleFullscreen");Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300));layout(a);
+            assertFalse((boolean)field(a,"immersiveControls"));assertNull(field(a,"fullscreenAnimator"));assertEquals(height,bottom.getHeight());assertEquals(1f,bottom.getAlpha(),0f);assertEquals(page,field(a,"index"));
+            call(a,"toggleControls");Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300));layout(a);int collapsedHeight=bottom.getHeight();
+            call(a,"toggleFullscreen");fullscreen(a);call(a,"toggleFullscreen");Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300));layout(a);
+            assertEquals(collapsedHeight,bottom.getHeight());assertEquals(page,field(a,"index"));
         }
     }
 }

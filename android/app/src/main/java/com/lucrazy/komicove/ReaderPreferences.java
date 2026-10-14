@@ -91,6 +91,7 @@ final class ReaderPreferences {
         refreshThemes.run();sheet.addView(themes,Ui.margin(-1,-2,activity,0,0,0,14));
 
         TextView note=Ui.text(activity,"A leitura guiada funciona nos modos Página única e Mangá. Use o editor manual quando a detecção automática não reconhecer os quadros corretamente.",13,Ui.MUTED);note.setPadding(Ui.dp(activity,12),Ui.dp(activity,8),Ui.dp(activity,12),Ui.dp(activity,14));sheet.addView(note);
+        if(activity instanceof ReaderActivity){Button translation=Ui.primaryButton(activity,I18n.t(activity,"OCR e tradução"),()->{dialog.dismiss();((ReaderActivity)activity).openTranslation();});sheet.addView(translation,Ui.margin(-1,Ui.dp(activity,48),activity,0,0,0,10));}
         Button save=Ui.primaryButton(activity,"Salvar preferências",()->{prefs.edit().putBoolean("persist_zoom",persist.isChecked()).putBoolean("persist_position",positionSwitch.isChecked()).putBoolean("auto_fit",fit.isChecked()).putBoolean("guided",guided.isChecked()).putBoolean("animate_guided",animate.isChecked()).putInt("brightness",Math.max(10,brightness.getProgress())).putString("brightness_mode",selectedBrightnessMode[0]).putString("theme",selectedTheme[0]).apply();if(changed!=null)changed.run();dialog.dismiss();});
         save.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_save,0,0,0);save.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));save.setCompoundDrawablePadding(Ui.dp(activity,9));sheet.addView(save,new LinearLayout.LayoutParams(-1,Ui.dp(activity,54)));
 
