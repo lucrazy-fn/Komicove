@@ -77,6 +77,25 @@ def test_ocr_does_not_require_a_writable_temporary_directory(monkeypatch):
     assert rows[0].original == "Hi"
 
 
+def test_ocr_tsv_treats_quotes_as_text_instead_of_joining_rows(monkeypatch):
+    tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+           "5\t1\t1\t1\t1\t1\t1\t1\t20\t8\t91\tSAY\"\n"
+           "5\t1\t1\t1\t2\t1\t1\t12\t24\t8\t92\tHELLO\n").encode()
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, input=None, timeout=None):
+            return tsv, b""
+
+    monkeypatch.setattr(comic.shutil, "which", lambda _: "tesseract")
+    monkeypatch.setattr(comic.subprocess, "Popen", lambda *args, **kwargs: Process())
+
+    rows = comic._ocr_once(Image.new("RGB", (100, 100), "white"), "eng", 11)
+
+    assert [row.original for row in rows] == ['SAY"', "HELLO"]
+
+
 @pytest.mark.skipif(not comic.tesseract_available(), reason="Tesseract is not installed")
 def test_uncertain_balloon_gets_high_resolution_ocr_retry():
     source = authorial_page("HELLO, HERO!")

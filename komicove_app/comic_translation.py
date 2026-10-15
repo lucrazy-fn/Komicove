@@ -12,7 +12,6 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 from concurrent.futures import CancelledError
-import csv
 import base64
 import importlib.util
 import json
@@ -35,7 +34,7 @@ from PIL import Image, ImageOps
 from komicove_app.storage import APPDATA_DIR
 
 
-OCR_VERSION = "tesseract-tsv-7"
+OCR_VERSION = "tesseract-tsv-8"
 TRANSLATION_CACHE_VERSION = 4
 AUTO_TRANSLATE_CONFIDENCE = .65
 
@@ -169,7 +168,13 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
         decoded = output.decode("utf-8-sig")
     except UnicodeDecodeError:
         decoded = output.decode("cp1252", "replace")
-    rows = csv.DictReader(decoded.splitlines(), delimiter="\t")
+    lines = decoded.splitlines()
+    if not lines:
+        return []
+    header, *lines = lines
+    columns = header.split("\t")
+    rows = (dict(zip(columns, line.split("\t", len(columns) - 1)))
+            for line in lines if line.strip())
     groups = {}
     for row in rows:
         text = (row.get("text") or "").strip()
