@@ -16,6 +16,8 @@ import csv
 import base64
 import importlib.util
 import json
+import logging
+import math
 import os
 import re
 from collections import deque
@@ -24,16 +26,27 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from statistics import median
 
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 
 from komicove_app.storage import APPDATA_DIR
 
 
-OCR_VERSION = "tesseract-tsv-3"
-TRANSLATION_CACHE_VERSION = 2
+OCR_VERSION = "tesseract-tsv-7"
+TRANSLATION_CACHE_VERSION = 4
+AUTO_TRANSLATE_CONFIDENCE = .65
+
+
+def auto_translation_candidate(region):
+    if region.manual_original:
+        return bool(region.original.strip())
+    letters = sum(char.isalpha() for char in region.original)
+    threshold = .95 if letters == 1 else .9
+    return (letters >= 2 and region.confidence >= threshold and
+            "\ufffd" not in region.original and "\t" not in region.original)
 _DEFAULT_ENDPOINTS = {
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
@@ -67,6 +80,7 @@ _CREDENTIAL_PREFIX = "Komicove:comic-translation:"
 # keeps sentence splitting local after its initial model installation.
 os.environ.setdefault("ARGOS_CHUNK_TYPE", "MINISBD")
 os.environ.setdefault("ARGOS_INTRA_THREADS", "2")
+logging.getLogger("argostranslate.utils").setLevel(logging.WARNING)
 
 
 class TranslationError(Exception):
@@ -102,7 +116,20 @@ def _check(cancel):
 
 
 def tesseract_available() -> bool:
-    return bool(shutil.which("tesseract"))
+    return bool(_tesseract_binary())
+
+
+def _tesseract_binary():
+    installed = shutil.which("tesseract")
+    if installed:
+        return installed
+    if sys.platform == "win32":
+        candidates = (Path(os.environ.get("USERPROFILE", "")) / "AppData/Local/Programs/Tesseract-OCR/tesseract.exe",
+                      Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Tesseract-OCR/tesseract.exe",
+                      Path(os.environ.get("ProgramFiles", "")) / "Tesseract-OCR/tesseract.exe",
+                      Path(os.environ.get("ProgramFiles(x86)", "")) / "Tesseract-OCR/tesseract.exe")
+        return next((str(path) for path in candidates if path.is_file()), None)
+    return None
 
 
 def local_translation_available() -> bool:
@@ -113,24 +140,36 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
     _check(cancel)
     if not tesseract_available():
         raise TranslationError("ocr_unavailable")
-    with tempfile.TemporaryDirectory(prefix="komicove-ocr-") as directory:
-        input_path = Path(directory) / "page.png"
-        image.save(input_path)
-        command = [shutil.which("tesseract"), str(input_path), "stdout", "-l", language,
-                   "--psm", str(psm), "tsv"]
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            while process.poll() is None:
-                _check(cancel)
-                time.sleep(0.05)
-            output, _ = process.communicate(timeout=2)
-        except (CancelledError, TimeoutError):
-            process.kill()
-            process.communicate()
-            raise
-        if process.returncode:
-            raise TranslationError("ocr_language_or_model_unavailable")
-    rows = csv.DictReader(output.decode("utf-8-sig", "replace").splitlines(), delimiter="\t")
+    encoded = BytesIO()
+    image.save(encoded, format="PNG")
+    command = [_tesseract_binary(), "stdin", "stdout", "-l", language,
+               "--psm", str(psm), "tsv"]
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    deadline = time.monotonic() + 60
+    input_data = encoded.getvalue()
+    try:
+        while True:
+            _check(cancel)
+            if time.monotonic() >= deadline:
+                raise TranslationError("ocr_timeout")
+            try:
+                output, error = process.communicate(input=input_data, timeout=.1)
+                break
+            except subprocess.TimeoutExpired:
+                input_data = None
+    except (CancelledError, TranslationError):
+        process.kill()
+        process.communicate()
+        raise
+    if process.returncode:
+        raise TranslationError("ocr_language_or_model_unavailable")
+    try:
+        decoded = output.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        decoded = output.decode("cp1252", "replace")
+    rows = csv.DictReader(decoded.splitlines(), delimiter="\t")
     groups = {}
     for row in rows:
         text = (row.get("text") or "").strip()
@@ -140,6 +179,14 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
         except (ValueError, TypeError, KeyError):
             continue
         if not text or confidence < 0 or box[2] <= 0 or box[3] <= 0:
+            continue
+        if confidence < 35 and (box[0] <= 2 or box[1] <= 2 or
+                                box[0] + box[2] >= image.width - 2 or
+                                box[1] + box[3] >= image.height - 2):
+            continue
+        if (len(text) == 1 and text.isalnum() and
+                (box[3] > image.height * .65 or
+                 confidence < 85 and (box[0] <= 2 or box[0] + box[2] >= image.width - 2))):
             continue
         key = tuple(row[k] for k in ("block_num", "par_num", "line_num"))
         groups.setdefault(key, []).append((text, confidence, box))
@@ -168,17 +215,78 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
         image.thumbnail((4500, 4500))
     image = image.convert("RGB")
     horizontal = _ocr_once(image, language, 11, cancel)
-    for l, t, r, b in _bright_boxes(image):
+    bright_boxes = _bright_boxes(image)
+    for l, t, r, b in bright_boxes:
         _check(cancel)
         crop = image.crop((int(l * image.width), int(t * image.height),
                            int(r * image.width), int(b * image.height)))
         if crop.width < 20 or crop.height < 14:
             continue
-        for found in _ocr_once(crop, language, 6, cancel):
+        found_rows = _ocr_once(crop, language, 6, cancel)
+        sample_box = (l, t, r, b)
+        if (not found_rows or max(row.confidence for row in found_rows) < .4 or
+                crop.width > crop.height * 2.5 and
+                max(len(row.original.strip()) for row in found_rows) < 8):
+            inset_x, inset_y = round(crop.width * .04), round(crop.height * .12)
+            inner = crop.crop((inset_x, inset_y, crop.width-inset_x, crop.height-inset_y))
+            factor = min(3, max(1, 2000 // max(inner.size)))
+            enlarged = inner.resize((inner.width * factor, inner.height * factor),
+                                     Image.Resampling.LANCZOS) if factor > 1 else inner
+            alternate = _ocr_once(ImageOps.autocontrast(enlarged), language, 7, cancel)
+            if not alternate or max(row.confidence for row in alternate) < .8:
+                raw_line = _ocr_once(ImageOps.autocontrast(enlarged), language, 13, cancel)
+                if raw_line and (not alternate or max(row.confidence * min(40, len(row.original))
+                    for row in raw_line) > max(row.confidence * min(40, len(row.original))
+                    for row in alternate)):
+                    alternate = raw_line
+            base_score = max((row.confidence * min(40, len(row.original))
+                              for row in found_rows), default=0)
+            alternate_score = max((row.confidence * min(40, len(row.original))
+                                   for row in alternate), default=0)
+            if alternate and max(row.confidence for row in alternate) >= .55 and \
+                    alternate_score > base_score * 1.25:
+                found_rows = alternate
+                sample_box = (l + inset_x / crop.width * (r-l),
+                              t + inset_y / crop.height * (b-t),
+                              r - inset_x / crop.width * (r-l),
+                              b - inset_y / crop.height * (b-t))
+        mergeable = sorted((row for row in found_rows if row.confidence >= .1 and
+                            sum(char.isalpha() for char in row.original) >= 2),
+                           key=lambda row: (row.box[1], row.box[0]))
+        groups = []
+        for row in mergeable:
+            typical_height = median(item.box[3]-item.box[1] for item in groups[-1]) if groups else 0
+            previous_bottom = max((item.box[3] for item in groups[-1]), default=0) if groups else 0
+            if groups and row.box[1] - previous_bottom > typical_height * 1.35:
+                groups.append([])
+            if not groups:
+                groups.append([])
+            groups[-1].append(row)
+        processed = []
+        for group in groups:
+            if len(group) < 2:
+                processed.append((group[0], False))
+                continue
+            left = min(row.box[0] for row in group)
+            top = min(row.box[1] for row in group)
+            right = max(row.box[2] for row in group)
+            bottom = max(row.box[3] for row in group)
+            weight = sum(max(1, len(row.original)) for row in group)
+            processed.append((TextRegion((left, top, right, bottom),
+                " ".join(row.original for row in group),
+                sum(row.confidence * max(1, len(row.original)) for row in group) / weight,
+                word_scales=tuple(scale for row in group for scale in row.word_scales)), True))
+        processed.extend((row, False) for row in found_rows if row not in mergeable)
+        for found, merged in processed:
             a, c, d, e = found.box
-            box = (l + a * (r-l), t + c * (b-t), l + d * (r-l), t + e * (b-t))
-            _add_region(horizontal, TextRegion(box, found.original, found.confidence,
-                                               word_scales=found.word_scales))
+            sl, st, sr, sb = sample_box
+            box = (sl + a * (sr-sl), st + c * (sb-st),
+                   sl + d * (sr-sl), st + e * (sb-st))
+            candidate = TextRegion(box, found.original, found.confidence,
+                                   word_scales=found.word_scales)
+            if merged:
+                horizontal[:] = [row for row in horizontal if _overlap(row.box, candidate.box) <= .4]
+            _add_region(horizontal, candidate)
     converted = []
     for angle in ((270, 90) if manga else (90, 270)):
         rotated = image.rotate(angle, expand=True)
@@ -194,15 +302,74 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
         if candidate.confidence < 0.55 or len(candidate.original.strip()) < 2:
             continue
         _add_region(combined, candidate)
+    for region in sorted((row for row in combined if row.confidence < .7),
+                         key=lambda row: row.confidence)[:8]:
+        _check(cancel)
+        l, t, r, b = region.box
+        pad = max(6, round(image.height * .008))
+        bounds = (max(0, round(l * image.width) - pad),
+                  max(0, round(t * image.height) - pad),
+                  min(image.width, round(r * image.width) + pad),
+                  min(image.height, round(b * image.height) + pad))
+        crop = image.crop(bounds)
+        if crop.width < 12 or crop.height < 8 or crop.width * crop.height > 1_000_000:
+            continue
+        factor = min(3, max(1, 2000 // max(crop.size)))
+        if factor > 1:
+            crop = crop.resize((crop.width * factor, crop.height * factor), Image.Resampling.LANCZOS)
+        crop = ImageOps.autocontrast(crop)
+        alternatives = _ocr_once(crop, language, 7, cancel)
+        suitable = [row for row in alternatives if len(row.original.strip()) >=
+                    max(2, len(region.original.strip()) * .6)]
+        if suitable:
+            best = max(suitable, key=lambda row: row.confidence)
+            if best.confidence >= .65 and best.confidence > region.confidence + .12:
+                region.original, region.confidence = best.original, best.confidence
+    for region in combined:
+        if region.angle == 0:
+            region.angle = _ink_line_angle(image, region.box)
+        center_x = (region.box[0] + region.box[2]) / 2
+        center_y = (region.box[1] + region.box[3]) / 2
+        token = region.original.strip().rstrip("!?.,:;")
+        in_bright_container = any(l <= center_x <= r and t <= center_y <= b
+                                  for l, t, r, b in bright_boxes)
+        if (not in_bright_container and token.isalpha() and token.isupper() and
+                " " not in region.original.strip()):
+            region.confidence = min(region.confidence, .79)
     combined.sort(key=lambda region: (round(region.box[1] / .08),
                                       -region.box[0] if manga else region.box[0]))
     return combined
 
 
+def _ink_line_angle(image, box):
+    left, top, right, bottom = (round(box[0] * image.width), round(box[1] * image.height),
+                                round(box[2] * image.width), round(box[3] * image.height))
+    if right-left < 35 or bottom-top < 12 or right-left < (bottom-top) * 1.8:
+        return 0
+    crop = image.crop((left, top, right, bottom)).convert("L")
+    if crop.width > 700:
+        crop.thumbnail((700, 200))
+    pixels = crop.load()
+    centers = []
+    for x in range(crop.width):
+        ys = [y for y in range(crop.height) if pixels[x, y] < 105]
+        if len(ys) >= 2 and len(ys) < crop.height * .65:
+            centers.append((x, sum(ys) / len(ys)))
+    if len(centers) < 18 or centers[-1][0] - centers[0][0] < crop.width * .55:
+        return 0
+    mean_x = sum(x for x, _ in centers) / len(centers)
+    mean_y = sum(y for _, y in centers) / len(centers)
+    denominator = sum((x-mean_x)**2 for x, _ in centers)
+    slope = sum((x-mean_x)*(y-mean_y) for x, y in centers) / max(denominator, 1)
+    angle = round(math.degrees(math.atan(slope)))
+    return angle if 6 <= abs(angle) <= 30 else 0
+
+
 def _add_region(regions, candidate):
     for index, current in enumerate(regions):
         if _overlap(candidate.box, current.box) > 0.4:
-            if candidate.confidence > current.confidence and len(candidate.original) >= len(current.original):
+            if (candidate.confidence > current.confidence + .08 and
+                    len(candidate.original) >= len(current.original) * .7):
                 regions[index] = candidate
             return
     regions.append(candidate)
@@ -267,12 +434,23 @@ def local_translate(text: str, source: str, target: str) -> str:
         from argostranslate import translate
     except ImportError as exc:
         raise TranslationError("local_translation_unavailable") from exc
+    logging.getLogger("argostranslate.utils").setLevel(logging.WARNING)
     languages = {language.code: language for language in translate.get_installed_languages()}
     from_language, to_language = languages.get(source), languages.get(target)
     pair = from_language.get_translation(to_language) if from_language and to_language else None
     if pair is None:
         raise TranslationError("local_model_unavailable")
     return pair.translate(text)
+
+
+def glossary_exact_match(text: str, glossary: dict) -> str | None:
+    normalized = " ".join(text.casefold().split())
+    for original, translated in glossary.items():
+        if (isinstance(original, str) and isinstance(translated, str)
+                and " ".join(original.casefold().split()) == normalized
+                and normalized and translated.strip()):
+            return translated.strip()
+    return None
 
 
 def detect_source(text: str) -> str:
@@ -380,7 +558,16 @@ def install_local_offer(offer, cancel=None, progress=None):
                 install_local_model(str(temporary))
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(temporary, destination)
+                with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".onnx", delete=False) as stream:
+                    staged = Path(stream.name)
+                try:
+                    with staged.open("wb") as stream:
+                        with temporary.open("rb") as downloaded:
+                            _copy_archive_entry(downloaded, stream, cancel)
+                    _check(cancel)
+                    os.replace(staged, destination)
+                finally:
+                    staged.unlink(missing_ok=True)
         except requests.RequestException as exc:
             raise TranslationError("network") from exc
         finally:
@@ -457,7 +644,7 @@ def translate_remote(regions, source, target, *, provider, model, key, custom=""
                      context=None, image=None):
     """One bounded text-only request per page. OCR text is data, never instructions."""
     entries = [{"id": str(i), "text": item.original[:1500], "box": item.box} for i, item in enumerate(regions)
-               if item.original.strip() and (item.confidence >= .2 or item.manual_original)
+               if auto_translation_candidate(item)
                and not item.manual_translation and not item.translation_attempted]
     if not entries:
         return regions
@@ -502,12 +689,13 @@ def translate_remote(regions, source, target, *, provider, model, key, custom=""
         mapping = json.loads(answer)
         if not isinstance(mapping, dict):
             raise ValueError()
+        if set(mapping) != {entry["id"] for entry in entries} or any(
+                not isinstance(mapping[entry["id"]], str) for entry in entries):
+            raise ValueError()
         for entry in entries:
-            value = mapping.get(entry["id"])
-            if not isinstance(value, str):
-                raise ValueError()
-            regions[int(entry["id"])].translated = value.strip()
-            regions[int(entry["id"])].translation_attempted = True
+            region = regions[int(entry["id"])]
+            region.translated = mapping[entry["id"]].strip()
+            region.translation_attempted = True
     except (ValueError, IndexError) as exc:
         raise TranslationError("invalid_provider_response") from exc
     return regions
@@ -538,11 +726,15 @@ def _cache_file(book, page, image, source, target, provider, model, custom, glos
                                  for item in package.get_installed_packages())
         except ImportError:
             local_model = "unavailable"
-    corrections = _correction_file(book, page)
-    correction_hash = sha256(corrections.read_bytes()).hexdigest() if corrections.is_file() else ""
+    prior = _context_file(book, page - 1) if page > 0 and provider != "local" else None
+    prior_revision = sha256(prior.read_bytes()).hexdigest() if prior and prior.is_file() else ""
+    prior_corrections = _correction_file(book, page - 1) if prior else None
+    if prior_corrections:
+        prior_revision += _correction_revision(prior_corrections)
     identity = [str(book), page, sha256(output.getvalue()).hexdigest(), OCR_VERSION,
                 TRANSLATION_CACHE_VERSION, ocr_language, manga,
-                source, target, provider, model, local_model, custom, glossary, correction_hash, vision]
+                source, target, provider, model, local_model, custom, glossary,
+                "", prior_revision, vision]
     return _CACHE / (sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() + ".json")
 
 
@@ -559,6 +751,8 @@ def read_ocr_cache(book, page, image, language, manga):
         rows = [TextRegion(tuple(row["box"]), row["original"], row["confidence"],
                            angle=row.get("angle", 0),
                            word_scales=tuple(row.get("word_scales", ()))) for row in data]
+        if not _context_file(book, page).is_file():
+            _write_page_context(book, page, image, language, manga, rows)
         return apply_corrections(book, page, rows)
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -573,6 +767,37 @@ def write_ocr_cache(book, page, image, language, manga, rows):
                     "angle": row.angle, "word_scales": row.word_scales} for row in rows],
                   stream, ensure_ascii=False)
     os.replace(temp, path)
+    _write_page_context(book, page, image, language, manga, rows)
+
+
+def _context_file(book, page):
+    return _CACHE / ("context-" + sha256(json.dumps([str(book), page]).encode()).hexdigest() + ".json")
+
+
+def _write_page_context(book, page, image, language, manga, rows):
+    path = _context_file(book, page)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"image": _ocr_cache_file(book, page, image, language, manga).name,
+            "rows": [{"box": row.box, "original": row.original,
+                      "confidence": row.confidence} for row in rows[-8:]]}
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        json.dump(data, stream, ensure_ascii=False)
+    os.replace(temporary, path)
+
+
+def previous_page_context(book, page):
+    if page <= 0:
+        return []
+    try:
+        data = json.loads(_context_file(book, page - 1).read_text("utf-8"))
+        rows = [TextRegion(tuple(row["box"]), row["original"], row["confidence"])
+                for row in data["rows"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    apply_corrections(book, page - 1, rows)
+    return [row.original[:500] for row in rows[-4:]
+            if auto_translation_candidate(row)]
 
 
 def read_cache(book, page, image, source, target, provider, model, custom="", glossary=None,
@@ -607,9 +832,85 @@ def clear_cache():
             path.unlink()
 
 
+def export_cbz_copy(archive, destination, render_page, cancel=None, progress=None):
+    """Write a separate CBZ, copying ZIP metadata and untouched entries verbatim."""
+    destination = Path(destination).resolve()
+    source = Path(archive.path).resolve()
+    if destination == source or destination.exists() or destination.suffix.lower() != ".cbz":
+        raise TranslationError("invalid_export_path")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".cbz", delete=False) as stream:
+        temporary = Path(stream.name)
+    replaced = 0
+    try:
+        with zipfile.ZipFile(temporary, "w", allowZip64=True) as output:
+            if archive.kind == "zip":
+                names = {name: index for index, name in enumerate(archive.names)}
+                with zipfile.ZipFile(source) as original:
+                    entries = original.infolist()
+                    for number, info in enumerate(entries, 1):
+                        _check(cancel)
+                        if info.is_dir():
+                            output.writestr(info, b"")
+                            continue
+                        index = names.get(info.filename)
+                        if index is not None:
+                            rendered = render_page(index, original.read(info))
+                            if rendered is not None:
+                                output.writestr(info, rendered)
+                                replaced += 1
+                            else:
+                                with original.open(info) as reader, output.open(info, "w") as writer:
+                                    _copy_archive_entry(reader, writer, cancel)
+                        else:
+                            with original.open(info) as reader, output.open(info, "w") as writer:
+                                _copy_archive_entry(reader, writer, cancel)
+                        if progress:
+                            progress(number, len(entries), replaced)
+            else:
+                for index, name in enumerate(archive.names):
+                    _check(cancel)
+                    original = archive.read_page(index)
+                    rendered = render_page(index, original)
+                    page_name = name if Path(name).suffix.lower() in {
+                        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"
+                    } else f"{name}.png"
+                    output.writestr(page_name, original if rendered is None else rendered)
+                    replaced += rendered is not None
+                    if progress:
+                        progress(index + 1, archive.count, replaced)
+        _check(cancel)
+        if destination.exists():
+            raise TranslationError("invalid_export_path")
+        os.replace(temporary, destination)
+        return replaced
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _copy_archive_entry(reader, writer, cancel):
+    while data := reader.read(65536):
+        _check(cancel)
+        writer.write(data)
+
+
 def _correction_file(book, page):
     name = sha256(json.dumps([str(book), page]).encode()).hexdigest() + ".json"
     return _CORRECTIONS / name
+
+
+def _correction_revision(path):
+    try:
+        content = path.read_bytes()
+        values = json.loads(content)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(values, dict):
+        return ""
+    if not any(isinstance(value, dict) and ("original" in value or "translated" in value)
+               for value in values.values()):
+        return ""
+    return sha256(content).hexdigest()
 
 
 def apply_corrections(book, page, regions, turns=0):
@@ -635,6 +936,8 @@ def apply_corrections(book, page, regions, turns=0):
 
 
 def save_correction(book, page, region, turns=0):
+    if not region.manual_original and not region.manual_translation:
+        return
     path = _correction_file(book, page)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -642,11 +945,14 @@ def save_correction(book, page, region, turns=0):
     except (OSError, ValueError):
         values = {}
     canonical = rotate_regions([region], -turns)[0].identity if turns else region.identity
-    values[canonical] = {
+    saved = {
         key: getattr(region, key) for key, flag in
         (("original", "manual_original"), ("translated", "manual_translation"))
         if getattr(region, flag)
     }
+    if values.get(canonical) == saved:
+        return
+    values[canonical] = saved
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
         temp = Path(stream.name)
         json.dump(values, stream, ensure_ascii=False)

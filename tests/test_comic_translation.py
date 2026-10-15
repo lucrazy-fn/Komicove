@@ -1,13 +1,18 @@
 import json
 import sys
+import zipfile
+from io import BytesIO
 from threading import Event
 from concurrent.futures import CancelledError
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw
 
 from komicove_app import comic_translation as comic
 from komicove_app.translation_views import draw_translation_overlay, _source_font_size, _styled_layout, _comic_font
+from komicove_app.archive import ArchiveBackend
+from tools.translation_fixture import page as authorial_page
 
 
 def test_ocr_lines_and_cancel(monkeypatch):
@@ -16,10 +21,18 @@ def test_ocr_lines_and_cancel(monkeypatch):
            "5\t1\t1\t1\t1\t2\t32\t20\t25\t10\t78\tmundo\n").encode()
     class Process:
         returncode = 0
-        def poll(self): return 0
-        def communicate(self, timeout=None): return tsv, b""
+        def communicate(self, input=None, timeout=None):
+            assert input.startswith(b"\x89PNG")
+            assert timeout == .1
+            return tsv, b""
     monkeypatch.setattr(comic.shutil, "which", lambda _: "tesseract")
-    monkeypatch.setattr(comic.subprocess, "Popen", lambda *a, **k: Process())
+    def launch(*args, **kwargs):
+        assert args[0][1:3] == ["stdin", "stdout"]
+        assert kwargs["stdin"] is comic.subprocess.PIPE
+        assert kwargs["stdout"] is comic.subprocess.PIPE
+        assert kwargs["stderr"] is comic.subprocess.PIPE
+        return Process()
+    monkeypatch.setattr(comic.subprocess, "Popen", launch)
     rows = comic.recognize(Image.new("RGB", (100, 100), "white"), "por")
     horizontal = next(row for row in rows if row.box[0] == pytest.approx(.1))
     assert horizontal.original == "Olá mundo"
@@ -28,6 +41,55 @@ def test_ocr_lines_and_cancel(monkeypatch):
     stopped = Event(); stopped.set()
     with pytest.raises(CancelledError):
         comic.recognize(Image.new("RGB", (100, 100)), cancel=stopped)
+
+
+def test_ocr_timeout_stops_child(monkeypatch):
+    class Process:
+        returncode = None
+        stopped = False
+        def communicate(self, input=None, timeout=None):
+            if self.stopped:
+                return b"", b""
+            raise comic.subprocess.TimeoutExpired("tesseract", timeout)
+        def kill(self): self.stopped = True
+    process = Process()
+    ticks = iter((0, 0, 61))
+    monkeypatch.setattr(comic.shutil, "which", lambda _: "tesseract")
+    monkeypatch.setattr(comic.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(comic, "time", SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None))
+    with pytest.raises(comic.TranslationError, match="ocr_timeout"):
+        comic._ocr_once(Image.new("RGB", (10, 10)), "eng", 11)
+    assert process.stopped
+
+
+def test_ocr_does_not_require_a_writable_temporary_directory(monkeypatch):
+    tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+           "5\t1\t1\t1\t1\t1\t1\t1\t8\t8\t90\tHi\n").encode()
+    class Process:
+        returncode = 0
+        def communicate(self, input=None, timeout=None):
+            return tsv, b""
+    monkeypatch.setattr(comic.shutil, "which", lambda _: "tesseract")
+    monkeypatch.setattr(comic.subprocess, "Popen", lambda *a, **k: Process())
+    monkeypatch.setattr(comic.tempfile, "TemporaryDirectory",
+                        lambda *a, **k: pytest.fail("OCR wrote a temporary file"))
+    rows = comic._ocr_once(Image.new("RGB", (10, 10), "white"), "eng", 11)
+    assert rows[0].original == "Hi"
+
+
+@pytest.mark.skipif(not comic.tesseract_available(), reason="Tesseract is not installed")
+def test_uncertain_balloon_gets_high_resolution_ocr_retry():
+    source = authorial_page("HELLO, HERO!")
+    found = comic.recognize(source, "eng")
+    greeting = next(row for row in found if "HELLO" in row.original)
+    assert "HERO" in greeting.original
+    assert greeting.confidence >= .7
+    tilted = next(row for row in found if "RUN!" in row.original)
+    assert -18 <= tilted.angle <= -6
+    assert not comic.auto_translation_candidate(tilted)
+    greeting.translated = "Olá, herói!"
+    result = draw_translation_overlay(source, [greeting], (0, 0, source.width, source.height))
+    assert result.crop((135, 100, 195, 340)).tobytes() == source.crop((135, 100, 195, 340)).tobytes()
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "xai", "groq", "openrouter", "gemini"])
@@ -95,7 +157,7 @@ def test_image_is_sent_only_with_explicit_input_and_supported_model(monkeypatch,
     assert "base64" in json.dumps(sent[-1]) or "inline_data" in json.dumps(sent[-1])
 
 
-def test_illegible_empty_translation_is_not_billed_twice(monkeypatch):
+def test_empty_translation_is_not_billed_twice(monkeypatch):
     calls = []
     class Response:
         ok = True
@@ -103,11 +165,118 @@ def test_illegible_empty_translation_is_not_billed_twice(monkeypatch):
         def json(self):
             return {"choices": [{"message": {"content": '{"0":""}'}}]}
     monkeypatch.setattr(comic.requests, "post", lambda *args, **kwargs: (calls.append(1), Response())[1])
-    rows = [comic.TextRegion((.1, .1, .4, .2), "[illegible]", .2)]
+    rows = [comic.TextRegion((.1, .1, .4, .2), "[illegible]", .9)]
     comic.translate_remote(rows, "auto", "pt", provider="openai", model="chosen", key="private")
     comic.translate_remote(rows, "auto", "pt", provider="openai", model="chosen", key="private")
     assert rows[0].translation_attempted and rows[0].translated == ""
     assert len(calls) == 1
+
+
+def test_uncertain_ocr_waits_for_manual_correction_before_remote_charge(monkeypatch):
+    calls = []
+    monkeypatch.setattr(comic, "_request", lambda *args, **kwargs: (calls.append(1), '{"0":"Pare!"}')[1])
+    row = comic.TextRegion((.1, .1, .4, .2), "P@R?", .3)
+    comic.translate_remote([row], "en", "pt", provider="openai", model="chosen", key="private")
+    assert calls == [] and not row.translation_attempted
+    row.original = "STOP!"
+    row.manual_original = True
+    comic.translate_remote([row], "en", "pt", provider="openai", model="chosen", key="private")
+    assert calls == [1] and row.translated == "Pare!"
+
+
+def test_remote_response_must_match_all_regions_before_any_change(monkeypatch):
+    rows = [comic.TextRegion((.1, .1, .3, .2), "First", .9),
+            comic.TextRegion((.6, .1, .8, .2), "Second", .9)]
+    monkeypatch.setattr(comic, "_request", lambda *args, **kwargs: '{"0":"Primeiro"}')
+    with pytest.raises(comic.TranslationError, match="invalid_provider_response"):
+        comic.translate_remote(rows, "en", "pt", provider="openai", model="chosen", key="dummy")
+    assert all(not row.translation_attempted and not row.translated for row in rows)
+
+
+def test_previous_page_context_and_remote_cache_revision(monkeypatch, tmp_path):
+    monkeypatch.setattr(comic, "_CACHE", tmp_path / "cache")
+    monkeypatch.setattr(comic, "_CORRECTIONS", tmp_path / "corrections")
+    image = Image.new("RGB", (40, 40), "white")
+    current = [comic.TextRegion((.1, .1, .5, .2), "He returned", .9, "Ele voltou")]
+    args = ("book", 1, image, "en", "pt", "openai", "chosen")
+    comic.write_cache(*args, current)
+    assert comic.read_cache(*args) is not None
+    comic.write_ocr_cache("book", 0, image, "eng", False,
+                          [comic.TextRegion((.1, .1, .4, .2), "The captain left", .9)])
+    assert comic.previous_page_context("book", 1) == ["The captain left"]
+    assert comic.read_cache(*args) is None
+    comic.write_cache(*args, current)
+    prior = comic.TextRegion((.1, .1, .4, .2), "The captain returned", .9)
+    prior.manual_original = True
+    comic.save_correction("book", 0, prior)
+    assert comic.previous_page_context("book", 1) == ["The captain returned"]
+    assert comic.read_cache(*args) is None
+    local = ("book", 1, image, "en", "pt", "local", "")
+    comic.write_cache(*local, current)
+    assert comic.read_cache(*local) is not None
+
+
+def test_local_glossary_matches_whole_expression_only():
+    words = {"Captain Nova": "Capitã Nova"}
+    assert comic.glossary_exact_match("  captain   NOVA  ", words) == "Capitã Nova"
+    assert comic.glossary_exact_match("Captain Nova returned", words) is None
+
+
+def test_export_cbz_preserves_original_order_and_metadata(tmp_path):
+    original = tmp_path / "autoral.cbz"
+    destination = tmp_path / "autoral-traduzido.cbz"
+    page = Image.new("RGB", (80, 60), "white")
+    stream = BytesIO(); page.save(stream, format="PNG")
+    with zipfile.ZipFile(original, "w") as archive:
+        archive.writestr("art/", b"")
+        archive.writestr("ComicInfo.xml", "<ComicInfo><Title>Autoral</Title></ComicInfo>")
+        archive.writestr("art/001.png", stream.getvalue())
+        archive.writestr("art/002.png", stream.getvalue())
+    original_bytes = original.read_bytes()
+    backend = ArchiveBackend(original)
+    try:
+        def render(index, data):
+            if index:
+                return None
+            translated = Image.open(BytesIO(data)).convert("RGB")
+            ImageDraw.Draw(translated).text((10, 10), "OLA", fill="black")
+            result = BytesIO(); translated.save(result, format="PNG")
+            return result.getvalue()
+        assert comic.export_cbz_copy(backend, destination, render) == 1
+    finally:
+        backend.close()
+    assert original.read_bytes() == original_bytes
+    with zipfile.ZipFile(destination) as archive:
+        assert archive.namelist() == ["art/", "ComicInfo.xml", "art/001.png", "art/002.png"]
+        assert archive.read("ComicInfo.xml") == b"<ComicInfo><Title>Autoral</Title></ComicInfo>"
+        assert archive.read("art/001.png") != stream.getvalue()
+        assert archive.read("art/002.png") == stream.getvalue()
+    invalid = ArchiveBackend(original)
+    try:
+        with pytest.raises(comic.TranslationError, match="invalid_export_path"):
+            comic.export_cbz_copy(invalid, original, lambda *_: None)
+    finally:
+        invalid.close()
+
+
+def test_export_pdf_pages_have_reopenable_image_names(tmp_path):
+    from types import SimpleNamespace
+
+    source = tmp_path / "autoral.pdf"
+    source.write_bytes(b"source remains unchanged")
+    image = BytesIO()
+    Image.new("RGB", (60, 40), "white").save(image, format="PNG")
+    archive = SimpleNamespace(path=source, kind="pdf", names=["page_0"], count=1,
+                              read_page=lambda index: image.getvalue())
+    destination = tmp_path / "translated.cbz"
+    assert comic.export_cbz_copy(archive, destination, lambda *_: None) == 0
+    reopened = ArchiveBackend(destination)
+    try:
+        assert reopened.count == 1
+        assert reopened.names == ["page_0.png"]
+    finally:
+        reopened.close()
+    assert source.read_bytes() == b"source remains unchanged"
 
 
 def test_connection_requires_provider_content(monkeypatch):
@@ -131,13 +300,34 @@ def test_cache_and_manual_correction_survive_provider_change(monkeypatch, tmp_pa
     region.original = "clear"; region.manual_original = True
     region.translated = "certo"; region.manual_translation = True
     comic.save_correction("book", 2, region)
-    assert comic.read_cache("book", 2, image, "auto", "pt", "openai", "one") is None
+    corrected = comic.read_cache("book", 2, image, "auto", "pt", "openai", "one")[0]
+    assert (corrected.original, corrected.translated) == ("clear", "certo")
     other = [comic.TextRegion((.1, .1, .4, .2), "unclear", .3)]
     comic.apply_corrections("book", 2, other)
     assert (other[0].original, other[0].translated) == ("clear", "certo")
     comic.clear_cache()
     assert comic.read_cache("book", 2, image, "auto", "pt", "openai", "one") is None
     assert comic._correction_file("book", 2).is_file()
+
+
+def test_empty_and_repeated_corrections_keep_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(comic, "_CACHE", tmp_path / "cache")
+    monkeypatch.setattr(comic, "_CORRECTIONS", tmp_path / "corrections")
+    image = Image.new("RGB", (40, 40), "white")
+    region = comic.TextRegion((.1, .1, .4, .2), "STOP!", .9, "Parar!")
+    comic.write_cache("book", 0, image, "en", "pt", "openai", "chosen", [region])
+    comic.save_correction("book", 0, region)
+    assert not comic._correction_file("book", 0).is_file()
+    path = comic._correction_file("book", 0)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({region.identity: {}}), encoding="utf-8")
+    assert comic.read_cache("book", 0, image, "en", "pt", "openai", "chosen") is not None
+    region.translated = "Pare!"; region.manual_translation = True
+    comic.save_correction("book", 0, region)
+    content = path.read_bytes()
+    comic.save_correction("book", 0, region)
+    assert path.read_bytes() == content
+    assert comic.read_cache("book", 0, image, "en", "pt", "openai", "chosen")[0].translated == "Pare!"
 
 
 def test_original_correction_invalidates_only_stale_translation(monkeypatch, tmp_path):
@@ -271,12 +461,16 @@ def test_local_component_download_reports_progress_and_can_cancel(monkeypatch, t
     assert progress[-1] == (1, 1, 8, 8)
     assert len(installed) == 1
     assert not list(tmp_path.glob("komicove-model-*"))
+    sentence_path = tmp_path / "models" / "en.onnx"
+    comic.install_local_offer((None, ("en", "https://example.test/en.onnx", sentence_path)))
+    assert sentence_path.read_bytes() == b"abcdefgh"
+    assert not list(sentence_path.parent.glob("tmp*.onnx"))
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Credential Manager only")
 def test_windows_key_is_outside_preferences(monkeypatch, tmp_path):
     monkeypatch.setattr(comic, "_CACHE", tmp_path / "cache")
-    monkeypatch.setattr(comic, "_CREDENTIAL_PREFIX", "Komicove:test-pre9:")
+    monkeypatch.setattr(comic, "_CREDENTIAL_PREFIX", "Komicove:test-translation:")
     try:
         comic.save_key("openai", "fixture-private-key")
         assert comic.load_key("openai") == "fixture-private-key"

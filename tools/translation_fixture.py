@@ -38,7 +38,7 @@ def page(title, manga=False):
 
 
 def main():
-    output = Path(__file__).resolve().parents[1] / "build" / "phase-pre9-fixtures"
+    output = Path(__file__).resolve().parents[1] / "build" / "translation-fixtures"
     output.mkdir(parents=True, exist_ok=True)
     pages = [page("HELLO, HERO!"), page("AMANHÃ COMEÇA"), page("MANGA PAGE", True)]
     with ZipFile(output / "authorial-ocr.cbz", "w", ZIP_DEFLATED) as archive:

@@ -70,10 +70,17 @@ def json_load(path, default):
         with open(path, "r", encoding="utf-8") as source: return json.load(source)
     except (OSError, json.JSONDecodeError): return default
 
+def _temporary_state_path(path):
+    return f"{path}.tmp-{os.getpid()}-{threading.get_ident()}"
+
 def json_save(path, data):
-    temporary = None
+    temporary = _temporary_state_path(path)
     try:
-        fd, temporary = tempfile.mkstemp(prefix=".state-", dir=os.path.dirname(os.path.abspath(path)))
+        try:
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            os.unlink(temporary)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as target:
             json.dump(data, target, indent=2)
             target.flush()
@@ -81,7 +88,10 @@ def json_save(path, data):
         os.replace(temporary, path)
     except OSError: return False
     finally:
-        if temporary and os.path.exists(temporary): os.remove(temporary)
+        try:
+            if os.path.exists(temporary): os.remove(temporary)
+        except OSError:
+            pass
     return True
 
 _progress_cache: dict = {}

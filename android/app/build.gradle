@@ -36,15 +36,15 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes {
         debug {
-            if (providers.gradleProperty('phasePre9Test').getOrElse('false').toBoolean()) {
-                applicationIdSuffix '.pre9test'
-                manifestPlaceholders = [appLabel: 'Komicove Pré-9 Teste']
+            if (providers.gradleProperty('translationTest').getOrElse('false').toBoolean()) {
+                applicationIdSuffix '.translationtest'
+                manifestPlaceholders = [appLabel: 'Komicove Tradução Teste']
             }
             if (providers.gradleProperty('phase4Test').getOrElse('false').toBoolean()) {
                 applicationIdSuffix '.phase4test'
                 manifestPlaceholders = [appLabel: 'Komicove Fase 4 Teste']
             }
-            if (!providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() && !providers.gradleProperty('phasePre9Test').getOrElse('false').toBoolean()) manifestPlaceholders = [appLabel: 'Komicove']
+            if (!providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() && !providers.gradleProperty('translationTest').getOrElse('false').toBoolean()) manifestPlaceholders = [appLabel: 'Komicove']
             if (providers.gradleProperty('guidedAiTest').getOrElse('false').toBoolean()) {
                 applicationIdSuffix '.aitest'
                 manifestPlaceholders = [appLabel: 'Komicove IA Teste']

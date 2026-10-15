@@ -1,7 +1,23 @@
 from types import SimpleNamespace
+import time
 import pytest
 from PIL import Image
 from komicove_app import reader_views, storage
+
+
+def test_failed_state_write_returns_without_freezing_ui(monkeypatch, tmp_path):
+    path = tmp_path / 'blocked.json'
+    original = storage.os.open
+
+    def denied(candidate, flags, mode=0o777):
+        if str(candidate).startswith(str(path)):
+            raise PermissionError(candidate)
+        return original(candidate, flags, mode)
+
+    monkeypatch.setattr(storage.os, 'open', denied)
+    started = time.monotonic()
+    assert not storage.json_save(str(path), {'value': 1})
+    assert time.monotonic() - started < .2
 
 
 @pytest.fixture

@@ -331,7 +331,7 @@ final class I18n {
         put("Sem notas publicadas.","No release notes published.");put("Não foi possível verificar atualizações.","Could not check for updates.");
     }
     static {
-        put("Tradução","Translation");put("Idioma original (auto, en, pt, ja...)","Original language (auto, en, pt, ja...)");
+        put("Tradução","Translation");put("Tradução experimental","Experimental translation");put("Experimental, em melhoria contínua.","Experimental, with ongoing improvements.");put("Idioma original (auto, en, pt, ja...)","Original language (auto, en, pt, ja...)");
         put("Voltar à leitura","Back to reading");put("Traduza esta página e continue de onde parou.","Translate this page and continue where you left off.");
         put("Como traduzir","How to translate");put("Idioma original","Original language");put("Idioma de destino","Target language");
         put("Detectar automaticamente","Detect automatically");put("Português","Portuguese");put("Inglês","English");put("Espanhol","Spanish");put("Francês","French");put("Alemão","German");put("Italiano","Italian");put("Japonês","Japanese");put("Chinês","Chinese");put("Coreano","Korean");

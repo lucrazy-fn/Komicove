@@ -4,6 +4,8 @@ from pathlib import Path
 from time import monotonic, sleep
 from unittest.mock import patch
 import os
+import tempfile
+import zipfile
 import tkinter as tk
 from PIL import ImageGrab
 
@@ -11,6 +13,7 @@ from komicove_app.archive import SmartPageLoader
 from komicove_app.reader_views import ReaderWindow
 from komicove_app.reader import save_manual_panels, load_manual_panels
 from komicove_app.storage import save_prefs
+from komicove_app.comic_translation import auto_translation_candidate
 
 
 def pump(root, condition, seconds=60):
@@ -24,7 +27,7 @@ def pump(root, condition, seconds=60):
 
 
 def main():
-    path = Path(__file__).resolve().parents[1] / "build/phase-pre9-fixtures/authorial-ocr.cbz"
+    path = Path(__file__).resolve().parents[1] / "build/translation-fixtures/authorial-ocr.cbz"
     assert path.is_file(), "Run tools/translation_fixture.py first"
     save_prefs(reader_guided=True, reader_animate_guided=False)
     root = tk.Tk()
@@ -39,22 +42,42 @@ def main():
         assert reader._guided and reader._regions == panels
         reader._translation_dialog()
         dialog = reader._translation_window
+        assert "experimental" in dialog.title().casefold()
         pump(root, lambda: dialog.future.done())
         dialog.source.set("en")
         dialog.target.set("pt")
         dialog.ocr_language.set("eng")
         dialog.provider.set("local")
+        dialog.mode.set("local")
+        dialog._mode_changed()
         dialog._start(False)
         pump(root, lambda: bool(dialog.regions))
         assert dialog.regions, (f"OCR found no regions: {dialog.status.cget('text')}; "
                                 f"future={dialog.future.exception() if dialog.future.done() else 'running'}")
         assert any("HELLO" in row.original for row in dialog.regions)
-        with patch("komicove_app.translation_views.local_translation_available", return_value=True), \
-             patch("komicove_app.translation_views.local_model_offer", return_value=(None, None)), \
-             patch("komicove_app.translation_views.local_translate", return_value="Olá, herói!"):
+        if os.environ.get("KOMICOVE_SMOKE_REAL_LOCAL") == "1":
             dialog._start(True)
             pump(root, lambda: dialog.future.done() and any(row.translated for row in dialog.regions))
-        assert all(row.translated or row.confidence < .2 for row in dialog.regions)
+        else:
+            with patch("komicove_app.translation_views.local_translation_available", return_value=True), \
+                 patch("komicove_app.translation_views.local_model_offer", return_value=(None, None)), \
+                 patch("komicove_app.translation_views.local_translate", return_value="Olá, herói!"):
+                dialog._start(True)
+                pump(root, lambda: dialog.future.done() and any(row.translated for row in dialog.regions))
+        assert all(row.translated for row in dialog.regions if auto_translation_candidate(row))
+        with tempfile.TemporaryDirectory(prefix="komicove-export-") as directory:
+            exported = Path(directory) / "authorial-translated.cbz"
+            changed = dialog._work_export(exported, dialog._settings(), {}, reader._rotation)
+            assert changed > 0 and exported.is_file()
+            with zipfile.ZipFile(path) as source, zipfile.ZipFile(exported) as result:
+                assert source.namelist() == result.namelist()
+                assert any(source.read(name) != result.read(name) for name in source.namelist())
+            reopened = SmartPageLoader(exported)
+            try:
+                assert reopened.count == reader._count
+                assert reopened.get_pil(0).size == reader._loader.get_pil(0).size
+            finally:
+                reopened.close()
         dialog.view.set("overlay")
         dialog._set_view()
         assert reader._translation_page == reader._idx
@@ -95,7 +118,8 @@ def main():
             x, y = dialog.winfo_rootx(), dialog.winfo_rooty()
             ImageGrab.grab(bbox=(x, y, x + dialog.winfo_width(),
                                  y + dialog.winfo_height())).save(screenshot)
-        print("GUI smoke: CBZ, OCR, mock translation, overlay, guided panels, rotation and navigation PASS")
+        engine = "real local" if os.environ.get("KOMICOVE_SMOKE_REAL_LOCAL") == "1" else "mock"
+        print(f"GUI smoke: CBZ, OCR, {engine} translation, overlay, guided panels, rotation and navigation PASS")
         dialog.close()
     finally:
         reader._close()

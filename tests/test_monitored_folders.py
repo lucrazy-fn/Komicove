@@ -1,5 +1,7 @@
 import io
 import shutil
+import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -71,6 +73,59 @@ def test_new_removed_renamed_and_moved_keep_content_identity(tmp_path):
     comic(destination)
     assert settle(index, clock)["added"] == 0
     assert index.snapshot()["books"][identity]["available"]
+
+
+def test_modified_archive_replaces_old_identity_without_duplicate(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    path = root / "issue.cbz"
+    comic(path, "red")
+    assert settle(index, clock)["added"] == 1
+    original = next(iter(index.snapshot()["books"]))
+    comic(path, "blue")
+    index.rescan()
+    clock[0] += 4
+    partial = []
+    report = index.rescan(publish=lambda: partial.append(index.paths()))
+    snapshot = index.snapshot()
+    assert partial == [[str(path)]]
+    assert report["added"] == 1
+    assert original not in snapshot["books"]
+    assert index.paths() == [str(path)]
+    assert next(iter(snapshot["books"])) != original
+    assert index.rescan()["added"] == 0
+
+
+def test_import_reports_real_progress_and_publishes_books(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    for number in range(5):
+        comic(root / f"{number}.cbz", title=str(number))
+    index.rescan()
+    clock[0] += 4
+    progress, published = [], []
+    report = index.rescan(progress=lambda done, total: progress.append((done, total)),
+                          publish=lambda: published.append(len(index.paths())))
+    assert report["added"] == 5
+    assert progress[0] == (0, 5) and progress[-1] == (5, 5)
+    assert published and published[-1] == 5
+
+
+def test_slow_import_publishes_before_final_file(tmp_path):
+    index, root, clock = index_for(tmp_path)
+    for number in range(6):
+        comic(root / f"{number}.cbz", title=str(number))
+    index.rescan()
+    clock[0] += 4
+    validate = index.validator
+
+    def slow_validate(path):
+        time.sleep(.15)
+        validate(path)
+
+    index.validator = slow_validate
+    published = []
+    index.rescan(publish=lambda: published.append(len(index.paths())))
+    assert published[-1] == 6
+    assert any(0 < count < 6 for count in published)
 
 
 def test_distinct_archives_with_same_internal_names_do_not_conflict(tmp_path):
@@ -188,6 +243,29 @@ def test_polling_watcher_detects_changes_and_stops(tmp_path):
         watcher.close()
         watcher.thread.join(2)
     assert not watcher.thread.is_alive()
+
+
+def test_slow_index_write_does_not_block_library_snapshot(tmp_path, monkeypatch):
+    index, root, _ = index_for(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    original = index._write
+
+    def slow_write(data):
+        entered.set()
+        assert release.wait(2)
+        return original(data)
+
+    monkeypatch.setattr(index, '_write', slow_write)
+    worker = threading.Thread(target=lambda: index.configure(index.key(root), name='Library'))
+    worker.start()
+    assert entered.wait(1)
+    started = time.monotonic()
+    assert index.snapshot()['folders'][index.key(root)]['name'] == 'Library'
+    assert time.monotonic() - started < .2
+    release.set()
+    worker.join(2)
+    assert not worker.is_alive()
 
 
 def test_removing_folder_hides_exclusive_books_and_keeps_other_sources(tmp_path):

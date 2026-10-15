@@ -74,6 +74,13 @@ final class ComicTextReconstruction {
         }
         int backgroundColor=colorCount==0?Color.rgb(Math.round(background),Math.round(background),Math.round(background))
                 :Color.rgb((int)(red/colorCount),(int)(green/colorCount),(int)(blue/colorCount));
+        red=green=blue=0;colorCount=0;
+        for(int y=Math.max(0,text.top);y<Math.min(height,text.bottom);y+=2)
+            for(int x=Math.max(0,text.left);x<Math.min(width,text.right);x+=2){
+                int color=source[y*width+x];if(Math.abs(light(color)-background)>=28)continue;
+                red+=Color.red(color);green+=Color.green(color);blue+=Color.blue(color);colorCount++;
+            }
+        if(colorCount>=12)backgroundColor=Color.rgb((int)(red/colorCount),(int)(green/colorCount),(int)(blue/colorCount));
         boolean darkText=background>=120;
         boolean[] mask=new boolean[source.length];int count=0;
         for(int y=area.top;y<area.bottom;y++)for(int x=area.left;x<area.right;x++){

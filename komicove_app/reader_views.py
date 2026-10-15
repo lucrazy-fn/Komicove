@@ -595,7 +595,7 @@ class ReaderContent:
         self._overview_btn.pack(side="right", padx=3)
         self._mkbtn(right, ui('Preferências', 'Preferences'), self._reader_preferences,
                     icon_name="sliders-horizontal").pack(side="right", padx=3)
-        self._mkbtn(right, ui('OCR e tradução', 'OCR and translation'), self._translation_dialog,
+        self._mkbtn(right, ui('Tradução experimental', 'Experimental translation'), self._translation_dialog,
                     icon_name="book-open").pack(side="right", padx=3)
         self._mkbtn(right, ui('Editar quadros', 'Edit panels'), self._edit_panels,
                     icon_name="pencil").pack(side="right", padx=3)
@@ -613,7 +613,7 @@ class ReaderContent:
         self._guided_heading=KomicoveButton(guide_row,ui('Se localizar','Find your place'),self._toggle_overview,guide_palette,compact=True,icon_name='book-open')
         self._guide_status = tk.Label(guide_row, font=("Segoe UI", 9), bg=c["surface"], fg=c["text_dim"])
         self._guided_header_items=[self._guided_heading,self._guide_status,
-            self._mkbtn(guide_row,ui('Traduzir','Translate'),self._translation_dialog,icon_name='book-open'),
+            self._mkbtn(guide_row,ui('Tradução experimental','Experimental translation'),self._translation_dialog,icon_name='book-open'),
             self._mkbtn(guide_row,ui('Redetectar','Redetect'),self._redetect_panels,icon_name='refresh-cw'),
             self._mkbtn(guide_row,ui('Editar quadros','Edit panels'),self._edit_panels,icon_name='pencil'),
             self._mkbtn(guide_row,ui('Sair','Exit'),self._toggle_guided,icon_name='maximize')]
@@ -1529,7 +1529,7 @@ class ReaderContent:
         def translation_settings():
             dialog.destroy()
             self._translation_dialog()
-        KomicoveButton(header, ui('OCR e tradução', 'OCR and translation'), translation_settings,
+        KomicoveButton(header, ui('Tradução experimental', 'Experimental translation'), translation_settings,
                        THEME, kind="secondary", compact=True, icon_name="book-open").pack(side="right", padx=6)
         body=tk.Frame(dialog,bg=THEME["bg"]);body.pack(fill="both",expand=True,padx=24,pady=18)
         persist = self._own_variable(tk.BooleanVar(master=self,value=self._persist_zoom))

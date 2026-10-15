@@ -1,12 +1,13 @@
 """Reader-attached OCR and translation controls for the desktop app."""
 
 import json
+from io import BytesIO
 from pathlib import Path
 from statistics import median
 from collections import deque
 import tkinter as tk
 import webbrowser
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor, CancelledError
 from threading import Event
 from queue import SimpleQueue, Empty
@@ -19,8 +20,9 @@ from komicove_app.comic_translation import (
     apply_corrections, save_correction, clear_cache,
     load_key, save_key, tesseract_available, local_translation_available, detect_source,
     local_model_offer, local_model_download_size, install_local_offer,
-    remove_local_model, rotate_regions,
-    PROVIDER_MODELS, PROVIDER_KEY_URLS, VISION_MODELS,
+    remove_local_model, rotate_regions, previous_page_context, export_cbz_copy,
+    glossary_exact_match,
+    PROVIDER_MODELS, PROVIDER_KEY_URLS, VISION_MODELS, auto_translation_candidate,
 )
 from komicove_app.storage import load_prefs, save_prefs
 from komicove_app.translations import ui
@@ -30,7 +32,7 @@ class TranslationDialog(tk.Toplevel):
     def __init__(self, reader):
         super().__init__(reader)
         self.reader = reader
-        self.title(ui("Tradução", "Translation"))
+        self.title(ui("Tradução experimental", "Experimental translation"))
         self.geometry("1120x720")
         self.minsize(820, 540)
         self.configure(bg="#111014")
@@ -51,6 +53,7 @@ class TranslationDialog(tk.Toplevel):
         self.updates = SimpleQueue()
         self.model_offers = SimpleQueue()
         self.model_progress = SimpleQueue()
+        self.export_progress = SimpleQueue()
         self.page = reader._idx
         self.regions = []
         self.regions_rotation = reader._rotation
@@ -162,6 +165,7 @@ class TranslationDialog(tk.Toplevel):
         self.preview_zoom_label.pack(side="left", padx=7)
         self._button(zoom_controls, "+", lambda: self._zoom_preview(1.5))
         self._button(zoom_controls, ui("Encaixar", "Fit"), lambda: self._zoom_preview(1, reset=True))
+        self._button(zoom_controls, ui("Exportar CBZ", "Export CBZ"), self._export)
         self.preview_canvas = tk.Canvas(preview_area, bg="#08090b", highlightthickness=1,
                                         highlightbackground="#3c353a")
         self.preview_canvas.pack(fill="both", expand=True, padx=18, pady=(0, 9))
@@ -178,9 +182,10 @@ class TranslationDialog(tk.Toplevel):
                                         bg="#242026", fg="#e8e3e5", font=("Segoe UI", 11),
                                         anchor="w", justify="left", wraplength=500, padx=14, pady=12)
         self.preview_caption.pack(fill="x", padx=18, pady=(0, 16))
-        tk.Label(body, text=ui("Tradução", "Translation"),
+        tk.Label(body, text=ui("Tradução experimental", "Experimental translation"),
                  font=("Segoe UI", 20, "bold"), bg="#111014", fg="#fff").pack(anchor="w", padx=18, pady=(15, 2))
-        tk.Label(body, text=ui("Sua página, no seu idioma.", "Your page, in your language."),
+        tk.Label(body, text=ui("Experimental, em melhoria contínua.",
+                               "Experimental, with ongoing improvements."),
                  font=("Segoe UI", 10), bg="#111014", fg="#b9afb5").pack(anchor="w", padx=18, pady=(0, 12))
         settings_card = tk.Frame(body, bg="#1e1a1f", pady=10)
         settings_card.pack(fill="x", padx=14, pady=(0, 8))
@@ -687,6 +692,65 @@ class TranslationDialog(tk.Toplevel):
                                            self.reader._rotation, translate, settings, glossary, key)
         self._poll(lambda _: self.status.config(text=ui("Concluído.", "Done.")))
 
+    def _export(self):
+        if self.future and not self.future.done():
+            return
+        if not messagebox.askyesno(ui("Exportar cópia", "Export copy"),
+                ui("As páginas já traduzidas serão incluídas. Páginas sem resultado permanecem originais. Nenhuma tradução paga será iniciada. Continuar?",
+                   "Completed translated pages will be included. Pages without a result stay original. No paid translation starts. Continue?"), parent=self):
+            return
+        original = Path(self.reader._path)
+        destination = filedialog.asksaveasfilename(parent=self, defaultextension=".cbz",
+            filetypes=[("Comic Book ZIP", "*.cbz")],
+            initialfile=original.stem + "-traduzido.cbz")
+        if not destination:
+            return
+        settings = self._settings()
+        try:
+            glossary = json.loads(settings["translation_glossary"] or "{}")
+            if not isinstance(glossary, dict):
+                raise ValueError()
+        except ValueError:
+            self._error(TranslationError("invalid_glossary")); return
+        self.cancel.clear()
+        self.status.config(text=ui("Preparando cópia CBZ...", "Preparing CBZ copy..."))
+        self.future = self.executor.submit(self._work_export, destination, settings, glossary,
+                                           self.reader._rotation)
+        self._poll(lambda replaced: self.status.config(
+            text=ui(f"Cópia salva: {replaced} páginas traduzidas.",
+                    f"Copy saved: {replaced} translated pages.")))
+
+    def _work_export(self, destination, settings, glossary, rotation):
+        archive = self.reader._loader.backend
+        def render(index, data):
+            image = Image.open(BytesIO(data))
+            source = image.convert("RGBA")
+            args = (self.reader._content_key, index, source,
+                    settings["translation_source"], settings["translation_target"],
+                    settings["translation_provider"], settings["translation_model"])
+            options = (settings["translation_endpoint"], glossary,
+                       settings["translation_ocr"], self.reader._manga,
+                       settings["translation_vision"])
+            regions = read_cache(*args, *options)
+            if regions is None and rotation:
+                turned = source.rotate(-rotation, expand=True)
+                regions = read_cache(self.reader._content_key, index, turned, *args[3:],
+                                     *options, turns=rotation // 90)
+                if regions is not None:
+                    regions = rotate_regions(regions, -rotation // 90)
+            if not regions or not any(row.translated for row in regions):
+                return None
+            result = draw_translation_overlay(source, regions, (0, 0, source.width, source.height))
+            output = BytesIO()
+            format_name = image.format or "PNG"
+            if format_name == "JPEG":
+                result.save(output, format="JPEG", quality=95, subsampling=0)
+            else:
+                result.save(output, format=format_name)
+            return output.getvalue()
+        return export_cbz_copy(archive, destination, render, self.cancel,
+                               lambda done, total, replaced: self.export_progress.put((done, total, replaced)))
+
     def _work(self, pages, selected, scope, panel, manga, rotation, translate, settings, glossary, key):
         prepared_pairs = set()
         for number, page in enumerate(pages, 1):
@@ -726,14 +790,26 @@ class TranslationDialog(tk.Toplevel):
                 from komicove_app.comic_translation import _overlap
                 chosen = [region for region in regions if _overlap(region.box, panel) > 0]
             if translate and chosen:
-                pending = [region for region in chosen if (region.confidence >= .2 or region.manual_original)
+                pending = [region for region in chosen if auto_translation_candidate(region)
                            and not region.manual_translation
                            and not region.translated and not region.translation_attempted]
                 if pending:
                     if settings["translation_provider"] == "local":
+                        for region in pending:
+                            exact = glossary_exact_match(region.original, glossary)
+                            if exact is not None:
+                                region.translated = exact
+                                region.translation_attempted = True
+                        pending = [region for region in pending if not region.translation_attempted]
+                        if not pending:
+                            write_cache(*args, regions, settings["translation_endpoint"], glossary,
+                                        settings["translation_ocr"], manga, settings["translation_vision"])
+                            self.updates.put((page, regions, number, len(pages), rotation))
+                            continue
                         source = settings["translation_source"]
                         if source == "auto":
-                            source = detect_source(" ".join(r.original for r in regions))
+                            source = detect_source(" ".join(r.original for r in regions
+                                                      if auto_translation_candidate(r)))
                         pair = (source, settings["translation_target"])
                         if source != pair[1] and pair not in prepared_pairs:
                             offer = local_model_offer(*pair)
@@ -751,33 +827,25 @@ class TranslationDialog(tk.Toplevel):
                                     lambda step, count, received, length: self.model_progress.put(
                                         (step, count, received, length)))
                             prepared_pairs.add(pair)
-                        for start in range(0, len(pending), 12):
+                        for region in pending:
                             if self.cancel.is_set():
                                 raise CancelledError()
-                            batch = pending[start:start+12]
-                            first = regions.index(batch[0])
-                            preceding = [row.original for row in regions[max(0, first-4):first]
-                                         if row.original.strip()]
-                            original_lines = preceding + [row.original for row in batch]
-                            result = ("\n".join(original_lines) if source == pair[1] else
-                                      local_translate("\n".join(original_lines), source, pair[1]))
-                            lines = result.splitlines()
-                            if len(lines) != len(original_lines):
-                                lines = [row.original if source == pair[1] else
-                                         local_translate(row.original, source, pair[1]) for row in batch]
-                            else:
-                                lines = lines[len(preceding):]
-                            for region, value in zip(batch, lines):
-                                region.translated = value.strip()
-                                region.translation_attempted = True
+                            # Argos cannot guarantee line boundaries after translation.
+                            # Each result belongs to exactly one OCR region.
+                            value = (region.original if source == pair[1] else
+                                     local_translate(region.original, source, pair[1]))
+                            region.translated = value.strip()
+                            region.translation_attempted = True
                     else:
                         for start in range(0, len(pending), 12):
                             if self.cancel.is_set():
                                 raise CancelledError()
                             batch = pending[start:start+12]
                             first, last = regions.index(batch[0]), regions.index(batch[-1])
-                            nearby = [row.original for row in regions[max(0, first-4):min(len(regions), last+5)]
-                                      if row not in batch and row.original][:8]
+                            nearby = previous_page_context(self.reader._content_key, page)
+                            nearby += [row.original for row in regions[max(0, first-4):min(len(regions), last+5)]
+                                       if row not in batch and auto_translation_candidate(row)]
+                            nearby = nearby[-8:]
                             translate_remote(batch, settings["translation_source"],
                                              settings["translation_target"],
                                              provider=settings["translation_provider"], model=settings["translation_model"],
@@ -811,6 +879,13 @@ class TranslationDialog(tk.Toplevel):
             progress = f"{received * 100 // length}%" if length else f"{received // 1048576} MB"
             self.status.config(text=ui(f"Baixando componente {step}/{count}: {progress}",
                                        f"Downloading component {step}/{count}: {progress}"))
+        while True:
+            try:
+                done_count, total_count, replaced = self.export_progress.get_nowait()
+            except Empty:
+                break
+            self.status.config(text=ui(f"Exportando {done_count}/{total_count}, {replaced} traduzidas",
+                                       f"Exporting {done_count}/{total_count}, {replaced} translated"))
         while True:
             try:
                 page, rows, number, total, rotation = self.updates.get_nowait()
@@ -899,6 +974,7 @@ class TranslationDialog(tk.Toplevel):
         labels = {
             "ocr_unavailable": ("Instale Tesseract OCR para usar OCR local.", "Install Tesseract OCR for local OCR."),
             "ocr_language_or_model_unavailable": ("Pacote OCR indisponível.", "OCR language pack unavailable."),
+            "ocr_timeout": ("O reconhecimento demorou demais nesta página. Tente selecionar uma região menor.", "Text recognition took too long on this page. Try selecting a smaller region."),
             "local_translation_unavailable": ("Instale Argos Translate para tradução offline.", "Install Argos Translate for offline translation."),
             "local_model_unavailable": ("Modelo local para este par não está instalado.", "Local model for this pair is not installed."),
             "local_model_invalid": ("Arquivo de modelo local inválido.", "Invalid local model file."),
@@ -917,6 +993,7 @@ class TranslationDialog(tk.Toplevel):
             "provider_unavailable": ("Provedor indisponível.", "Provider unavailable."),
             "invalid_provider_response": ("Resposta inválida do provedor.", "Invalid provider response."),
             "secure_storage_unavailable": ("Armazenamento seguro indisponível neste sistema.", "Secure storage is unavailable on this system."),
+            "invalid_export_path": ("Escolha um novo arquivo CBZ, separado da HQ original.", "Choose a new CBZ file, separate from the original comic."),
         }
         pt, en = labels.get(exc.code, ("Não foi possível processar.", "Could not process."))
         self.status.config(text=ui(pt, en))
@@ -1079,9 +1156,12 @@ def draw_translation_overlay(frame, regions, transform, panel=None):
                     width_room = natural_width
         layout_width = max(natural_width, round(width_room))
         line_height = box[2]-box[0] if vertical else box[3]-box[1]
-        layout_height = round(line_height * 1.5)
-        source_size = _source_font_size(frame, box, region.translated, angle,
+        layout_height = max(12, round(line_height))
+        original_size = _source_font_size(frame, box, region.original, angle,
+                                          region.word_scales)
+        target_size = _source_font_size(frame, box, region.translated, angle,
                                         region.word_scales)
+        source_size = round((original_size + target_size) / 2)
         layout = _styled_layout(draw, region.translated, source_size,
                                 region.word_scales, layout_width-2, layout_height)
         if layout is None:
@@ -1114,7 +1194,7 @@ def draw_translation_overlay(frame, regions, transform, panel=None):
 def _draw_translation_label(draw, image, box, value, angle=0):
     """Keep lettering visible when cleaning its background would damage artwork."""
     canvas_size = image.size
-    size = max(22, int(min(canvas_size) * .03))
+    size = max(14, min(28, int((box[3] - box[1]) / 3), int(min(canvas_size) * .025)))
     font = _comic_font(value, size)
     width = min(max(size * 7, box[2] - box[0]), max(30, canvas_size[0] - 8))
     words = value.split()
@@ -1129,9 +1209,9 @@ def _draw_translation_label(draw, image, box, value, angle=0):
             current = candidate
     if current:
         lines.append(current)
-    if len(lines) > 4:
-        lines = [ui("Ver tradução completa em Revisar", "Open Review for full translation")]
     line_height = int(size * 1.25)
+    if len(lines) > 4 or len(lines) * line_height + 8 > (box[3] - box[1]) * 1.1:
+        lines = [ui("Ver tradução completa em Revisar", "Open Review for full translation")]
     height = max(size + 8, len(lines) * line_height + 8)
     left = min(max(4, box[0]), canvas_size[0] - width - 4)
     top = box[3] + 2 if box[3] + height + 2 <= canvas_size[1] else max(4, box[1] - height - 2)
@@ -1161,11 +1241,13 @@ def _draw_translation_label(draw, image, box, value, angle=0):
 def _clean_text_pixels(image, box):
     """Rebuild lettering pixels only when the surrounding color is stable."""
     l, t, r, b = box
-    outer = (max(0, l-10), max(0, t-10), min(image.width, r+10), min(image.height, b+10))
+    margin = max(10, min(22, round((b-t)*.35)))
+    outer = (max(0, l-margin-8), max(0, t-margin-8),
+             min(image.width, r+margin+8), min(image.height, b+margin+8))
     crop = image.crop(outer)
     ox, oy = l-outer[0], t-outer[1]
-    inner = (max(0, ox-5), max(0, oy-5),
-             min(crop.width, ox+r-l+5), min(crop.height, oy+b-t+5))
+    inner = (max(0, ox-margin), max(0, oy-margin),
+             min(crop.width, ox+r-l+margin), min(crop.height, oy+b-t+margin))
     ring = []
     ring_colors = []
     pixels = crop.load()
@@ -1179,24 +1261,72 @@ def _clean_text_pixels(image, box):
     if len(ring) < 8:
         return None
     background = median(ring)
+    core_colors = [pixels[x, y] for y in range(max(0, oy), min(crop.height, oy+b-t), 2)
+                   for x in range(max(0, ox), min(crop.width, ox+r-l), 2)]
+    core = [sum(pixel) / 3 for pixel in core_colors]
+    core_background = median(core) if core else 0
+    uniform_light_core = (core_background > 220 and
+                          median(abs(value-core_background) for value in core) < 18 and
+                          sum(value > 180 for value in core) >= len(core) * .68)
     if median(abs(value-background) for value in ring) > 22:
-        return None
+        if not uniform_light_core:
+            return None
+        background = core_background
+        ring_colors = core_colors
     background_color = tuple(int(median(sample[channel] for sample in ring_colors))
                              for channel in range(3))
     if any(median(abs(sample[channel] - background_color[channel])
                   for sample in ring_colors) > 22 for channel in range(3)):
         return None
     polarity = -1 if background >= 120 else 1
+    interior = [pixels[x, y] for y in range(oy, min(crop.height, oy+b-t), 2)
+                for x in range(ox, min(crop.width, ox+r-l), 2)
+                if abs(sum(pixels[x, y])/3-background) < 28]
+    if len(interior) >= 12:
+        background_color = tuple(int(median(sample[channel] for sample in interior))
+                                 for channel in range(3))
     mask = Image.new("L", crop.size)
     mask_pixels = mask.load()
     count = 0
     threshold = 12 if median(abs(value-background) for value in ring) < 8 else 26
+    candidates = bytearray(crop.width * crop.height)
     for y in range(inner[1], inner[3]):
         for x in range(inner[0], inner[2]):
             delta = sum(pixels[x, y]) / 3 - background
             if polarity * delta > threshold:
-                mask_pixels[x, y] = 255
-                count += 1
+                candidates[y * crop.width + x] = 1
+    seen = bytearray(len(candidates))
+    for y in range(inner[1], inner[3]):
+        for x in range(inner[0], inner[2]):
+            start = y * crop.width + x
+            if not candidates[start] or seen[start]:
+                continue
+            seen[start] = 1
+            queue = deque([start])
+            component = []
+            left = right = x
+            top = bottom = y
+            touches_edge = False
+            while queue:
+                pixel = queue.popleft()
+                px, py = pixel % crop.width, pixel // crop.width
+                component.append(pixel)
+                left, right = min(left, px), max(right, px)
+                top, bottom = min(top, py), max(bottom, py)
+                touches_edge |= (px in (inner[0], inner[2]-1) or
+                                 py in (inner[1], inner[3]-1))
+                for neighbor in (pixel-1 if px > inner[0] else -1,
+                                 pixel+1 if px+1 < inner[2] else -1,
+                                 pixel-crop.width if py > inner[1] else -1,
+                                 pixel+crop.width if py+1 < inner[3] else -1):
+                    if neighbor >= 0 and candidates[neighbor] and not seen[neighbor]:
+                        seen[neighbor] = 1
+                        queue.append(neighbor)
+            if touches_edge or right-left+1 > (r-l)*.6 or bottom-top+1 > (b-t)*1.5:
+                continue
+            for pixel in component:
+                mask_pixels[pixel % crop.width, pixel // crop.width] = 255
+            count += len(component)
     if count < 2 or count > (r-l)*(b-t)*.45:
         return None
     mask = mask.filter(ImageFilter.MaxFilter(9))

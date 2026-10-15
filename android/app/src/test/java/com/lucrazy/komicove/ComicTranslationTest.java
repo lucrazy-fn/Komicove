@@ -125,6 +125,14 @@ public class ComicTranslationTest {
         catch(ComicTranslation.Failure error){assertEquals("timeout",error.code);}
     }
 
+    @Test public void uncertainOcrDoesNotStartRemoteRequest() throws Exception {
+        ComicTranslation.Region row=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"P@R?",.3f);
+        List<ComicTranslation.Region> rows=new ArrayList<>();rows.add(row);
+        ComicTranslation.translateRemote(rows,rows,"en","pt","openai","chosen","unused","","{}");
+        assertFalse(row.translationAttempted);
+        assertEquals("",row.translated);
+    }
+
     @Test public void visionPayloadRequiresImageAndSupportedModel() throws Exception {
         JSONObject input=new JSONObject().put("balloons",new org.json.JSONArray().put("Hello"));
         for(String provider:new String[]{"openai","anthropic","xai","gemini"}){
@@ -173,7 +181,9 @@ public class ComicTranslationTest {
         assertNull(ComicTranslation.read(context,"fixture",1,image,"auto","pt","openai","model-a","","{}","ja",false));
         region.original="clear";region.manualOriginal=true;region.translated="certo";region.manualTranslation=true;
         ComicTranslation.saveCorrection(context,"fixture",1,region);
-        assertNull(ComicTranslation.read(context,"fixture",1,image,"auto","pt","openai","model-a","","{}","latin",false));
+        ComicTranslation.Region corrected=ComicTranslation.read(context,"fixture",1,image,"auto","pt","openai","model-a","","{}","latin",false).get(0);
+        assertEquals("clear",corrected.original);
+        assertEquals("certo",corrected.translated);
         ComicTranslation.clearCache(context);
         assertNull(ComicTranslation.read(context,"fixture",1,image,"auto","pt","openai","model-a","","{}","latin",false));
         List<ComicTranslation.Region> rerun=new ArrayList<>();
@@ -182,6 +192,60 @@ public class ComicTranslationTest {
         assertEquals("clear",rerun.get(0).original);
         assertEquals("certo",rerun.get(0).translated);
         image.recycle();
+    }
+
+    @Test public void emptyAndRepeatedCorrectionsDoNotInvalidateCache() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();
+        String book="empty-correction-fixture";
+        Bitmap image=Bitmap.createBitmap(40,40,Bitmap.Config.ARGB_8888);
+        ComicTranslation.Region row=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"STOP!",.8f);
+        row.translated="Pare!";
+        List<ComicTranslation.Region> rows=new ArrayList<>();rows.add(row);
+        ComicTranslation.write(context,book,0,image,"en","pt","openai","chosen","","{}","latin",false,rows);
+        ComicTranslation.saveCorrection(context,book,0,row);
+        assertNotNull(ComicTranslation.read(context,book,0,image,"en","pt","openai","chosen","","{}","latin",false));
+        java.lang.reflect.Method path=ComicTranslation.class.getDeclaredMethod("corrections",Context.class,String.class,int.class);
+        path.setAccessible(true);
+        java.io.File legacy=(java.io.File)path.invoke(null,context,book,0);
+        java.nio.file.Files.write(legacy.toPath(),new JSONObject().put(row.id(),new JSONObject()).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertNotNull(ComicTranslation.read(context,book,0,image,"en","pt","openai","chosen","","{}","latin",false));
+        row.manualTranslation=true;
+        ComicTranslation.saveCorrection(context,book,0,row);
+        ComicTranslation.write(context,book,0,image,"en","pt","openai","chosen","","{}","latin",false,rows);
+        ComicTranslation.saveCorrection(context,book,0,row);
+        assertNotNull(ComicTranslation.read(context,book,0,image,"en","pt","openai","chosen","","{}","latin",false));
+        image.recycle();
+    }
+
+    @Test public void previousPageCorrectionsInvalidateRemoteCacheOnly() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();
+        String book="authorial-context-fixture";
+        Bitmap image=Bitmap.createBitmap(32,32,Bitmap.Config.ARGB_8888);
+        image.eraseColor(Color.WHITE);
+        List<ComicTranslation.Region> current=new ArrayList<>();
+        current.add(new ComicTranslation.Region(new RectF(.1f,.1f,.5f,.2f),"He returned",.9f));
+        ComicTranslation.write(context,book,1,image,"en","pt","openai","chosen","","{}","latin",false,current);
+        assertNotNull(ComicTranslation.read(context,book,1,image,"en","pt","openai","chosen","","{}","latin",false));
+        List<ComicTranslation.Region> earlier=new ArrayList<>();
+        ComicTranslation.Region first=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"The captain left",.9f);
+        earlier.add(first);
+        ComicTranslation.writeOcr(context,book,0,image,"latin",false,earlier);
+        assertEquals("The captain left",ComicTranslation.previousPageContext(context,book,1).get(0));
+        assertNull(ComicTranslation.read(context,book,1,image,"en","pt","openai","chosen","","{}","latin",false));
+        ComicTranslation.write(context,book,1,image,"en","pt","openai","chosen","","{}","latin",false,current);
+        first.original="The captain returned";first.manualOriginal=true;
+        ComicTranslation.saveCorrection(context,book,0,first);
+        assertEquals("The captain returned",ComicTranslation.previousPageContext(context,book,1).get(0));
+        assertNull(ComicTranslation.read(context,book,1,image,"en","pt","openai","chosen","","{}","latin",false));
+        ComicTranslation.write(context,book,1,image,"en","pt","local","","","{}","latin",false,current);
+        assertNotNull(ComicTranslation.read(context,book,1,image,"en","pt","local","","","{}","latin",false));
+        image.recycle();
+    }
+
+    @Test public void localGlossaryMatchesOnlyCompleteExpression() throws Exception {
+        JSONObject glossary=new JSONObject().put("Captain Nova","Capitã Nova");
+        assertEquals("Capitã Nova",ComicTranslation.exactGlossary(" captain   NOVA ",glossary));
+        assertNull(ComicTranslation.exactGlossary("Captain Nova returned",glossary));
     }
 
     @Test public void reconstructionChangesLetterPixelsButKeepsOriginalAndArtwork() {

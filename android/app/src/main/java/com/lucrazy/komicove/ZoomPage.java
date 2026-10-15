@@ -183,8 +183,9 @@ final class ZoomPage extends View {
             TranslationTile tile=null;
             for(TranslationTile candidate:translationTiles)if(candidate.index==index){tile=candidate;break;}
             boolean label=translationCompare||tile==null;
-            String shown=translationCompare?region.original+" / "+region.translated:region.translated;
+            String shown=region.translated;
             TextPaint text=new TextPaint(Paint.ANTI_ALIAS_FLAG);text.setColor(label?Color.WHITE:tile.result.lightBackground?0xff201c20:Color.WHITE);
+            if(translationCompare&&tile!=null)text.setColor(tile.result.lightBackground?0xffa51f39:Color.WHITE);
             boolean latin=true;for(int i=0;i<shown.length();i++)if(shown.charAt(i)>0x024f){latin=false;break;}text.setTypeface(latin?comicFont:Typeface.DEFAULT);
             float left=imageLeft+region.box.left*image.getWidth(),top=imageTop+region.box.top*image.getHeight();
             float boxWidth=Math.max(1,region.box.width()*image.getWidth()),boxHeight=Math.max(1,region.box.height()*image.getHeight());
@@ -224,14 +225,23 @@ final class ZoomPage extends View {
                 else if(otherStart>=axisEnd)available=Math.min(available,axisEnd-axisStart+2*(otherStart-axisEnd));
             }
             int availableHeight=Math.max(1,Math.round(available));
-            if(label){textWidth=Math.max(textWidth,(int)(Ui.dp(getContext(),180)/scale));availableHeight=Math.max(availableHeight,(int)(Ui.dp(getContext(),90)/scale));}
+            if(label){
+                if(translationCompare&&tile!=null){
+                    text.setTextSize(Math.max(8,Ui.dp(getContext(),13)/scale));
+                    textWidth=Math.min(image.getWidth()-8,Math.max(1,(int)Math.ceil(text.measureText(shown)+Ui.dp(getContext(),12)/scale)));
+                }else textWidth=Math.max(textWidth,(int)(Ui.dp(getContext(),180)/scale));
+                availableHeight=Math.max(availableHeight,(int)(Ui.dp(getContext(),90)/scale));
+            }
             StaticLayout layout=null;boolean fits=false;
             float inkHeight=region.inkHeightRatio>0?region.inkHeightRatio*image.getHeight():0;
             float originalInk=Math.max(inkHeight,boxHeight*1.08f);
-            text.setTextSize(40);Rect reference=new Rect();text.getTextBounds(shown,0,shown.length(),reference);
-            int originalSize=Math.max(8,Math.min(150,Math.round(40*originalInk/Math.max(1,reference.height()))));
+            String referenceText=region.original==null||region.original.isEmpty()?shown:region.original;
+            text.setTextSize(40);Rect reference=new Rect();text.getTextBounds(referenceText,0,referenceText.length(),reference);
+            Rect targetReference=new Rect();text.getTextBounds(shown,0,shown.length(),targetReference);
+            float referenceHeight=(reference.height()+targetReference.height())/2f;
+            int originalSize=Math.max(8,Math.min(150,Math.round(40*originalInk/Math.max(1,referenceHeight))));
             int smallest=label?Math.max(8,(int)(Ui.dp(getContext(),12)/scale)):8;
-            int largest=label?Math.max(smallest,(int)(Ui.dp(getContext(),16)/scale)):Math.max(smallest,originalSize);
+            int largest=label?Math.max(smallest,(int)(Ui.dp(getContext(),13)/scale)):Math.max(smallest,originalSize);
             CharSequence content=label?shown:styledTranslation(shown,region.wordScales);
             for(int size=largest;size>=smallest;size--){
                 text.setTextSize(size);
@@ -248,7 +258,7 @@ final class ZoomPage extends View {
             }
             if(!label)c.drawBitmap(tile.result.bitmap,imageLeft+tile.left,imageTop+tile.top,bitmapPaint);
             c.save();
-            if(label){float labelLeft=Math.max(imageLeft+4,Math.min(left,imageLeft+image.getWidth()-textWidth-4));float labelTop=Math.max(imageTop+4,Math.min(top+boxHeight,imageTop+image.getHeight()-layout.getHeight()-6));Paint background=new Paint(Paint.ANTI_ALIAS_FLAG);background.setColor(0xdd201c20);c.drawRoundRect(new RectF(labelLeft,labelTop,labelLeft+textWidth,labelTop+layout.getHeight()+4),4,4,background);c.translate(labelLeft,labelTop+2);}
+            if(label){float labelLeft=Math.max(imageLeft+4,Math.min(left,imageLeft+image.getWidth()-textWidth-4));float gap=translationCompare?Math.max(8,boxHeight*.7f):0;float labelTop=Math.max(imageTop+4,Math.min(top+boxHeight+gap,imageTop+image.getHeight()-layout.getHeight()-6));if(!translationCompare||tile==null){Paint background=new Paint(Paint.ANTI_ALIAS_FLAG);background.setColor(0xdd201c20);c.drawRoundRect(new RectF(labelLeft,labelTop,labelLeft+textWidth,labelTop+layout.getHeight()+4),4,4,background);}c.translate(labelLeft,labelTop+2);}
             else if(textAngle!=0){c.translate(left+boxWidth/2,top+boxHeight/2);c.rotate(textAngle);c.translate(-textWidth/2f,-layout.getHeight()/2f);}
             else c.translate(left+(boxWidth-textWidth)/2,top+(boxHeight-layout.getHeight())/2);
             layout.draw(c);c.restore();

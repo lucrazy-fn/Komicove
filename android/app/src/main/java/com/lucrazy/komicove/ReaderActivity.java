@@ -140,7 +140,7 @@ public final class ReaderActivity extends Activity {
         sheet.addView(readerMenuRow(R.drawable.lucide_maximize,"Tela cheia","Oculta os controles e as barras do sistema.",()->{dialog.dismiss();toggleFullscreen();}));
         sheet.addView(readerMenuRow(R.drawable.lucide_grid,"Selecionar páginas","Veja miniaturas e vá direto para uma página.",()->{dialog.dismiss();thumbnails();}));
         sheet.addView(readerMenuRow(R.drawable.lucide_bookmark,"Marcadores","Salve ou abra seus pontos de leitura.",()->{dialog.dismiss();bookmarks();}));
-        sheet.addView(readerMenuRow(R.drawable.lucide_book_open,"OCR e tradução","Detecte e traduza texto desta HQ.",()->{dialog.dismiss();openTranslation();}));
+        sheet.addView(readerMenuRow(R.drawable.lucide_book_open,"Tradução experimental","Experimental, em melhoria contínua.",()->{dialog.dismiss();openTranslation();}));
         if(guided)sheet.addView(readerMenuRow(R.drawable.lucide_refresh,"Redetectar","Recalcular a detecção sem apagar quadros manuais.",()->{dialog.dismiss();redetectPanels();}));
         sheet.addView(readerMenuRow(R.drawable.lucide_edit,"Editor manual de quadros","Crie, ajuste e reorganize a leitura guiada.",()->{dialog.dismiss();editPanels();}));
         sheet.addView(readerMenuRow(R.drawable.lucide_sliders,"Preferências do leitor","Zoom, encaixe, brilho e leitura guiada.",()->{dialog.dismiss();preferences();}));
