@@ -96,6 +96,18 @@ def test_ocr_tsv_treats_quotes_as_text_instead_of_joining_rows(monkeypatch):
     assert [row.original for row in rows] == ['SAY"', "HELLO"]
 
 
+def test_translation_candidate_accepts_readable_dialogue_and_rejects_short_noise():
+    dialogue = comic.TextRegion((.1, .1, .4, .2), "RUN! THIS WAY!", .72)
+    sound_effect = comic.TextRegion((.1, .2, .4, .3), "KRAKOOM", .80)
+    noise = comic.TextRegion((.1, .3, .2, .4), "AX", .89)
+    uncertain = comic.TextRegion((.1, .4, .4, .5), "I THINK WE SHOULD GO", .64)
+
+    assert comic.auto_translation_candidate(dialogue)
+    assert comic.auto_translation_candidate(sound_effect)
+    assert not comic.auto_translation_candidate(noise)
+    assert not comic.auto_translation_candidate(uncertain)
+
+
 @pytest.mark.skipif(not comic.tesseract_available(), reason="Tesseract is not installed")
 def test_uncertain_balloon_gets_high_resolution_ocr_retry():
     source = authorial_page("HELLO, HERO!")

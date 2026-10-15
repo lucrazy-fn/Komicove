@@ -43,7 +43,7 @@ def auto_translation_candidate(region):
     if region.manual_original:
         return bool(region.original.strip())
     letters = sum(char.isalpha() for char in region.original)
-    threshold = .95 if letters == 1 else .9
+    threshold = .9 if letters <= 3 else AUTO_TRANSLATE_CONFIDENCE
     return (letters >= 2 and region.confidence >= threshold and
             "\ufffd" not in region.original and "\t" not in region.original)
 _DEFAULT_ENDPOINTS = {

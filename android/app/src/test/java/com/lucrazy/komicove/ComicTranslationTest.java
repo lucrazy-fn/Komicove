@@ -32,6 +32,14 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class) @Config(sdk=28)
 public class ComicTranslationTest {
+    @Test public void readableDialogueIsTranslatedButShortNoiseIsNot(){
+        ComicTranslation.Region dialogue=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"RUN! THIS WAY!",.72f);
+        ComicTranslation.Region effect=new ComicTranslation.Region(new RectF(.1f,.2f,.4f,.3f),"KRAKOOM",.80f);
+        ComicTranslation.Region noise=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"AX",.89f);
+        assertTrue(ComicTranslation.autoTranslationCandidate(dialogue));
+        assertTrue(ComicTranslation.autoTranslationCandidate(effect));
+        assertFalse(ComicTranslation.autoTranslationCandidate(noise));
+    }
     private View named(View root,String name){
         if(name.equals(root.getContentDescription()))return root;
         if(root instanceof ViewGroup){ViewGroup group=(ViewGroup)root;for(int i=0;i<group.getChildCount();i++){View found=named(group.getChildAt(i),name);if(found!=null)return found;}}
