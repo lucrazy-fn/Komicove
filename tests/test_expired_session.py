@@ -4,6 +4,7 @@ import pytest
 
 from komicove_app import library_views
 from komicove_client import api_client
+from komicove_client import session_store
 
 
 class _Response:
@@ -38,6 +39,56 @@ def test_internal_server_details_are_not_shown_to_users():
     with pytest.raises(api_client.ApiServerError, match="temporariamente indisponível") as error:
         api_client._raise_response_error(_ServerFailure(), "fallback")
     assert "Internal Server Error" not in str(error.value)
+
+
+def test_server_failure_keeps_saved_session(monkeypatch):
+    existing = SimpleNamespace(token="saved-token")
+    finished = []
+    cleared = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    window = SimpleNamespace(
+        after=lambda delay, callback: callback(),
+        _finish_saved_session=lambda user, usable: finished.append((user, usable)),
+    )
+    monkeypatch.setattr(library_views, "_ACCOUNTS_AVAILABLE", True)
+    monkeypatch.setattr(library_views.session_store, "load_session", lambda: existing)
+    monkeypatch.setattr(library_views.session_store, "clear_session", lambda: cleared.append(True))
+    monkeypatch.setattr(
+        library_views.api_client,
+        "get_current_user",
+        lambda token: (_ for _ in ()).throw(api_client.ApiServerError("offline")),
+    )
+    monkeypatch.setattr(library_views.threading, "Thread", ImmediateThread)
+
+    library_views.LibraryWindow._show_auth(window)
+
+    assert finished == [(existing, True)]
+    assert cleared == []
+
+
+def test_clear_session_tolerates_a_temporarily_locked_file(tmp_path, monkeypatch):
+    session_file = tmp_path / "auth_session.json"
+    session_file.write_text("{}", encoding="utf-8")
+    attempts = []
+    monkeypatch.setattr(session_store, "SESSION_FILE", str(session_file))
+
+    def locked(path):
+        attempts.append(path)
+        raise PermissionError("File is being inspected")
+
+    monkeypatch.setattr(session_store.os, "remove", locked)
+    monkeypatch.setattr(session_store.time, "sleep", lambda delay: None)
+
+    session_store.clear_session()
+
+    assert attempts == [str(session_file)] * 3
 
 
 def test_expired_session_keeps_app_in_local_guest_mode(monkeypatch):

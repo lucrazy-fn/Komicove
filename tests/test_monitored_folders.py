@@ -268,6 +268,24 @@ def test_slow_index_write_does_not_block_library_snapshot(tmp_path, monkeypatch)
     assert not worker.is_alive()
 
 
+def test_index_write_retries_a_transient_windows_lock(tmp_path, monkeypatch):
+    index, root, _ = index_for(tmp_path)
+    from komicove_app import monitored_folders
+    original = monitored_folders.tempfile.mkstemp
+    attempts = []
+
+    def temporarily_locked(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise PermissionError("Antivirus is still inspecting the temporary file")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(monitored_folders.tempfile, "mkstemp", temporarily_locked)
+    index.configure(index.key(root), name="Library")
+    assert len(attempts) == 2
+    assert FolderIndex(index.filename).snapshot()["folders"][index.key(root)]["name"] == "Library"
+
+
 def test_removing_folder_hides_exclusive_books_and_keeps_other_sources(tmp_path):
     index, root, clock = index_for(tmp_path)
     other = tmp_path / "other"

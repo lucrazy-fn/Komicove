@@ -142,12 +142,14 @@ class LibraryWindow(tk.Tk):
                 try:
                     user = api_client.get_current_user(existing.token)
                     outcome = (user, True)
-                except api_client.ApiUnavailableError:
-
+                except (api_client.ApiUnavailableError, api_client.ApiServerError):
                     outcome = (existing, True)
-                except Exception:
+                except api_client.ApiAuthError:
                     session_store.clear_session()
                     outcome = (None, False)
+                except Exception as error:
+                    log.debug("Saved session validation unavailable: %s", error)
+                    outcome = (existing, True)
                 self.after(0, lambda: self._finish_saved_session(*outcome))
 
             threading.Thread(target=validate, daemon=True).start()

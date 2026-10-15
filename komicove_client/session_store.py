@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from dataclasses import asdict, dataclass
 from typing import Optional
 
@@ -49,5 +50,12 @@ def save_session(session: LocalSession) -> None:
 
 
 def clear_session() -> None:
-    if os.path.isfile(SESSION_FILE):
-        os.remove(SESSION_FILE)
+    for attempt in range(3):
+        try:
+            os.remove(SESSION_FILE)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(.025 * (attempt + 1))

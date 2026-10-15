@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import queue
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -83,25 +84,31 @@ class FolderIndex:
 
     def _write(self, data):
         self.filename.parent.mkdir(parents=True, exist_ok=True)
-        name = self.filename.with_name(
-            f".{self.filename.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-        try:
+        failure = None
+        for attempt in range(3):
+            name = None
             try:
-                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            except FileExistsError:
-                name.unlink()
-                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as target:
-                json.dump(data, target, ensure_ascii=False)
-                target.flush()
-                os.fsync(target.fileno())
-            os.replace(name, self.filename)
-        finally:
-            try:
-                if name.exists():
-                    name.unlink()
-            except OSError:
-                pass
+                fd, raw_name = tempfile.mkstemp(
+                    prefix=f".{self.filename.name}.", suffix=".tmp",
+                    dir=self.filename.parent)
+                name = Path(raw_name)
+                with os.fdopen(fd, "w", encoding="utf-8") as target:
+                    json.dump(data, target, ensure_ascii=False)
+                    target.flush()
+                    os.fsync(target.fileno())
+                os.replace(name, self.filename)
+                return
+            except PermissionError as error:
+                failure = error
+                if attempt < 2:
+                    time.sleep(.025 * (attempt + 1))
+            finally:
+                try:
+                    if name is not None and name.exists():
+                        name.unlink()
+                except OSError:
+                    pass
+        raise failure
 
     def add(self, path):
         key = self.key(path)
