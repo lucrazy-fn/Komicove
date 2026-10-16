@@ -34,7 +34,7 @@ from PIL import Image, ImageOps
 from komicove_app.storage import APPDATA_DIR
 
 
-OCR_VERSION = "tesseract-tsv-8"
+OCR_VERSION = "tesseract-tsv-9"
 TRANSLATION_CACHE_VERSION = 4
 AUTO_TRANSLATE_CONFIDENCE = .65
 
@@ -43,7 +43,11 @@ def auto_translation_candidate(region):
     if region.manual_original:
         return bool(region.original.strip())
     letters = sum(char.isalpha() for char in region.original)
-    threshold = .9 if letters <= 3 else AUTO_TRANSLATE_CONFIDENCE
+    if letters <= 4:
+        punctuation = any(char in "!?…" for char in region.original)
+        distinctive = punctuation or any(ord(char) > 127 for char in region.original)
+        return distinctive and region.confidence >= .9 and "\ufffd" not in region.original
+    threshold = AUTO_TRANSLATE_CONFIDENCE
     return (letters >= 2 and region.confidence >= threshold and
             "\ufffd" not in region.original and "\t" not in region.original)
 _DEFAULT_ENDPOINTS = {
@@ -141,7 +145,9 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
         raise TranslationError("ocr_unavailable")
     encoded = BytesIO()
     image.save(encoded, format="PNG")
-    command = [_tesseract_binary(), "stdin", "stdout", "-l", language,
+    binary = _tesseract_binary()
+    language = _ocr_model_language(binary, language)
+    command = [binary, "stdin", "stdout", "-l", language,
                "--psm", str(psm), "tsv"]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE,
@@ -177,7 +183,7 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
             for line in lines if line.strip())
     groups = {}
     for row in rows:
-        text = (row.get("text") or "").strip()
+        text = _normalize_ocr_text((row.get("text") or "").strip())
         try:
             confidence = float(row["conf"])
             box = tuple(int(row[key]) for key in ("left", "top", "width", "height"))
@@ -197,6 +203,12 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
         groups.setdefault(key, []).append((text, confidence, box))
     regions = []
     for words in groups.values():
+        if any(word[1] >= 55 for word in words):
+            words = [word for word in words
+                     if word[1] >= 15 or any(char.isalpha() for char in word[0])]
+        words = [word for word in words if word[0] not in {"|", "\\", "~", "=", "&"}]
+        if not words:
+            continue
         left = min(w[2][0] for w in words)
         top = min(w[2][1] for w in words)
         right = max(w[2][0] + w[2][2] for w in words)
@@ -213,6 +225,30 @@ def _ocr_once(image: Image.Image, language: str, psm: int, cancel=None):
     return regions
 
 
+def _normalize_ocr_text(value: str) -> str:
+    value = value.replace("\u2019", "'")
+    value = re.sub(r"(?<=[^\W\d_])\ufffd(?=[^\W\d_])", "'", value)
+    if "\ufffd" in value:
+        value = " ".join(token for token in value.split() if "\ufffd" not in token)
+    value = re.sub(r"^[<>|/\\\s]*[-\u2013\u2014]+\d+\s*", "", value)
+    value = re.sub(r"(?:^|\s)[|\\~](?=\s|$)", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _ocr_model_language(binary: str, language: str) -> str:
+    """Use the installed English model as a safe fallback for Latin scripts."""
+    if not binary or not Path(binary).is_file() or "+" in language:
+        return language
+    prefix = os.environ.get("TESSDATA_PREFIX")
+    tessdata = Path(prefix) if prefix else Path(binary).parent / "tessdata"
+    if (tessdata / f"{language}.traineddata").is_file():
+        return language
+    if language in {"por", "spa", "fra", "deu", "ita"} and \
+            (tessdata / "eng.traineddata").is_file():
+        return "eng"
+    return language
+
+
 def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
     """Tesseract sparse-text pass plus rotated pass for vertical lettering."""
     if image.width * image.height > 20_000_000:
@@ -221,27 +257,39 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
     image = image.convert("RGB")
     horizontal = _ocr_once(image, language, 11, cancel)
     bright_boxes = _bright_boxes(image)
-    for l, t, r, b in bright_boxes:
+    dark_boxes = _dark_boxes(image)
+    for (l, t, r, b), dark_text in [*((box, False) for box in bright_boxes),
+                                     *((box, True) for box in dark_boxes)]:
         _check(cancel)
         crop = image.crop((int(l * image.width), int(t * image.height),
                            int(r * image.width), int(b * image.height)))
         if crop.width < 20 or crop.height < 14:
             continue
-        found_rows = _ocr_once(crop, language, 6, cancel)
+        ocr_crop = ImageOps.invert(crop) if dark_text else crop
+        prepared_crop = ImageOps.autocontrast(ocr_crop.convert("L"))
+        if dark_text:
+            prepared_crop = prepared_crop.point(lambda value: 255 if value >= 180 else 0)
+        found_rows = _ocr_once(prepared_crop if dark_text else ocr_crop,
+                               language, 6, cancel)
         sample_box = (l, t, r, b)
         longest_text = max((sum(char.isalpha() for char in row.original)
                             for row in found_rows), default=0)
-        if (not found_rows or max(row.confidence for row in found_rows) < .72 or
+        if (dark_text or not found_rows or max(row.confidence for row in found_rows) < .72 or
+                any(row.confidence < .55 for row in found_rows) or
                 longest_text < 4 or
                 crop.width > crop.height * 2.5 and
                 max(len(row.original.strip()) for row in found_rows) < 8):
-            inset_x, inset_y = round(crop.width * .04), round(crop.height * .12)
-            inner = crop.crop((inset_x, inset_y, crop.width-inset_x, crop.height-inset_y))
+            # Keep the first and last lettering lines. Balloon borders are close to
+            # them, so a tall vertical inset silently dropped complete phrases.
+            inset_x, inset_y = round(crop.width * .04), round(crop.height * .04)
+            inner = ocr_crop.crop((inset_x, inset_y,
+                                   ocr_crop.width-inset_x, ocr_crop.height-inset_y))
             factor = min(3, max(1, 2000 // max(inner.size)))
             enlarged = inner.resize((inner.width * factor, inner.height * factor),
                                      Image.Resampling.LANCZOS) if factor > 1 else inner
             contrasted = ImageOps.autocontrast(enlarged.convert("L"))
             attempts = [
+                _ocr_once(contrasted, language, 6, cancel),
                 _ocr_once(contrasted, language, 7, cancel),
                 _ocr_once(contrasted, language, 11, cancel),
                 _ocr_once(contrasted.point(lambda value: 255 if value >= 180 else 0),
@@ -249,13 +297,22 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
                 _ocr_once(contrasted, language, 13, cancel),
             ]
             def score(rows):
-                return sum(row.confidence * min(20, sum(char.isalpha()
-                           for char in row.original)) for row in rows
-                           if sum(char.isalpha() for char in row.original) >= 2)
+                total = 0
+                for row in rows:
+                    letters = sum(char.isalpha() for char in row.original)
+                    if letters < 2:
+                        continue
+                    width, height = row.box[2]-row.box[0], row.box[3]-row.box[1]
+                    edge_noise = (row.confidence < .7 and
+                                  (row.box[0] <= .01 or row.box[1] <= .01 or
+                                   row.box[2] >= .99 or row.box[3] >= .99) and
+                                  (width > .7 or height > .25))
+                    total += row.confidence * min(20, letters) * (.2 if edge_noise else 1)
+                return total
             alternate = max(attempts, key=score)
             base_score, alternate_score = score(found_rows), score(alternate)
             if alternate and max(row.confidence for row in alternate) >= .55 and \
-                    alternate_score > base_score * 1.15:
+                    alternate_score > base_score * 1.05:
                 found_rows = alternate
                 sample_box = (l + inset_x / crop.width * (r-l),
                               t + inset_y / crop.height * (b-t),
@@ -268,7 +325,9 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
         for row in mergeable:
             typical_height = median(item.box[3]-item.box[1] for item in groups[-1]) if groups else 0
             previous_bottom = max((item.box[3] for item in groups[-1]), default=0) if groups else 0
-            if groups and row.box[1] - previous_bottom > typical_height * 1.35:
+            # Lettering often leaves extra space before a final emphasis line.
+            # The surrounding balloon/caption already keeps unrelated text apart.
+            if groups and row.box[1] - previous_bottom > typical_height * 2.4:
                 groups.append([])
             if not groups:
                 groups.append([])
@@ -296,8 +355,31 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
             candidate = TextRegion(box, found.original, found.confidence,
                                    word_scales=found.word_scales)
             if merged:
-                horizontal[:] = [row for row in horizontal if _overlap(row.box, candidate.box) <= .4]
+                _remove_weaker_overlaps(horizontal, candidate)
             _add_region(horizontal, candidate)
+    if image.width * image.height >= 2_000_000:
+        from komicove_app.guided import detect_result
+        panels = detect_result(image, manga, cancel=cancel).regions
+        if 1 < len(panels) <= 12:
+            for pl, pt, pr, pb in panels:
+                segments = [(pl, pt, pr, pb)]
+                if pr-pl > .72:
+                    segments = [(pl, pt, pl+(pr-pl)*.55, pb),
+                                (pl+(pr-pl)*.45, pt, pr, pb)]
+                for left, top, right, bottom in segments:
+                    _check(cancel)
+                    groups = _ocr_page_segment(image, language,
+                                               (left, top, right, bottom), cancel)
+                    usable = [row for row in groups if row.confidence >= .65 and
+                              sum(char.isalpha() for char in row.original) >= 3]
+                    if not usable and bottom-top > .16:
+                        retry = (max(pl, left-.02), max(0, top-.02), min(pr, right+.02),
+                                 min(pb, top+(bottom-top)*.42))
+                        usable = [row for row in _ocr_page_segment(image, language, retry, cancel)
+                                  if row.confidence >= .65 and
+                                  sum(char.isalpha() for char in row.original) >= 3]
+                    for candidate in usable:
+                        _add_region(horizontal, candidate)
     converted = []
     for angle in ((270, 90) if manga else (90, 270)):
         rotated = image.rotate(angle, expand=True)
@@ -313,6 +395,7 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
         if candidate.confidence < 0.55 or len(candidate.original.strip()) < 2:
             continue
         _add_region(combined, candidate)
+    combined = _deduplicate_regions(combined)
     for region in sorted((row for row in combined if row.confidence < .7),
                          key=lambda row: row.confidence)[:8]:
         _check(cancel)
@@ -339,12 +422,15 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
     for region in combined:
         if region.angle == 0:
             region.angle = _ink_line_angle(image, region.box)
+        if len(region.original.strip().split()) <= 4 and \
+                _likely_missing_styled_text(image, region.box):
+            region.confidence = min(region.confidence, .60)
         center_x = (region.box[0] + region.box[2]) / 2
         center_y = (region.box[1] + region.box[3]) / 2
         token = region.original.strip().rstrip("!?.,:;")
-        in_bright_container = any(l <= center_x <= r and t <= center_y <= b
-                                  for l, t, r, b in bright_boxes)
-        if (not in_bright_container and token.isalpha() and token.isupper() and
+        in_text_container = any(l <= center_x <= r and t <= center_y <= b
+                                for l, t, r, b in bright_boxes + dark_boxes)
+        if (not in_text_container and token.isalpha() and token.isupper() and
                 " " not in region.original.strip()):
             region.confidence = min(region.confidence, .79)
     combined.sort(key=lambda region: (round(region.box[1] / .08),
@@ -379,11 +465,95 @@ def _ink_line_angle(image, box):
 def _add_region(regions, candidate):
     for index, current in enumerate(regions):
         if _overlap(candidate.box, current.box) > 0.4:
-            if (candidate.confidence > current.confidence + .08 and
-                    len(candidate.original) >= len(current.original) * .7):
+            candidate_area = (candidate.box[2]-candidate.box[0]) * (candidate.box[3]-candidate.box[1])
+            current_area = (current.box[2]-current.box[0]) * (current.box[3]-current.box[1])
+            substantial = len(candidate.original) >= max(8, len(current.original) * .35)
+            if (candidate.confidence > current.confidence + .18 and
+                    (substantial or current.confidence < .55) or
+                    candidate.confidence > current.confidence + .08 and
+                    len(candidate.original) >= len(current.original) * .7 or
+                    candidate_area < current_area * .55 and
+                    substantial and
+                    candidate.confidence > current.confidence + .05):
                 regions[index] = candidate
             return
     regions.append(candidate)
+
+
+def _ocr_region_quality(region):
+    letters = sum(char.isalpha() for char in region.original)
+    return region.confidence + min(.18, letters * .003)
+
+
+def _remove_weaker_overlaps(regions, candidate):
+    quality = _ocr_region_quality(candidate)
+    regions[:] = [row for row in regions
+                  if _overlap(row.box, candidate.box) <= .4 or
+                  _ocr_region_quality(row) >= quality]
+
+
+def _deduplicate_regions(regions):
+    """Keep the clearest complete OCR result when engines return nested boxes."""
+    kept = []
+    for candidate in sorted(regions, key=_ocr_region_quality, reverse=True):
+        if any(_overlap(candidate.box, current.box) >= .82 for current in kept):
+            continue
+        kept.append(candidate)
+    return kept
+
+
+def _merge_nearby_ocr_lines(rows):
+    """Join OCR lines that share a text block while keeping adjacent balloons apart."""
+    groups = []
+    for row in sorted(rows, key=lambda value: (value.box[1], value.box[0])):
+        if row.confidence < .55 or sum(char.isalpha() for char in row.original) < 2:
+            continue
+        best = None
+        best_gap = float("inf")
+        rl, rt, rr, rb = row.box
+        row_width, row_height = rr-rl, rb-rt
+        for group in groups:
+            gl = min(item.box[0] for item in group)
+            gt = min(item.box[1] for item in group)
+            gr = max(item.box[2] for item in group)
+            gb = max(item.box[3] for item in group)
+            gap = max(0, rt-gb, gt-rb)
+            typical_height = median(item.box[3]-item.box[1] for item in group)
+            overlap = max(0, min(rr, gr)-max(rl, gl))
+            close_centers = abs((rl+rr)/2-(gl+gr)/2) <= max(row_width, gr-gl) * .32
+            if gap <= max(row_height, typical_height) * 1.8 and \
+                    (overlap >= min(row_width, gr-gl) * .12 or close_centers) and gap < best_gap:
+                best, best_gap = group, gap
+        if best is None:
+            groups.append([row])
+        else:
+            best.append(row)
+    merged = []
+    for group in groups:
+        weight = sum(max(1, len(row.original)) for row in group)
+        merged.append(TextRegion((min(row.box[0] for row in group),
+                                  min(row.box[1] for row in group),
+                                  max(row.box[2] for row in group),
+                                  max(row.box[3] for row in group)),
+                                 " ".join(row.original for row in group),
+                                 sum(row.confidence * max(1, len(row.original)) for row in group) / weight,
+                                 word_scales=tuple(scale for row in group
+                                                   for scale in row.word_scales)))
+    return merged
+
+
+def _ocr_page_segment(image, language, bounds, cancel=None):
+    left, top, right, bottom = bounds
+    crop = image.crop((round(left * image.width), round(top * image.height),
+                       round(right * image.width), round(bottom * image.height)))
+    result = []
+    for found in _merge_nearby_ocr_lines(_ocr_once(crop, language, 11, cancel)):
+        l, t, r, b = found.box
+        result.append(TextRegion((left + l * (right-left), top + t * (bottom-top),
+                                  left + r * (right-left), top + b * (bottom-top)),
+                                 found.original, found.confidence,
+                                 word_scales=found.word_scales))
+    return result
 
 
 def _bright_boxes(image):
@@ -418,6 +588,70 @@ def _bright_boxes(image):
             boxes.append((left/width, top/height, (right+1)/width, (bottom+1)/height, area))
     boxes.sort(key=lambda box: box[4], reverse=True)
     return [box[:4] for box in boxes[:24]]
+
+
+def _dark_boxes(image):
+    """Propose dense dark caption interiors, including white-on-black narration."""
+    small = image.copy()
+    small.thumbnail((650, 900))
+    width, height = small.size
+    pixels = small.get_flattened_data() if hasattr(small, "get_flattened_data") else small.getdata()
+    dark = bytearray(1 if max(pixel[:3]) <= 48 else 0 for pixel in pixels)
+    visited = bytearray(len(dark))
+    boxes = []
+    for start in range(len(dark)):
+        if not dark[start] or visited[start]:
+            continue
+        visited[start] = 1
+        queue = deque([start])
+        left = right = start % width
+        top = bottom = start // width
+        area = 0
+        while queue:
+            item = queue.popleft()
+            x, y = item % width, item // width
+            area += 1
+            left, right = min(left, x), max(right, x)
+            top, bottom = min(top, y), max(bottom, y)
+            for neighbor in (item-1 if x else -1, item+1 if x+1 < width else -1,
+                             item-width if y else -1, item+width if y+1 < height else -1):
+                if neighbor >= 0 and dark[neighbor] and not visited[neighbor]:
+                    visited[neighbor] = 1
+                    queue.append(neighbor)
+        box_area = (right-left+1) * (bottom-top+1)
+        density = area / max(1, box_area)
+        if (180 < area < width * height * .12 and right-left > 28 and
+                bottom-top > 14 and density >= .58):
+            boxes.append((left/width, top/height, (right+1)/width,
+                          (bottom+1)/height, area))
+    boxes.sort(key=lambda box: box[4], reverse=True)
+    return [box[:4] for box in boxes[:24]]
+
+
+def _likely_missing_styled_text(image, box):
+    left, top, right, bottom = (round(box[0] * image.width), round(box[1] * image.height),
+                                round(box[2] * image.width), round(box[3] * image.height))
+    width, height = right-left, bottom-top
+    if width < 8 or height < 5:
+        return False
+    pad_x = max(4, width // 2)
+    area = image.crop((max(0, left-pad_x), min(image.height, bottom+2),
+                       min(image.width, right+pad_x),
+                       min(image.height, bottom+max(8, height*4)))).convert("RGB")
+    if area.width < 8 or area.height < 8:
+        return False
+    step = max(1, max(area.size) // 180)
+    bright = ink = total = 0
+    pixels = area.load()
+    for y in range(0, area.height, step):
+        for x in range(0, area.width, step):
+            red, green, blue = pixels[x, y]
+            high, low = max(red, green, blue), min(red, green, blue)
+            value = (red + green + blue) / 3
+            total += 1
+            bright += value > 205 and high-low < 42
+            ink += value < 155 or high-low > 78 and value < 225
+    return total > 20 and bright > total * .30 and ink > total * .085
 
 
 def _overlap(a, b):
@@ -461,9 +695,14 @@ def brazilian_portuguese(text: str) -> str:
         "equipa": "equipe",
         "facto": "fato", "contacto": "contato", "rapariga": "garota", "isto": "isso",
         "tu": "você", "contigo": "com você", "teus": "seus", "tuas": "suas",
-        "teu": "seu", "tua": "sua", "podes": "pode", "precisas": "precisa",
+        "teu": "seu", "tua": "sua", "tens de": "tem que", "podes": "pode",
+        "precisas": "precisa", "achas": "acha", "queres": "quer", "sabes": "sabe",
+        "vais": "vai", "tens": "tem", "és": "é", "fazes": "faz", "dizes": "diz",
+        "vês": "vê", "pensas": "pensa",
         "estás": "está",
         "precisares": "precisar", "fales": "fale", "sejas": "seja",
+        "não me vou": "não vou me", "livro comic": "quadrinho", "eu lei": "eu leio",
+        "dar a si mesmo um ataque cardíaco": "ter um ataque cardíaco",
     }
     result = text
     for original in sorted(substitutions, key=len, reverse=True):
@@ -491,6 +730,12 @@ def translation_language_name(code: str) -> str:
             "pt-PT": "European Portuguese (pt-PT)"}.get(code, code)
 
 
+def _prepare_translation_text(text: str) -> str:
+    return re.sub(r"\b([A-Za-zÀ-ÿ]{2,})-\s+"
+                  r"(?=(?:ing|ed|ly|tion|ment|ness|able)\b)",
+                  r"\1", text, flags=re.IGNORECASE)
+
+
 def local_translate(text: str, source: str, target: str) -> str:
     try:
         from argostranslate import translate
@@ -506,7 +751,7 @@ def local_translate(text: str, source: str, target: str) -> str:
     pair = from_language.get_translation(to_language) if from_language and to_language else None
     if pair is None:
         raise TranslationError("local_model_unavailable")
-    translated = pair.translate(text)
+    translated = pair.translate(_prepare_translation_text(text))
     return brazilian_portuguese(translated) if target in {"pt", "pt-BR"} else translated
 
 
@@ -540,6 +785,8 @@ def install_local_model(path: str):
         translate.get_installed_languages.cache_clear()
     except ImportError as exc:
         raise TranslationError("local_translation_unavailable") from exc
+    except PermissionError as exc:
+        raise TranslationError("local_model_storage_unavailable") from exc
     except Exception as exc:
         raise TranslationError("local_model_invalid") from exc
 

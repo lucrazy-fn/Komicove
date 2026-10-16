@@ -10,7 +10,8 @@ import pytest
 from PIL import Image, ImageDraw
 
 from komicove_app import comic_translation as comic
-from komicove_app.translation_views import draw_translation_overlay, _source_font_size, _styled_layout, _comic_font
+from komicove_app.translation_views import (draw_translation_overlay, _source_font_size,
+                                             _styled_layout, _comic_font)
 from komicove_app.archive import ArchiveBackend
 from tools.translation_fixture import page as authorial_page
 
@@ -18,7 +19,8 @@ from tools.translation_fixture import page as authorial_page
 def test_ocr_lines_and_cancel(monkeypatch):
     tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
            "5\t1\t1\t1\t1\t1\t10\t20\t20\t10\t82\tOlá\n"
-           "5\t1\t1\t1\t1\t2\t32\t20\t25\t10\t78\tmundo\n").encode()
+           "5\t1\t1\t1\t1\t2\t32\t20\t25\t10\t78\tmundo\n"
+           "5\t1\t1\t1\t1\t3\t58\t20\t5\t10\t88\t&\n").encode()
     class Process:
         returncode = 0
         def communicate(self, input=None, timeout=None):
@@ -41,6 +43,12 @@ def test_ocr_lines_and_cancel(monkeypatch):
     stopped = Event(); stopped.set()
     with pytest.raises(CancelledError):
         comic.recognize(Image.new("RGB", (100, 100)), cancel=stopped)
+
+
+def test_ocr_normalizes_broken_apostrophes_and_discards_damaged_tokens():
+    assert comic._normalize_ocr_text("<��7 I�M JUST DON�T") == "I'M JUST DON'T"
+    assert comic._normalize_ocr_text("<\u2014\u20147 I'M JUST") == "I'M JUST"
+    assert comic._normalize_ocr_text("HERE\u2019S | A TOWEL") == "HERE'S A TOWEL"
 
 
 def test_ocr_timeout_stops_child(monkeypatch):
@@ -77,6 +85,18 @@ def test_ocr_does_not_require_a_writable_temporary_directory(monkeypatch):
     assert rows[0].original == "Hi"
 
 
+def test_missing_latin_ocr_model_falls_back_to_installed_english(tmp_path):
+    binary = tmp_path / "tesseract.exe"
+    binary.touch()
+    tessdata = tmp_path / "tessdata"
+    tessdata.mkdir()
+    (tessdata / "eng.traineddata").touch()
+    assert comic._ocr_model_language(str(binary), "por") == "eng"
+    (tessdata / "por.traineddata").touch()
+    assert comic._ocr_model_language(str(binary), "por") == "por"
+    assert comic._ocr_model_language(str(binary), "jpn") == "jpn"
+
+
 def test_ocr_tsv_treats_quotes_as_text_instead_of_joining_rows(monkeypatch):
     tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
            "5\t1\t1\t1\t1\t1\t1\t1\t20\t8\t91\tSAY\"\n"
@@ -106,6 +126,78 @@ def test_translation_candidate_accepts_readable_dialogue_and_rejects_short_noise
     assert comic.auto_translation_candidate(sound_effect)
     assert not comic.auto_translation_candidate(noise)
     assert not comic.auto_translation_candidate(uncertain)
+    assert not comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "on", .99))
+    assert not comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "mo D'O", .74))
+    assert comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "GO!", .92))
+
+
+def test_dark_caption_box_is_detected_without_selecting_the_page_background():
+    page = Image.new("RGB", (500, 600), "#34516b")
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((80, 60, 420, 180), fill="#111111", outline="#35cc66", width=6)
+    for y in (86, 112, 138):
+        draw.rectangle((130, y, 370, y + 10), fill="white")
+    boxes = comic._dark_boxes(page)
+    assert any(left < .2 and right > .8 and top < .12 and bottom < .32
+               for left, top, right, bottom in boxes)
+
+
+def test_large_styled_word_below_fragment_is_not_silently_translated():
+    page = Image.new("RGB", (220, 180), "white")
+    draw = ImageDraw.Draw(page)
+    draw.text((75, 40), "HE IS", fill="black", font=_comic_font("HE IS", 15))
+    box = (.32, .20, .68, .34)
+    assert not comic._likely_missing_styled_text(page, box)
+    for y in range(66, 125):
+        for x in range(58, 162):
+            if (x // 9 + y // 7) % 3:
+                page.putpixel((x, y), (225, 20, 35))
+    assert comic._likely_missing_styled_text(page, box)
+
+
+def test_nearby_ocr_lines_merge_without_crossing_into_the_next_balloon():
+    rows = [
+        comic.TextRegion((.10, .10, .30, .15), "I'M JUST", .82),
+        comic.TextRegion((.12, .16, .28, .21), "READING", .94),
+        comic.TextRegion((.55, .17, .72, .22), "I'LL BE", .87),
+        comic.TextRegion((.56, .23, .73, .28), "OUT SOON", .92),
+    ]
+
+    merged = comic._merge_nearby_ocr_lines(rows)
+
+    assert [row.original for row in merged] == ["I'M JUST READING", "I'LL BE OUT SOON"]
+
+
+def test_clean_panel_ocr_replaces_a_large_low_confidence_page_fragment():
+    rows = [comic.TextRegion((.1, .1, .9, .5), "garbled text across the panel", .4)]
+    clean = comic.TextRegion((.6, .15, .8, .25), "CLEAR BALLOON", .86)
+
+    comic._add_region(rows, clean)
+
+    assert rows == [clean]
+
+
+def test_nested_ocr_regions_keep_the_clear_complete_result():
+    noisy = comic.TextRegion((.1, .1, .9, .8), "GARBLED DIALOGUE OVER ART", .72)
+    clear = comic.TextRegion((.3, .2, .6, .3), "CLEAR COMPLETE DIALOGUE", .91)
+
+    assert comic._deduplicate_regions([noisy, clear]) == [clear]
+
+
+def test_later_partial_balloon_does_not_replace_complete_ocr():
+    complete = comic.TextRegion((.70, .05, .91, .25),
+                                "HEY, MS. HARADA. WHAT KIND OF BONES DO YOU THINK THESE ARE?", .93)
+    partial = comic.TextRegion((.68, .14, .79, .21), "OF SS eX", .62)
+    rows = [complete]
+    comic._remove_weaker_overlaps(rows, partial)
+    comic._add_region(rows, partial)
+    assert complete in comic._deduplicate_regions(rows)
+    assert partial not in comic._deduplicate_regions(rows)
+
+    rows = [partial]
+    comic._remove_weaker_overlaps(rows, complete)
+    comic._add_region(rows, complete)
+    assert rows == [complete]
 
 
 @pytest.mark.skipif(not comic.tesseract_available(), reason="Tesseract is not installed")
@@ -262,9 +354,16 @@ def test_brazilian_portuguese_is_distinct_from_european_portuguese():
         "Agradeço por não falar. Pode se olhar no espelho.")
     assert comic.brazilian_portuguese("Chegou a isto, meu. O meu carro ficou.") == (
         "Chegou a isso, cara. O meu carro ficou.")
+    assert comic.brazilian_portuguese("Que tipo de ossos achas que são?") == (
+        "Que tipo de ossos acha que são?")
+    assert comic.brazilian_portuguese("Tens de sair agora.") == "Tem que sair agora."
+    assert comic.brazilian_portuguese("Não me vou atrasar com o livro comic.") == (
+        "Não vou me atrasar com o quadrinho.")
     assert comic.translation_language_name("pt-BR") == "Brazilian Portuguese (pt-BR)"
     assert comic.translation_language_name("pt-PT") == "European Portuguese (pt-PT)"
     assert comic._model_language("pt-BR") == comic._model_language("pt-PT") == "pt"
+    assert comic._prepare_translation_text("I'M FREEZ- ING, RUMI- CHAN.") == (
+        "I'M FREEZING, RUMI- CHAN.")
 
 
 def test_export_cbz_preserves_original_order_and_metadata(tmp_path):
@@ -408,8 +507,20 @@ def test_complex_background_keeps_art_and_shows_translation_label():
     drawing.line((30, 20, 120, 70), fill="black", width=3)
     row = comic.TextRegion((.1, .1, .4, .35), "Hello", .8, "Olá")
     result = draw_translation_overlay(frame, [row], (0, 0, 300, 200))
-    assert result.crop((30, 20, 120, 70)).tobytes() == frame.crop((30, 20, 120, 70)).tobytes()
-    assert result.crop((30, 72, 180, 98)).tobytes() != frame.crop((30, 72, 180, 98)).tobytes()
+    assert result.crop((0, 100, 300, 200)).tobytes() == frame.crop((0, 100, 300, 200)).tobytes()
+    assert result.crop((30, 20, 120, 70)).tobytes() != frame.crop((30, 20, 120, 70)).tobytes()
+
+
+def test_uniform_balloon_removes_the_complete_original_text_box():
+    frame = Image.new("RGB", (360, 220), "white")
+    drawing = ImageDraw.Draw(frame)
+    drawing.text((70, 55), "ORIGINAL\nDIALOGUE", fill="black", font=_comic_font("ORIGINAL", 28), spacing=8)
+    row = comic.TextRegion((60/360, 45/220, 260/360, 135/220),
+                           "ORIGINAL DIALOGUE", .95, "TRADUZIDO")
+
+    result = draw_translation_overlay(frame, [row], (0, 0, 360, 220))
+
+    assert result.getpixel((72, 62)) == (255, 255, 255)
 
 
 def test_rotation_keeps_text_and_translated_position():
@@ -437,6 +548,18 @@ def test_original_letter_sizes_drive_translation_layout():
     lines, _ = _styled_layout(draw, "vá AGORA!", 45, (.6, 1.6), 450, 120)
     fonts = [font.size for line, _ in lines for _, font, _, _ in line]
     assert fonts[1] > fonts[0] * 1.5
+    wrapped, _ = _styled_layout(draw, "Estou congelando!", 28, (), 105, 100)
+    assert max(font.size for line, _ in wrapped for _, font, _, _ in line) == 28
+    assert any(word.endswith("-") for line, _ in wrapped for word, _, _, _ in line)
+
+
+def test_balloon_contour_does_not_become_the_letter_height():
+    image = Image.new("RGB", (420, 190), "white")
+    draw = ImageDraw.Draw(image)
+    draw.line((390, 10, 390, 180), fill="black", width=3)
+    draw.text((40, 62), "HELLO HERO", font=_comic_font("HELLO HERO", 28), fill="black")
+
+    assert _source_font_size(image, (20, 5, 400, 185), "OLÁ, HERÓI") < 50
 
 
 def test_rendered_translation_keeps_each_original_letter_scale():

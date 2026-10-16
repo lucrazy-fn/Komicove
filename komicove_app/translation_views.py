@@ -998,6 +998,7 @@ class TranslationDialog(tk.Toplevel):
             "provider_unavailable": ("Provedor indisponível.", "Provider unavailable."),
             "invalid_provider_response": ("Resposta inválida do provedor.", "Invalid provider response."),
             "secure_storage_unavailable": ("Armazenamento seguro indisponível neste sistema.", "Secure storage is unavailable on this system."),
+            "local_model_storage_unavailable": ("Não foi possível guardar o idioma local. Verifique as permissões da pasta de dados.", "Could not save the local language. Check the data folder permissions."),
             "invalid_export_path": ("Escolha um novo arquivo CBZ, separado da HQ original.", "Choose a new CBZ file, separate from the original comic."),
         }
         pt, en = labels.get(exc.code, ("Não foi possível processar.", "Could not process."))
@@ -1052,7 +1053,7 @@ def _source_font_size(image, box, translated, angle=0, scales=()):
         component_height = bottom-top+1
         if 3 <= component_height <= height*.9 and right-left+1 <= width*.42 and area >= 4:
             heights.append(component_height)
-    ink_height = max(heights) / scale if heights else max(6, box[3]-box[1])*.75
+    ink_height = median(heights) / scale if heights else max(6, box[3]-box[1])*.75
     words = translated.split() or ["Aa"]
     peak = max(scales, default=1.0)
     reference_height = 1
@@ -1078,13 +1079,18 @@ def _styled_layout(draw, value, base_size, scales, width, height):
                 source_index = min(len(scales)-1, max(0, round((index+.5)*len(scales)/len(words)-.5))) if scales else 0
                 ratio = (scales[source_index] / scale_peak) ** 1.15 if scales else 1.0
                 font = _comic_font(word, max(8, round(size*ratio)))
-                word_width = draw.textlength(word, font=font)
-                gap = draw.textlength(" ", font=font)*spacing if current else 0
-                if current and current_width + gap + word_width > width:
-                    lines.append((current, current_width))
-                    current, current_width, gap = [], 0.0, 0
-                current.append((word, font, gap, word_width))
-                current_width += gap + word_width
+                pieces = _fit_word_pieces(draw, word, font, width)
+                for piece in pieces:
+                    word_width = draw.textlength(piece, font=font)
+                    gap = draw.textlength(" ", font=font)*spacing if current else 0
+                    if current and current_width + gap + word_width > width:
+                        lines.append((current, current_width))
+                        current, current_width, gap = [], 0.0, 0
+                    current.append((piece, font, gap, word_width))
+                    current_width += gap + word_width
+                    if piece.endswith("-"):
+                        lines.append((current, current_width))
+                        current, current_width = [], 0.0
             if current:
                 lines.append((current, current_width))
             heights = [max(font.getbbox(word)[3]-font.getbbox(word)[1]
@@ -1093,6 +1099,28 @@ def _styled_layout(draw, value, base_size, scales, width, height):
             if all(line_width <= width for _, line_width in lines) and sum(heights) <= height:
                 return lines, heights
     return None
+
+
+def _fit_word_pieces(draw, word, font, width):
+    """Wrap a long translated word before shrinking the original letter scale."""
+    if len(word) < 7 or "-" in word or draw.textlength(word, font=font) <= width:
+        return [word]
+    pieces = []
+    remaining = word
+    while len(remaining) >= 7 and draw.textlength(remaining, font=font) > width:
+        fitting = []
+        for index in range(len(remaining)-3, 2, -1):
+            if draw.textlength(remaining[:index] + "-", font=font) <= width:
+                fitting.append(index)
+        split = next((index for index in fitting
+                      if remaining[index-1].casefold() in "aeiouáéíóúâêôãõ"),
+                     fitting[0] if fitting else None)
+        if split is None:
+            return [word]
+        pieces.append(remaining[:split] + "-")
+        remaining = remaining[split:]
+    pieces.append(remaining)
+    return pieces
 
 
 def _paint_styled_lines(draw, lines, heights, width, height, ink):
@@ -1111,11 +1139,12 @@ def _paint_styled_lines(draw, lines, heights, width, height, ink):
 
 def draw_translation_overlay(frame, regions, transform, panel=None):
     """Paint a disposable preview only; the comic image and OCR boxes stay intact."""
-    from komicove_app.comic_translation import _overlap
+    from komicove_app.comic_translation import _deduplicate_regions, _overlap
     x0, y0, width, height = transform
     result = frame.convert("RGB")
     draw = ImageDraw.Draw(result)
-    for region in regions:
+    visible = _deduplicate_regions([region for region in regions if region.translated])
+    for region in visible:
         if not region.translated or panel is not None and _overlap(region.box, panel) <= 0:
             continue
         l, t, r, b = region.box
@@ -1162,20 +1191,24 @@ def draw_translation_overlay(frame, regions, transform, panel=None):
         layout_width = max(natural_width, round(width_room))
         line_height = box[2]-box[0] if vertical else box[3]-box[1]
         layout_height = max(12, round(line_height))
-        original_size = _source_font_size(frame, box, region.original, angle,
-                                          region.word_scales)
-        target_size = _source_font_size(frame, box, region.translated, angle,
+        source_size = _source_font_size(frame, box, region.translated, angle,
                                         region.word_scales)
-        source_size = round((original_size + target_size) / 2)
+        light_background = _clean_text_pixels(result, box)
+        if light_background is None:
+            _draw_review_badge(draw, box)
+            continue
         layout = _styled_layout(draw, region.translated, source_size,
                                 region.word_scales, layout_width-2, layout_height)
         if layout is None:
-            _draw_translation_label(draw, result, box, region.translated, region.angle)
-            continue
-        light_background = _clean_text_pixels(result, box)
-        if light_background is None:
-            _draw_translation_label(draw, result, box, region.translated, region.angle)
-            continue
+            review = ui("Abrir tradução em Revisar", "Open translation in Review")
+            layout = _styled_layout(draw, review, min(source_size, 18), (),
+                                    layout_width-2, layout_height)
+            if layout is None:
+                review = ui("Revisar", "Review")
+                layout = _styled_layout(draw, review, min(source_size, 16), (),
+                                        layout_width-2, layout_height)
+            if layout is None:
+                continue
         lines, heights = layout
         ink = (20, 17, 22) if light_background else (250, 248, 243)
         if angle:
@@ -1243,6 +1276,19 @@ def _draw_translation_label(draw, image, box, value, angle=0):
         draw.text((left + 6, top + 3 + index * line_height), line, font=font, fill=(255, 251, 247))
 
 
+def _draw_review_badge(draw, box):
+    label = ui("Revisar", "Review")
+    size = max(10, min(16, round((box[3]-box[1])*.16)))
+    font = _comic_font(label, size)
+    bounds = draw.textbbox((0, 0), label, font=font)
+    width, height = bounds[2]-bounds[0]+12, bounds[3]-bounds[1]+8
+    left = round((box[0]+box[2]-width)/2)
+    top = max(box[1]+3, box[3]-height-3)
+    draw.rounded_rectangle((left, top, left+width, top+height), radius=4,
+                           fill=(119, 31, 47))
+    draw.text((left+6, top+4-bounds[1]), label, font=font, fill=(255, 251, 247))
+
+
 def _clean_text_pixels(image, box):
     """Rebuild lettering pixels only when the surrounding color is stable."""
     l, t, r, b = box
@@ -1251,14 +1297,17 @@ def _clean_text_pixels(image, box):
              min(image.width, r+margin+8), min(image.height, b+margin+8))
     crop = image.crop(outer)
     ox, oy = l-outer[0], t-outer[1]
-    inner = (max(0, ox-margin), max(0, oy-margin),
-             min(crop.width, ox+r-l+margin), min(crop.height, oy+b-t+margin))
+    sample_inner = (max(0, ox-margin), max(0, oy-margin),
+                    min(crop.width, ox+r-l+margin), min(crop.height, oy+b-t+margin))
+    mask_margin = max(4, min(12, round((b-t)*.08)))
+    inner = (max(0, ox-mask_margin), max(0, oy-mask_margin),
+             min(crop.width, ox+r-l+mask_margin), min(crop.height, oy+b-t+mask_margin))
     ring = []
     ring_colors = []
     pixels = crop.load()
     for y in range(crop.height):
         for x in range(crop.width):
-            if inner[0] <= x < inner[2] and inner[1] <= y < inner[3]:
+            if sample_inner[0] <= x < sample_inner[2] and sample_inner[1] <= y < sample_inner[3]:
                 continue
             if x % 2 == 0 and y % 2 == 0:
                 ring.append(sum(pixels[x, y]) / 3)
@@ -1273,11 +1322,25 @@ def _clean_text_pixels(image, box):
     uniform_light_core = (core_background > 220 and
                           median(abs(value-core_background) for value in core) < 18 and
                           sum(value > 180 for value in core) >= len(core) * .68)
-    if median(abs(value-background) for value in ring) > 22:
-        if not uniform_light_core:
-            return None
-        background = core_background
-        ring_colors = core_colors
+    background_color = tuple(int(median(sample[channel] for sample in ring_colors))
+                             for channel in range(3))
+    ring_unstable = (abs(background-core_background) > 40 and uniform_light_core or
+                     median(abs(value-background) for value in ring) > 22 or
+                     any(median(abs(sample[channel] - background_color[channel])
+                                for sample in ring_colors) > 22 for channel in range(3)))
+    if uniform_light_core:
+        # A verified plain balloon is reconstructed as its actual sampled color.
+        # This also removes clipped first/last glyphs that touch the OCR bounds.
+        light_core = [sample for sample in core_colors if min(sample) > 180]
+        core_color = tuple(int(median(sample[channel] for sample in light_core))
+                           for channel in range(3))
+        fill = (max(0, ox-3), max(0, oy-3),
+                min(crop.width, ox+r-l+3), min(crop.height, oy+b-t+3))
+        ImageDraw.Draw(crop).rectangle(fill, fill=core_color)
+        image.paste(crop, outer[:2])
+        return True
+    if ring_unstable:
+        return None
     background_color = tuple(int(median(sample[channel] for sample in ring_colors))
                              for channel in range(3))
     if any(median(abs(sample[channel] - background_color[channel])
@@ -1327,7 +1390,12 @@ def _clean_text_pixels(image, box):
                     if neighbor >= 0 and candidates[neighbor] and not seen[neighbor]:
                         seen[neighbor] = 1
                         queue.append(neighbor)
-            if touches_edge or right-left+1 > (r-l)*.6 or bottom-top+1 > (b-t)*1.5:
+            component_width = right-left+1
+            component_height = bottom-top+1
+            if touches_edge or component_width > (r-l)*.6 or component_height > (b-t)*1.5:
+                continue
+            if uniform_light_core and (component_width > (r-l)*.4 or
+                                       component_height > (b-t)*.5):
                 continue
             for pixel in component:
                 mask_pixels[pixel % crop.width, pixel // crop.width] = 255

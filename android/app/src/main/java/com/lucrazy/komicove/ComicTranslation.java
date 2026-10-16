@@ -56,10 +56,10 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 final class ComicTranslation {
-    static final String OCR_VERSION="mlkit-text-v2-4";
-    static final int TRANSLATION_CACHE_VERSION=4;
+    static final String OCR_VERSION="mlkit-text-v2-9";
+    static final int TRANSLATION_CACHE_VERSION=9;
     static final float AUTO_TRANSLATE_CONFIDENCE=.65f;
-    static boolean autoTranslationCandidate(Region row){if(row.manualOriginal)return !row.original.trim().isEmpty();int letters=0;for(int i=0;i<row.original.length();i++)if(Character.isLetter(row.original.charAt(i)))letters++;float threshold=letters<=3?.9f:AUTO_TRANSLATE_CONFIDENCE;return letters>=2&&row.confidence>=threshold&&row.original.indexOf('\ufffd')<0&&row.original.indexOf('\t')<0;}
+    static boolean autoTranslationCandidate(Region row){if(row.manualOriginal)return !row.original.trim().isEmpty();int letters=0;boolean distinctive=false;for(int i=0;i<row.original.length();i++){char value=row.original.charAt(i);if(Character.isLetter(value))letters++;if(value=='!'||value=='?'||value=='…'||value>127)distinctive=true;}if(letters<=4)return distinctive&&row.confidence>=.9f&&row.original.indexOf('\ufffd')<0;return row.confidence>=AUTO_TRANSLATE_CONFIDENCE&&row.original.indexOf('\ufffd')<0&&row.original.indexOf('\t')<0;}
     static final String LOCAL_TRANSLATION_VERSION="mlkit-translate-17.0.3";
     static boolean supportsVision(String provider,String model){return provider.equals("openai")&&model.equals("gpt-5.4-mini")||provider.equals("anthropic")&&model.equals("claude-sonnet-5-5")||provider.equals("xai")&&model.equals("grok-4.7")||provider.equals("gemini")&&model.equals("gemini-3.8-flash");}
     private static String imageData(Bitmap image){Bitmap scaled=image;int longest=Math.max(image.getWidth(),image.getHeight());if(longest>1024)scaled=Bitmap.createScaledBitmap(image,Math.max(1,Math.round(image.getWidth()*1024f/longest)),Math.max(1,Math.round(image.getHeight()*1024f/longest)),true);try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();scaled.compress(Bitmap.CompressFormat.JPEG,75,bytes);return Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP);}finally{if(scaled!=image)scaled.recycle();}}
@@ -121,10 +121,63 @@ final class ComicTranslation {
                     }
                 }finally{if(enlarged!=cropped)enlarged.recycle();if(cropped!=bitmap)cropped.recycle();}
             }
+            rows=mergeNearbyLines(rows);
+            int emphasisRetries=0;
+            for(Region row:rows)if(row.original.trim().split("\\s+").length<=4){
+                Rect text=new Rect(Math.max(0,Math.round(row.box.left*bitmap.getWidth())),Math.max(0,Math.round(row.box.top*bitmap.getHeight())),Math.min(bitmap.getWidth(),Math.round(row.box.right*bitmap.getWidth())),Math.min(bitmap.getHeight(),Math.round(row.box.bottom*bitmap.getHeight())));
+                if(ComicTextReconstruction.likelyMissingLargeText(bitmap,text)){
+                    boolean recovered=emphasisRetries++<4&&recoverEmphasis(bitmap,script,row,text,cancel);
+                    if(!recovered)row.confidence=Math.min(row.confidence,.60f);
+                }
+            }
             rows.sort((a,b)->{int row=Float.compare(Math.round(a.box.top/.08f),Math.round(b.box.top/.08f));return row!=0?row:Float.compare(manga?b.box.left:a.box.left,manga?a.box.left:b.box.left);});return rows;
         }finally{if(work!=bitmap)work.recycle();}
     }
     private static float ocrScore(List<Region> rows){float value=0;for(Region row:rows)value+=Math.min(50,row.original.length())*Math.max(.1f,row.confidence);return value;}
+    static List<Region> mergeNearbyLines(List<Region> input){
+        List<Region> pending=new ArrayList<>(input);pending.sort((a,b)->Float.compare(a.box.top,b.box.top));List<Region> merged=new ArrayList<>();
+        for(Region next:pending){
+            Region target=null;
+            for(int i=merged.size()-1;i>=0;i--){Region old=merged.get(i);float gap=next.box.top-old.box.bottom;if(gap>Math.max(old.box.height(),next.box.height())*1.45f)break;float horizontal=Math.max(0,Math.min(old.box.right,next.box.right)-Math.max(old.box.left,next.box.left));float overlap=horizontal/Math.max(.000001f,Math.min(old.box.width(),next.box.width()));float center=Math.abs(old.box.centerX()-next.box.centerX());if(gap>=-.004f&&overlap>=.48f&&center<=Math.max(old.box.width(),next.box.width())*.38f){target=old;break;}}
+            if(target==null){merged.add(next);continue;}
+            float oldWeight=Math.max(1,target.original.length()),newWeight=Math.max(1,next.original.length());target.original=(target.original+" "+next.original).replaceAll("\\s+"," ").trim();target.confidence=(target.confidence*oldWeight+next.confidence*newWeight)/(oldWeight+newWeight);target.box.union(next.box);target.inkHeightRatio=Math.max(target.inkHeightRatio,next.inkHeightRatio);float[] scales=new float[target.wordScales.length+next.wordScales.length];System.arraycopy(target.wordScales,0,scales,0,target.wordScales.length);System.arraycopy(next.wordScales,0,scales,target.wordScales.length,next.wordScales.length);target.wordScales=scales;
+        }
+        return merged;
+    }
+    private static boolean recoverEmphasis(Bitmap bitmap,String script,Region row,Rect text,AtomicBoolean cancel)throws Exception{
+        check(cancel);Rect area=ComicTextReconstruction.emphasisArea(bitmap,text);
+        if(area.width()<16||area.height()<12||(long)area.width()*area.height()>1000000)return false;
+        Bitmap crop=Bitmap.createBitmap(bitmap,area.left,area.top,area.width(),area.height()),scaled=crop,contrast=null,colored=null;
+        if(Math.max(area.width(),area.height())<800)scaled=Bitmap.createScaledBitmap(crop,area.width()*3,area.height()*3,true);
+        try{
+            contrast=ComicTextReconstruction.letteringContrast(scaled);
+            colored=ComicTextReconstruction.coloredLetteringContrast(scaled);
+            List<Region> found=new ArrayList<>();
+            scan(scaled,script,found,0,cancel);
+            scan(contrast,script,found,0,cancel);
+            scan(colored,script,found,0,cancel);
+            Region best=null;
+            for(Region candidate:found){
+                int letters=0;for(int i=0;i<candidate.original.length();i++)if(Character.isLetter(candidate.original.charAt(i)))letters++;
+                if(letters<3||candidate.confidence<.62f)continue;
+                RectF global=new RectF((area.left+candidate.box.left*area.width())/bitmap.getWidth(),(area.top+candidate.box.top*area.height())/bitmap.getHeight(),(area.left+candidate.box.right*area.width())/bitmap.getWidth(),(area.top+candidate.box.bottom*area.height())/bitmap.getHeight());
+                float horizontal=Math.max(0,Math.min(row.box.right,global.right)-Math.max(row.box.left,global.left));
+                boolean aligned=horizontal>=Math.min(row.box.width(),global.width())*.18f||Math.abs(row.box.centerX()-global.centerX())<=Math.max(row.box.width(),global.width())*.55f;
+                if(!aligned||global.top>row.box.bottom+row.box.height()*4.8f||global.bottom<row.box.top-row.box.height())continue;
+                candidate.box=global;
+                if(best==null||candidate.confidence>best.confidence||candidate.original.length()>best.original.length()&&candidate.confidence>best.confidence-.08f)best=candidate;
+            }
+            if(best==null)return false;
+            String old=row.original.toLowerCase(java.util.Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+"," ").trim();
+            String extra=best.original.toLowerCase(java.util.Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+"," ").trim();
+            if(extra.isEmpty()||old.contains(extra))return false;
+            if(extra.contains(old)&&extra.length()>old.length()+1)row.original=best.original;
+            else row.original=(row.original+" "+best.original).replaceAll("\\s+"," ").trim();
+            row.box.union(best.box);row.confidence=Math.min(row.confidence,best.confidence);
+            float[] scales=new float[row.wordScales.length+best.wordScales.length];System.arraycopy(row.wordScales,0,scales,0,row.wordScales.length);System.arraycopy(best.wordScales,0,scales,row.wordScales.length,best.wordScales.length);row.wordScales=scales;
+            return true;
+        }finally{if(colored!=null)colored.recycle();if(contrast!=null)contrast.recycle();if(scaled!=crop)scaled.recycle();crop.recycle();}
+    }
     private static void scan(Bitmap bitmap,String script,List<Region> rows,int angle,AtomicBoolean cancel)throws Exception{
         TextRecognizer client=recognizer(script);
         try{
@@ -155,11 +208,11 @@ final class ComicTranslation {
         return translateLocal(regions,source,target,cancel,gate,"{}");
     }
     static String exactGlossary(String text,JSONObject glossary){String normalized=text.trim().replaceAll("\\s+"," ").toLowerCase(java.util.Locale.ROOT);java.util.Iterator<String> keys=glossary.keys();while(keys.hasNext()){String key=keys.next();String value=glossary.optString(key).trim();if(!normalized.isEmpty()&&!value.isEmpty()&&normalized.equals(key.trim().replaceAll("\\s+"," ").toLowerCase(java.util.Locale.ROOT)))return value;}return null;}
-    static String modelLanguage(String code){return code.equals("pt")||code.equals("pt-BR")||code.equals("pt-PT")?"pt":code;}
+    static String modelLanguage(String code){String normalized=code==null?"":code.trim().toLowerCase(java.util.Locale.ROOT);return normalized.equals("pt")||normalized.equals("pt-br")||normalized.equals("pt-pt")?"pt":normalized;}
     static String languageName(String code){return code.equals("pt-BR")?"Brazilian Portuguese (pt-BR)":code.equals("pt-PT")?"European Portuguese (pt-PT)":code.equals("pt")?"Portuguese":code;}
     private static String matchCase(String source,String replacement){return source.equals(source.toUpperCase(java.util.Locale.ROOT))?replacement.toUpperCase(java.util.Locale.ROOT):Character.isUpperCase(source.charAt(0))?Character.toUpperCase(replacement.charAt(0))+replacement.substring(1):replacement;}
     static String brazilianPortuguese(String text){
-        String[][] words={{"casa de banho","banheiro"},{"telemóvel","celular"},{"autocarro","ônibus"},{"comboio","trem"},{"ficheiro","arquivo"},{"no ecrã","na tela"},{"ecrã","tela"},{"ao espelho","no espelho"},{"equipa","equipe"},{"facto","fato"},{"contacto","contato"},{"rapariga","garota"},{"isto","isso"},{"contigo","com você"},{"teus","seus"},{"tuas","suas"},{"teu","seu"},{"tua","sua"},{"podes","pode"},{"precisas","precisa"},{"precisares","precisar"},{"fales","fale"},{"sejas","seja"},{"estás","está"},{"tu","você"}};
+        String[][] words={{"casa de banho","banheiro"},{"telemóvel","celular"},{"autocarro","ônibus"},{"comboio","trem"},{"ficheiro","arquivo"},{"no ecrã","na tela"},{"ecrã","tela"},{"ao espelho","no espelho"},{"equipa","equipe"},{"facto","fato"},{"contacto","contato"},{"rapariga","garota"},{"isto","isso"},{"não me vou","não vou me"},{"livro comic","quadrinho"},{"eu lei","eu leio"},{"dar a si mesmo um ataque cardíaco","ter um ataque cardíaco"},{"contigo","com você"},{"teus","seus"},{"tuas","suas"},{"tens de","tem que"},{"teu","seu"},{"tua","sua"},{"podes","pode"},{"precisas","precisa"},{"achas","acha"},{"queres","quer"},{"sabes","sabe"},{"vais","vai"},{"tens","tem"},{"és","é"},{"fazes","faz"},{"dizes","diz"},{"vês","vê"},{"pensas","pensa"},{"precisares","precisar"},{"fales","fale"},{"sejas","seja"},{"estás","está"},{"tu","você"}};
         String result=text;
         for(String[] pair:words){java.util.regex.Pattern pattern=java.util.regex.Pattern.compile("(?iu)\\b"+java.util.regex.Pattern.quote(pair[0])+"\\b");java.util.regex.Matcher matcher=pattern.matcher(result);StringBuffer changed=new StringBuffer();while(matcher.find())matcher.appendReplacement(changed,java.util.regex.Matcher.quoteReplacement(matchCase(matcher.group(),pair[1])));matcher.appendTail(changed);result=changed.toString();}
         result=result.replaceAll("(?iu),\\s*meu([.!?])",", cara$1");
@@ -182,7 +235,8 @@ final class ComicTranslation {
             for(int index=0;index<regions.size();index++){
                 Region row=regions.get(index);
                 check(cancel);
-                if(row.manualTranslation||row.translationAttempted||!row.translated.isEmpty()||!autoTranslationCandidate(row))continue;
+                if(row.manualTranslation||row.translationAttempted||!row.translated.isEmpty())continue;
+                if(!autoTranslationCandidate(row)){if(!row.original.trim().isEmpty())uncertain++;continue;}
                 String exact=exactGlossary(row.original,terms);
                 if(exact!=null){row.translated=exact;row.translationAttempted=true;continue;}
                 String detected=pageSource;

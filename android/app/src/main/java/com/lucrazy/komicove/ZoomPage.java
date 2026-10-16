@@ -29,8 +29,8 @@ final class ZoomPage extends View {
     private int tileGeneration;
     private java.util.List<TranslationTile> translationTiles=java.util.Collections.emptyList();
     private static final class TranslationTile {
-        final int index,left,top;final ComicTextReconstruction.Result result;
-        TranslationTile(int index,int left,int top,ComicTextReconstruction.Result result){this.index=index;this.left=left;this.top=top;this.result=result;}
+        final int index,left,top;final RectF layoutBox;final ComicTextReconstruction.Result result;
+        TranslationTile(int index,int left,int top,RectF layoutBox,ComicTextReconstruction.Result result){this.index=index;this.left=left;this.top=top;this.layoutBox=layoutBox;this.result=result;}
     }
     static CharSequence styledTranslation(String value,float[] scales){
         if(scales==null||scales.length==0)return value;
@@ -80,7 +80,7 @@ final class ZoomPage extends View {
         final int ticket=++tileGeneration;clearTiles();
         if(image==null||!translationOverlay||translationRegions.isEmpty())return;
         final java.util.List<Bitmap> crops=new java.util.ArrayList<>();
-        final java.util.List<Rect> cropBounds=new java.util.ArrayList<>(),textBounds=new java.util.ArrayList<>();
+        final java.util.List<Rect> cropBounds=new java.util.ArrayList<>(),textBounds=new java.util.ArrayList<>(),layoutBounds=new java.util.ArrayList<>();
         final java.util.List<Integer> indices=new java.util.ArrayList<>();
         final int imageHeight=image.getHeight();
         int remainingPixels=1000000;
@@ -89,19 +89,20 @@ final class ZoomPage extends View {
             int l=Math.max(0,(int)(row.box.left*image.getWidth())),t=Math.max(0,(int)(row.box.top*image.getHeight()));
             int r=Math.min(image.getWidth(),(int)Math.ceil(row.box.right*image.getWidth())),b=Math.min(image.getHeight(),(int)Math.ceil(row.box.bottom*image.getHeight()));
             Rect crop=new Rect(Math.max(0,l-10),Math.max(0,t-10),Math.min(image.getWidth(),r+10),Math.min(image.getHeight(),b+10));
+            Rect layout=new Rect(l,t,r,b);
             int pixels=crop.width()*crop.height();
             if(crop.width()<12||crop.height()<8||pixels>250000||pixels>remainingPixels)continue;
             remainingPixels-=pixels;
             crops.add(crop.width()==image.getWidth()&&crop.height()==image.getHeight()
                     ?image.copy(Bitmap.Config.ARGB_8888,false)
                     :Bitmap.createBitmap(image,crop.left,crop.top,crop.width(),crop.height()));
-            cropBounds.add(crop);textBounds.add(new Rect(l-crop.left,t-crop.top,r-crop.left,b-crop.top));indices.add(i);
+            cropBounds.add(crop);textBounds.add(new Rect(l-crop.left,t-crop.top,r-crop.left,b-crop.top));layoutBounds.add(layout);indices.add(i);
         }
         tileWorker.execute(()->{
             java.util.List<TranslationTile> finished=new java.util.ArrayList<>();
             java.util.Map<Integer,Float> glyphs=new java.util.HashMap<>();
             for(int i=0;i<crops.size();i++){
-                Bitmap crop=crops.get(i);try{glyphs.put(indices.get(i),ComicTextReconstruction.glyphHeight(crop,textBounds.get(i))/imageHeight);ComicTextReconstruction.Result result=ComicTextReconstruction.rebuild(crop,textBounds.get(i));if(result!=null)finished.add(new TranslationTile(indices.get(i),cropBounds.get(i).left,cropBounds.get(i).top,result));}
+                Bitmap crop=crops.get(i);try{glyphs.put(indices.get(i),ComicTextReconstruction.glyphHeight(crop,textBounds.get(i))/imageHeight);ComicTextReconstruction.Result result=ComicTextReconstruction.rebuild(crop,textBounds.get(i));if(result!=null){Rect bounds=layoutBounds.get(i);finished.add(new TranslationTile(indices.get(i),cropBounds.get(i).left,cropBounds.get(i).top,new RectF(bounds),result));}}
                 finally{crop.recycle();}
             }
             tileHandler.post(()->{if(ticket!=tileGeneration){for(TranslationTile tile:finished)tile.result.bitmap.recycle();return;}for(java.util.Map.Entry<Integer,Float> entry:glyphs.entrySet())if(entry.getKey()<translationRegions.size())translationRegions.get(entry.getKey()).inkHeightRatio=entry.getValue();translationTiles=finished;invalidate();});
@@ -187,15 +188,16 @@ final class ZoomPage extends View {
             TextPaint text=new TextPaint(Paint.ANTI_ALIAS_FLAG);text.setColor(label?Color.WHITE:tile.result.lightBackground?0xff201c20:Color.WHITE);
             if(translationCompare&&tile!=null)text.setColor(tile.result.lightBackground?0xffa51f39:Color.WHITE);
             boolean latin=true;for(int i=0;i<shown.length();i++)if(shown.charAt(i)>0x024f){latin=false;break;}text.setTypeface(latin?comicFont:Typeface.DEFAULT);
-            float left=imageLeft+region.box.left*image.getWidth(),top=imageTop+region.box.top*image.getHeight();
-            float boxWidth=Math.max(1,region.box.width()*image.getWidth()),boxHeight=Math.max(1,region.box.height()*image.getHeight());
+            RectF visual=tile==null?new RectF(region.box.left*image.getWidth(),region.box.top*image.getHeight(),region.box.right*image.getWidth(),region.box.bottom*image.getHeight()):tile.layoutBox;
+            float left=imageLeft+visual.left,top=imageTop+visual.top;
+            float boxWidth=Math.max(1,visual.width()),boxHeight=Math.max(1,visual.height());
             float textAngle=label?0:Math.abs(region.angle)>8?region.angle:boxHeight>boxWidth*1.3f?-90:0;
             boolean vertical=Math.abs(textAngle)>60;
             float widthStart=vertical?top:left,widthEnd=widthStart+(vertical?boxHeight:boxWidth);
             float widthPageStart=vertical?imageTop:imageLeft;
             float widthPageEnd=widthPageStart+(vertical?image.getHeight():image.getWidth());
             float widthCenter=(widthStart+widthEnd)/2;
-            float availableWidth=Math.min((widthEnd-widthStart)*1.65f,2*Math.min(widthCenter-widthPageStart,widthPageEnd-widthCenter));
+            float availableWidth=Math.min(widthEnd-widthStart,2*Math.min(widthCenter-widthPageStart,widthPageEnd-widthCenter));
             for(int otherIndex=0;otherIndex<translationRegions.size();otherIndex++){
                 if(otherIndex==index)continue;
                 RectF other=translationRegions.get(otherIndex).box;
@@ -212,7 +214,7 @@ final class ZoomPage extends View {
             float axisStart=vertical?left:top,axisEnd=axisStart+(vertical?boxWidth:boxHeight);
             float crossStart=vertical?top:left,crossEnd=crossStart+(vertical?boxHeight:boxWidth);
             float pageStart=vertical?imageLeft:imageTop,pageEnd=pageStart+(vertical?image.getWidth():image.getHeight());
-            float available=Math.min((axisEnd-axisStart)*2.4f,2*Math.min((axisStart+axisEnd)/2-pageStart,pageEnd-(axisStart+axisEnd)/2));
+            float available=Math.min(axisEnd-axisStart,2*Math.min((axisStart+axisEnd)/2-pageStart,pageEnd-(axisStart+axisEnd)/2));
             for(int otherIndex=0;otherIndex<translationRegions.size();otherIndex++){
                 if(otherIndex==index)continue;
                 RectF other=translationRegions.get(otherIndex).box;

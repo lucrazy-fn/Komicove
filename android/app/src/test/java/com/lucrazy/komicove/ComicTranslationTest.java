@@ -37,17 +37,63 @@ public class ComicTranslationTest {
         assertEquals("Isso está mudando. Se precisar, pode falar com a sua equipe e ver o arquivo na tela.",ComicTranslation.brazilianPortuguese(european));
         assertEquals("Agradeço por não falar. Pode se olhar no espelho.",ComicTranslation.brazilianPortuguese("Agradeço por não falares. Podes olhar-te ao espelho."));
         assertEquals("Chegou a isso, cara. O meu carro ficou.",ComicTranslation.brazilianPortuguese("Chegou a isto, meu. O meu carro ficou."));
+        assertEquals("Não vou me atrasar com o quadrinho.",ComicTranslation.brazilianPortuguese("Não me vou atrasar com o livro comic."));
+        assertEquals("Que tipo de ossos acha que são?",ComicTranslation.brazilianPortuguese("Que tipo de ossos achas que são?"));
         assertEquals("pt",ComicTranslation.modelLanguage("pt-BR"));
+        assertEquals("pt",ComicTranslation.modelLanguage("pt-br"));
         assertEquals("pt",ComicTranslation.modelLanguage("pt-PT"));
         assertEquals("Brazilian Portuguese (pt-BR)",ComicTranslation.languageName("pt-BR"));
+    }
+    @Test public void adjacentLinesFromOneBalloonStayTogether(){
+        List<ComicTranslation.Region> lines=new ArrayList<>();
+        lines.add(new ComicTranslation.Region(new RectF(.20f,.07f,.34f,.079f),"CONTRATAR",.78f));
+        lines.add(new ComicTranslation.Region(new RectF(.21f,.081f,.35f,.090f),"OS SERVIÇOS DO",.70f));
+        lines.add(new ComicTranslation.Region(new RectF(.22f,.100f,.35f,.108f),"DE ADVOCACIA",.81f));
+        lines.add(new ComicTranslation.Region(new RectF(.76f,.10f,.90f,.11f),"OUTRO BALÃO",.90f));
+        List<ComicTranslation.Region> merged=ComicTranslation.mergeNearbyLines(lines);
+        assertEquals(2,merged.size());
+        assertEquals("CONTRATAR OS SERVIÇOS DO DE ADVOCACIA",merged.get(0).original);
+        assertEquals("OUTRO BALÃO",merged.get(1).original);
+    }
+    @Test public void largeStyledWordBelowAFragmentRequiresReview(){
+        Bitmap page=Bitmap.createBitmap(220,180,Bitmap.Config.ARGB_8888);page.eraseColor(Color.WHITE);
+        Rect line=new Rect(70,40,150,58);
+        for(int y=42;y<55;y++)for(int x=75;x<145;x+=8)page.setPixel(x,y,Color.BLACK);
+        assertFalse(ComicTextReconstruction.likelyMissingLargeText(page,line));
+        for(int y=66;y<125;y++)for(int x=58;x<162;x++)if((x/9+y/7)%3!=0)page.setPixel(x,y,Color.RED);
+        assertTrue(ComicTextReconstruction.likelyMissingLargeText(page,line));
+        page.recycle();
+    }
+    @Test public void coloredLetteringGetsAHighContrastRetry(){
+        Bitmap page=Bitmap.createBitmap(20,12,Bitmap.Config.ARGB_8888);page.eraseColor(Color.WHITE);
+        page.setPixel(4,5,Color.rgb(220,20,30));
+        page.setPixel(5,5,Color.rgb(25,25,25));
+        page.setPixel(6,5,Color.rgb(190,175,165));
+        Bitmap contrasted=ComicTextReconstruction.letteringContrast(page);
+        assertEquals(Color.BLACK,contrasted.getPixel(4,5));
+        assertEquals(Color.BLACK,contrasted.getPixel(5,5));
+        assertEquals(Color.WHITE,contrasted.getPixel(6,5));
+        Bitmap colored=ComicTextReconstruction.coloredLetteringContrast(page);
+        assertEquals(Color.BLACK,colored.getPixel(4,5));
+        assertEquals(Color.WHITE,colored.getPixel(5,5));
+        assertEquals(Color.WHITE,colored.getPixel(6,5));
+        Rect area=ComicTextReconstruction.emphasisArea(page,new Rect(8,2,12,5));
+        assertTrue(area.left<8&&area.right>12&&area.bottom>5);
+        colored.recycle();contrasted.recycle();page.recycle();
     }
     @Test public void readableDialogueIsTranslatedButShortNoiseIsNot(){
         ComicTranslation.Region dialogue=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"RUN! THIS WAY!",.72f);
         ComicTranslation.Region effect=new ComicTranslation.Region(new RectF(.1f,.2f,.4f,.3f),"KRAKOOM",.80f);
         ComicTranslation.Region noise=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"AX",.89f);
+        ComicTranslation.Region fragment=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"on",.99f);
+        ComicTranslation.Region mixedNoise=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"mo D'O",.74f);
+        ComicTranslation.Region command=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"GO!",.92f);
         assertTrue(ComicTranslation.autoTranslationCandidate(dialogue));
         assertTrue(ComicTranslation.autoTranslationCandidate(effect));
         assertFalse(ComicTranslation.autoTranslationCandidate(noise));
+        assertFalse(ComicTranslation.autoTranslationCandidate(fragment));
+        assertFalse(ComicTranslation.autoTranslationCandidate(mixedNoise));
+        assertTrue(ComicTranslation.autoTranslationCandidate(command));
     }
     private View named(View root,String name){
         if(name.equals(root.getContentDescription()))return root;

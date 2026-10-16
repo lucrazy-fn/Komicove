@@ -52,6 +52,49 @@ final class ComicTextReconstruction {
         return heights[Math.round((count-1)*.9f)];
     }
 
+    static boolean likelyMissingLargeText(Bitmap image, Rect text) {
+        if(text.width()<8||text.height()<5)return false;
+        int padX=Math.max(4,text.width()/2),below=Math.max(8,text.height()*4);
+        Rect area=new Rect(Math.max(0,text.left-padX),Math.min(image.getHeight(),text.bottom+2),
+                Math.min(image.getWidth(),text.right+padX),Math.min(image.getHeight(),text.bottom+below));
+        if(area.width()<8||area.height()<8)return false;
+        int step=Math.max(1,Math.max(area.width(),area.height())/180),bright=0,ink=0,total=0;
+        for(int y=area.top;y<area.bottom;y+=step)for(int x=area.left;x<area.right;x+=step){int color=image.getPixel(x,y),max=Math.max(Color.red(color),Math.max(Color.green(color),Color.blue(color))),min=Math.min(Color.red(color),Math.min(Color.green(color),Color.blue(color)));float value=light(color);total++;if(value>205&&max-min<42)bright++;if(value<155||max-min>78&&value<225)ink++;}
+        return total>20&&bright>total*.30f&&ink>total*.085f;
+    }
+
+    static Rect emphasisArea(Bitmap image, Rect text) {
+        int padX=Math.max(8,text.width());
+        return new Rect(Math.max(0,text.left-padX),Math.max(0,text.bottom-Math.max(2,text.height()/4)),
+                Math.min(image.getWidth(),text.right+padX),
+                Math.min(image.getHeight(),text.bottom+Math.max(12,Math.round(text.height()*5.2f))));
+    }
+
+    static Bitmap letteringContrast(Bitmap source) {
+        int width=source.getWidth(),height=source.getHeight();
+        int[] pixels=new int[width*height];source.getPixels(pixels,0,width,0,0,width,height);
+        for(int index=0;index<pixels.length;index++){
+            int color=pixels[index],red=Color.red(color),green=Color.green(color),blue=Color.blue(color);
+            float value=(red+green+blue)/3f;
+            boolean dark=value<145;
+            boolean coloredLetter=red>105&&red-green>28&&red-blue>28;
+            pixels[index]=dark||coloredLetter?Color.BLACK:Color.WHITE;
+        }
+        return Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
+    }
+
+    static Bitmap coloredLetteringContrast(Bitmap source) {
+        int width=source.getWidth(),height=source.getHeight();
+        int[] pixels=new int[width*height];source.getPixels(pixels,0,width,0,0,width,height);
+        for(int index=0;index<pixels.length;index++){
+            int color=pixels[index],red=Color.red(color),green=Color.green(color),blue=Color.blue(color);
+            int maximum=Math.max(red,Math.max(green,blue)),minimum=Math.min(red,Math.min(green,blue));
+            boolean coloredLetter=maximum>105&&maximum-minimum>58;
+            pixels[index]=coloredLetter?Color.BLACK:Color.WHITE;
+        }
+        return Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
+    }
+
     static Result rebuild(Bitmap crop, Rect text) {
         int width=crop.getWidth(), height=crop.getHeight();
         if(width*height>250000||text.width()<12||text.height()<8)return null;
