@@ -167,7 +167,7 @@ public final class ReaderActivity extends Activity {
     private void loadTranslationCache(int number,int ticket,Bitmap image){
         if(translationView().equals("original")||mode.equals("dupla"))return;
         android.content.SharedPreferences config=getSharedPreferences("comic_translation_prefs",0);
-        String from=config.getString("source","auto"),to=config.getString("target","pt"),provider=config.getString("provider","local"),model=config.getString("model",""),endpoint=config.getString("endpoint",""),glossary=config.getString("glossary","{}"),script=config.getString("script","latin");boolean manga=mode.equals("manga"),vision=config.getBoolean("vision",false);
+        String from=config.getString("source","auto"),savedTarget=config.getString("target","pt-BR"),to=savedTarget.equals("pt")?"pt-BR":savedTarget,provider=config.getString("provider","local"),model=config.getString("model",""),endpoint=config.getString("endpoint",""),glossary=config.getString("glossary","{}"),script=config.getString("script","latin");boolean manga=mode.equals("manga"),vision=config.getBoolean("vision",false);
         translationCacheWorker.getQueue().clear();
         try{translationCacheWorker.execute(()->{try{java.util.List<ComicTranslation.Region> cached=ComicTranslation.read(this,translationBookKey(),number,image,from,to,provider,model,endpoint,glossary,script,manga,vision);if(cached!=null)runOnUiThread(()->{if(!destroyed&&ticket==generation&&number==index&&pageView!=null){translationRegions=cached;translationPage=number;pageView.setTranslations(cached,true);}});}catch(Exception ignored){}});}catch(RejectedExecutionException ignored){}
     }

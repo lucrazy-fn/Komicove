@@ -32,6 +32,15 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class) @Config(sdk=28)
 public class ComicTranslationTest {
+    @Test public void brazilianPortugueseIsDistinctFromEuropeanPortuguese(){
+        String european="Isto está a mudar. Se precisares, podes falar com a tua equipa e ver o ficheiro no ecrã.";
+        assertEquals("Isso está mudando. Se precisar, pode falar com a sua equipe e ver o arquivo na tela.",ComicTranslation.brazilianPortuguese(european));
+        assertEquals("Agradeço por não falar. Pode se olhar no espelho.",ComicTranslation.brazilianPortuguese("Agradeço por não falares. Podes olhar-te ao espelho."));
+        assertEquals("Chegou a isso, cara. O meu carro ficou.",ComicTranslation.brazilianPortuguese("Chegou a isto, meu. O meu carro ficou."));
+        assertEquals("pt",ComicTranslation.modelLanguage("pt-BR"));
+        assertEquals("pt",ComicTranslation.modelLanguage("pt-PT"));
+        assertEquals("Brazilian Portuguese (pt-BR)",ComicTranslation.languageName("pt-BR"));
+    }
     @Test public void readableDialogueIsTranslatedButShortNoiseIsNot(){
         ComicTranslation.Region dialogue=new ComicTranslation.Region(new RectF(.1f,.1f,.4f,.2f),"RUN! THIS WAY!",.72f);
         ComicTranslation.Region effect=new ComicTranslation.Region(new RectF(.1f,.2f,.4f,.3f),"KRAKOOM",.80f);

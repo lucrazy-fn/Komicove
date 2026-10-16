@@ -1468,8 +1468,10 @@ class ReaderContent:
 
     def _request_translation_cache(self):
         prefs = load_prefs()
+        target = prefs.get('translation_target', 'pt-BR')
+        target = 'pt-BR' if target == 'pt' else target
         key = (self._idx, self._rotation, prefs.get('translation_source', 'auto'),
-               prefs.get('translation_target', 'pt'), prefs.get('translation_provider', 'local'),
+               target, prefs.get('translation_provider', 'local'),
                prefs.get('translation_model', ''), prefs.get('translation_endpoint', ''),
                prefs.get('translation_glossary', '{}'), prefs.get('translation_ocr', 'eng'),
                self._manga, prefs.get('translation_vision', False))

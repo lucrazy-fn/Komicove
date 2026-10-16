@@ -58,8 +58,10 @@ class TranslationDialog(tk.Toplevel):
         self.regions = []
         self.regions_rotation = reader._rotation
         prefs = load_prefs()
-        self.source = tk.StringVar(value=prefs.get("translation_source", "auto"))
-        self.target = tk.StringVar(value=prefs.get("translation_target", "pt"))
+        stored_source = prefs.get("translation_source", "auto")
+        self.source = tk.StringVar(value="pt-BR" if stored_source == "pt" else stored_source)
+        stored_target = prefs.get("translation_target", "pt-BR")
+        self.target = tk.StringVar(value="pt-BR" if stored_target == "pt" else stored_target)
         self.ocr_language = tk.StringVar(value=prefs.get("translation_ocr", "eng"))
         self.provider = tk.StringVar(value=prefs.get("translation_provider", "local"))
         self.mode = tk.StringVar(value="local" if self.provider.get() == "local" else "remote")
@@ -111,7 +113,9 @@ class TranslationDialog(tk.Toplevel):
 
     def _language_menu(self, parent, variable, *, automatic=False):
         languages = [("auto", ui("Detectar automaticamente", "Detect automatically")),
-                     ("pt", ui("Português", "Portuguese")), ("en", ui("Inglês", "English")),
+                     ("pt-BR", ui("Português (Brasil)", "Portuguese (Brazil)")),
+                     ("pt-PT", ui("Português (Portugal)", "Portuguese (Portugal)")),
+                     ("en", ui("Inglês", "English")),
                      ("es", ui("Espanhol", "Spanish")), ("fr", ui("Francês", "French")),
                      ("de", ui("Alemão", "German")), ("it", ui("Italiano", "Italian")),
                      ("ja", ui("Japonês", "Japanese")), ("zh", ui("Chinês", "Chinese")),
@@ -556,7 +560,8 @@ class TranslationDialog(tk.Toplevel):
     def _settings(self):
         provider = "local" if self.mode.get() == "local" else self.provider.get().strip().lower()
         vision = bool(self.vision.get() and self.model.get().strip() in VISION_MODELS.get(provider, ()))
-        self.ocr_language.set({"pt": "por", "en": "eng", "es": "spa", "fr": "fra",
+        self.ocr_language.set({"pt": "por", "pt-BR": "por", "pt-PT": "por",
+                               "en": "eng", "es": "spa", "fr": "fra",
                                "de": "deu", "it": "ita", "ja": "jpn", "zh": "chi_sim",
                                "ko": "kor"}.get(self.source.get().strip(), "eng"))
         values = dict(translation_source=self.source.get().strip(),

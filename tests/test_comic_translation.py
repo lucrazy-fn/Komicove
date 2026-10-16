@@ -253,6 +253,20 @@ def test_local_glossary_matches_whole_expression_only():
     assert comic.glossary_exact_match("Captain Nova returned", words) is None
 
 
+def test_brazilian_portuguese_is_distinct_from_european_portuguese():
+    european = ("Isto está a mudar. Se precisares, podes falar com a tua equipa "
+                "e ver o ficheiro no ecrã.")
+    assert comic.brazilian_portuguese(european) == (
+        "Isso está mudando. Se precisar, pode falar com a sua equipe e ver o arquivo na tela.")
+    assert comic.brazilian_portuguese("Agradeço por não falares. Podes olhar-te ao espelho.") == (
+        "Agradeço por não falar. Pode se olhar no espelho.")
+    assert comic.brazilian_portuguese("Chegou a isto, meu. O meu carro ficou.") == (
+        "Chegou a isso, cara. O meu carro ficou.")
+    assert comic.translation_language_name("pt-BR") == "Brazilian Portuguese (pt-BR)"
+    assert comic.translation_language_name("pt-PT") == "European Portuguese (pt-PT)"
+    assert comic._model_language("pt-BR") == comic._model_language("pt-PT") == "pt"
+
+
 def test_export_cbz_preserves_original_order_and_metadata(tmp_path):
     original = tmp_path / "autoral.cbz"
     destination = tmp_path / "autoral-traduzido.cbz"

@@ -229,7 +229,10 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
             continue
         found_rows = _ocr_once(crop, language, 6, cancel)
         sample_box = (l, t, r, b)
-        if (not found_rows or max(row.confidence for row in found_rows) < .4 or
+        longest_text = max((sum(char.isalpha() for char in row.original)
+                            for row in found_rows), default=0)
+        if (not found_rows or max(row.confidence for row in found_rows) < .72 or
+                longest_text < 4 or
                 crop.width > crop.height * 2.5 and
                 max(len(row.original.strip()) for row in found_rows) < 8):
             inset_x, inset_y = round(crop.width * .04), round(crop.height * .12)
@@ -237,19 +240,22 @@ def recognize(image: Image.Image, language="eng", manga=False, cancel=None):
             factor = min(3, max(1, 2000 // max(inner.size)))
             enlarged = inner.resize((inner.width * factor, inner.height * factor),
                                      Image.Resampling.LANCZOS) if factor > 1 else inner
-            alternate = _ocr_once(ImageOps.autocontrast(enlarged), language, 7, cancel)
-            if not alternate or max(row.confidence for row in alternate) < .8:
-                raw_line = _ocr_once(ImageOps.autocontrast(enlarged), language, 13, cancel)
-                if raw_line and (not alternate or max(row.confidence * min(40, len(row.original))
-                    for row in raw_line) > max(row.confidence * min(40, len(row.original))
-                    for row in alternate)):
-                    alternate = raw_line
-            base_score = max((row.confidence * min(40, len(row.original))
-                              for row in found_rows), default=0)
-            alternate_score = max((row.confidence * min(40, len(row.original))
-                                   for row in alternate), default=0)
+            contrasted = ImageOps.autocontrast(enlarged.convert("L"))
+            attempts = [
+                _ocr_once(contrasted, language, 7, cancel),
+                _ocr_once(contrasted, language, 11, cancel),
+                _ocr_once(contrasted.point(lambda value: 255 if value >= 180 else 0),
+                          language, 11, cancel),
+                _ocr_once(contrasted, language, 13, cancel),
+            ]
+            def score(rows):
+                return sum(row.confidence * min(20, sum(char.isalpha()
+                           for char in row.original)) for row in rows
+                           if sum(char.isalpha() for char in row.original) >= 2)
+            alternate = max(attempts, key=score)
+            base_score, alternate_score = score(found_rows), score(alternate)
             if alternate and max(row.confidence for row in alternate) >= .55 and \
-                    alternate_score > base_score * 1.25:
+                    alternate_score > base_score * 1.15:
                 found_rows = alternate
                 sample_box = (l + inset_x / crop.width * (r-l),
                               t + inset_y / crop.height * (b-t),
@@ -434,18 +440,74 @@ def rotate_regions(regions, turns):
     return result
 
 
+def _model_language(code: str) -> str:
+    return "pt" if code in {"pt", "pt-BR", "pt-PT"} else code
+
+
+def _match_case(source: str, replacement: str) -> str:
+    if source.isupper():
+        return replacement.upper()
+    if source[:1].isupper():
+        return replacement[:1].upper() + replacement[1:]
+    return replacement
+
+
+def brazilian_portuguese(text: str) -> str:
+    """Conservatively adapt generic/European Portuguese produced offline to PT-BR."""
+    substitutions = {
+        "casa de banho": "banheiro", "telemóvel": "celular", "autocarro": "ônibus",
+        "comboio": "trem", "ficheiro": "arquivo", "no ecrã": "na tela", "ecrã": "tela",
+        "ao espelho": "no espelho",
+        "equipa": "equipe",
+        "facto": "fato", "contacto": "contato", "rapariga": "garota", "isto": "isso",
+        "tu": "você", "contigo": "com você", "teus": "seus", "tuas": "suas",
+        "teu": "seu", "tua": "sua", "podes": "pode", "precisas": "precisa",
+        "estás": "está",
+        "precisares": "precisar", "fales": "fale", "sejas": "seja",
+    }
+    result = text
+    for original in sorted(substitutions, key=len, reverse=True):
+        result = re.sub(r"\b" + re.escape(original) + r"\b",
+                        lambda match: _match_case(match.group(0), substitutions[original]),
+                        result, flags=re.IGNORECASE)
+    result = re.sub(r",\s*meu([.!?])", r", cara\1", result, flags=re.IGNORECASE)
+    result = re.sub(r"\b(se|não|de|por|para|quando)\s+([A-Za-zÀ-ÿ]+?)(ares|eres|ires)\b",
+                    lambda match: match.group(1) + " " + match.group(2) + match.group(3)[:2],
+                    result, flags=re.IGNORECASE)
+    result = re.sub(r"\b([A-Za-zÀ-ÿ]+(?:ar|er|ir))-te\b",
+                    lambda match: "se " + match.group(1), result, flags=re.IGNORECASE)
+
+    def gerund(match):
+        verb = match.group(2)
+        ending = {"ar": "ando", "er": "endo", "ir": "indo"}.get(verb[-2:].lower())
+        return match.group(1) + " " + verb[:-2] + ending if ending else match.group(0)
+
+    return re.sub(r"\b(estou|está|estamos|estão)\s+a\s+([A-Za-zÀ-ÿ]+(?:ar|er|ir))\b",
+                  gerund, result, flags=re.IGNORECASE)
+
+
+def translation_language_name(code: str) -> str:
+    return {"pt": "Portuguese", "pt-BR": "Brazilian Portuguese (pt-BR)",
+            "pt-PT": "European Portuguese (pt-PT)"}.get(code, code)
+
+
 def local_translate(text: str, source: str, target: str) -> str:
     try:
         from argostranslate import translate
     except ImportError as exc:
         raise TranslationError("local_translation_unavailable") from exc
     logging.getLogger("argostranslate.utils").setLevel(logging.WARNING)
+    model_source, model_target = _model_language(source), _model_language(target)
+    if model_source == model_target:
+        return brazilian_portuguese(text) if target in {"pt", "pt-BR"} else text
     languages = {language.code: language for language in translate.get_installed_languages()}
-    from_language, to_language = languages.get(source), languages.get(target)
+    from_language = languages.get(model_source)
+    to_language = languages.get(model_target)
     pair = from_language.get_translation(to_language) if from_language and to_language else None
     if pair is None:
         raise TranslationError("local_model_unavailable")
-    return pair.translate(text)
+    translated = pair.translate(text)
+    return brazilian_portuguese(translated) if target in {"pt", "pt-BR"} else translated
 
 
 def glossary_exact_match(text: str, glossary: dict) -> str | None:
@@ -489,6 +551,9 @@ def local_model_offer(source: str, target: str):
         from minisbd import models as sentence_models
     except ImportError as exc:
         raise TranslationError("local_translation_unavailable") from exc
+    source, target = _model_language(source), _model_language(target)
+    if source == target:
+        return None, None
     languages = {item.code: item for item in translate.get_installed_languages()}
     start, end = languages.get(source), languages.get(target)
     pair_ready = bool(start and end and start.get_translation(end))
@@ -653,7 +718,8 @@ def translate_remote(regions, source, target, *, provider, model, key, custom=""
                and not item.manual_translation and not item.translation_attempted]
     if not entries:
         return regions
-    prompt = {"source": source, "target": target, "glossary": glossary or {},
+    prompt = {"source": translation_language_name(source),
+              "target": translation_language_name(target), "glossary": glossary or {},
               "nearby_context": (context or [])[:8], "balloons": entries}
     instruction = ("Translate comic dialogue faithfully in reading order using balloon positions and "
                    "nearby dialogue. Preserve names, tone, meaning and identifiable speakers. Apply "
