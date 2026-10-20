@@ -239,6 +239,40 @@ def test_remote_sync_does_not_interrupt_other_desktop_tabs(local):
     assert storage.get_progress_page(path) == 8
 
 
+def test_repeated_sync_persistence_failure_uses_bounded_backoff_and_stops_spam(monkeypatch):
+    import queue
+    from komicove_app import library_views
+    from komicove_app.library_views import LibraryWindow
+
+    scheduled = []
+    logged = []
+    window = SimpleNamespace(
+        _closing_app=False, _sync_events=queue.SimpleQueue(), _sync_running=True,
+        current_user=SimpleNamespace(token="session"), _sync_job=None,
+        _active_tab="reader", _sync_failure_signature=None, _sync_failure_count=0,
+        _sync_failure_logged_at=0.0,
+        after=lambda delay, callback: (scheduled.append(delay), "timer")[1],
+        _poll_sync=lambda: None, _sync_library_state=lambda *args: None,
+    )
+    monkeypatch.setattr(library_views.log, "debug",
+                        lambda message, *args, **kwargs: logged.append((message, args)))
+
+    for attempt in range(6):
+        error = OSError(f"Could not persist synchronized state; error=PermissionError; duration_ms={attempt}")
+        error.storage_failure = {"operation": "create temporary file",
+                                 "error_type": "PermissionError", "errno": 13,
+                                 "winerror": None}
+        window._sync_job = None
+        window._sync_running = True
+        window._sync_events.put(("session", [], {}, error))
+        LibraryWindow._poll_sync(window)
+
+    assert [delay for delay in scheduled if delay >= 30000] == [
+        30000, 60000, 120000, 240000]
+    assert len(logged) == 1
+    assert window._sync_failure_count == 6
+
+
 def test_repacked_same_pages_migrate_both_byte_ids_and_keep_latest_state(local, server, monkeypatch):
     import zipfile
     db, user, exchange = server

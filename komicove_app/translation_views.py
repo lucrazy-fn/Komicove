@@ -1,13 +1,15 @@
 """Reader-attached OCR and translation controls for the desktop app."""
 
 import json
+import logging
+import time
 from io import BytesIO
 from pathlib import Path
 from statistics import median
 from collections import deque
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from concurrent.futures import ThreadPoolExecutor, CancelledError
 from threading import Event
 from queue import SimpleQueue, Empty
@@ -26,6 +28,63 @@ from komicove_app.comic_translation import (
 )
 from komicove_app.storage import load_prefs, save_prefs
 from komicove_app.translations import ui
+
+log = logging.getLogger("komicove")
+
+
+class BatchTiming:
+    """Stable recent throughput estimate that ignores cache hits."""
+    def __init__(self, baseline=27.0):
+        self.baseline = max(1.0, float(baseline))
+        self.samples = deque(maxlen=8)
+
+    def add(self, seconds, *, cached=False):
+        if not cached and seconds >= .05:
+            self.samples.append(float(seconds))
+
+    @property
+    def seconds_per_page(self):
+        if not self.samples:
+            return self.baseline
+        ordered = sorted(self.samples)
+        center = median(ordered)
+        recent_samples = list(self.samples)[-4:]
+        recent = sum(recent_samples) / len(recent_samples)
+        return center * .6 + recent * .4
+
+    def remaining(self, pages):
+        return max(0, pages) * self.seconds_per_page
+
+    @property
+    def ready(self):
+        return len(self.samples) >= 2
+
+
+def _friendly_duration(seconds, approximate=True):
+    seconds = max(0, int(round(seconds)))
+    if seconds < 90:
+        value = ui("menos de 2 min", "under 2 min") if approximate else ui(
+            f"{seconds} s", f"{seconds} s")
+    else:
+        minutes = max(1, round(seconds / 60))
+        value = ui(f"{minutes} min", f"{minutes} min")
+    return value
+
+
+def _batch_configuration(settings, glossary, manga, rotation):
+    """Non-secret inputs that decide whether persisted page progress is reusable."""
+    return {
+        "source": settings["translation_source"],
+        "target": settings["translation_target"],
+        "provider": settings["translation_provider"],
+        "model": settings["translation_model"],
+        "endpoint": settings["translation_endpoint"],
+        "ocr": settings["translation_ocr"],
+        "vision": bool(settings["translation_vision"]),
+        "glossary": glossary,
+        "manga": bool(manga),
+        "rotation": int(rotation) % 360,
+    }
 
 
 class TranslationDialog(tk.Toplevel):
@@ -49,6 +108,8 @@ class TranslationDialog(tk.Toplevel):
         self.preview_layout = None
         self.preview_press = None
         self.cancel = Event()
+        self.pause = Event()
+        self.pause.set()
         self.future = None
         self.updates = SimpleQueue()
         self.model_offers = SimpleQueue()
@@ -58,6 +119,13 @@ class TranslationDialog(tk.Toplevel):
         self.regions = []
         self.regions_rotation = reader._rotation
         prefs = load_prefs()
+        self.batch_timing = BatchTiming(prefs.get("translation_seconds_per_page", 27.0))
+        self.batch_started = None
+        self.active_phase = None
+        self.phase_started = None
+        self.phase_status_refresh = 0
+        self.batch_errors = 0
+        self.batch_reviews = 0
         stored_source = prefs.get("translation_source", "auto")
         self.source = tk.StringVar(value="pt-BR" if stored_source == "pt" else stored_source)
         stored_target = prefs.get("translation_target", "pt-BR")
@@ -89,6 +157,14 @@ class TranslationDialog(tk.Toplevel):
         self._poll_preview()
         self._queue_preview()
         self._load_page_cache()
+        saved_job = prefs.get("translation_batch_job", {})
+        if (saved_job.get("book") == str(reader._content_key) and
+                saved_job.get("status") in {"running", "cancelled", "paused"}):
+            if saved_job.get("status") == "running":
+                saved_job["status"] = "paused"
+                saved_job["interrupted"] = True
+                save_prefs(translation_batch_job=saved_job)
+            self.whole_button.config(text=ui("Continuar tradução", "Continue translation"))
 
     def _label(self, parent, label):
         widget = tk.Label(parent, text=label, bg=parent.cget("bg"), fg="#d7cfd4",
@@ -294,6 +370,11 @@ class TranslationDialog(tk.Toplevel):
         actions = tk.Frame(fixed_actions, bg="#201a1f"); actions.pack(fill="x")
         translate_button = self._button(actions, ui("Traduzir", "Translate"), lambda: self._start(True))
         translate_button.configure(bg="#bd263f", font=("Segoe UI", 12, "bold"))
+        whole_button = self._button(actions, ui("Traduzir HQ inteira", "Translate whole comic"),
+                                    self._start_whole_book)
+        whole_button.configure(bg="#7d1d31", font=("Segoe UI", 10, "bold"))
+        self.whole_button = whole_button
+        self.pause_button = self._button(actions, ui("Pausar", "Pause"), self._toggle_pause)
         self._button(actions, ui("Cancelar", "Cancel"), self.cancel.set)
         self._button(actions, ui("Voltar", "Back"), self.close)
         glossary_toggle = tk.Button(body, text=ui("Glossário", "Glossary"), command=self._toggle_glossary,
@@ -311,6 +392,8 @@ class TranslationDialog(tk.Toplevel):
                            activebackground="#111014", activeforeground="#fff").pack(side="left", padx=4)
         self.status = tk.Label(fixed_actions, text="", bg="#201a1f", fg="#e8e3e5", anchor="w")
         self.status.pack(fill="x", padx=4)
+        self.batch_progress = ttk.Progressbar(fixed_actions, mode="determinate", maximum=100)
+        self.batch_progress.pack(fill="x", padx=4, pady=(4, 0))
         review_toggle = tk.Button(body, text=ui("Revisar texto e correções", "Review text and corrections"),
                                   command=self._toggle_review, bg="#242026", fg="#fff", relief="flat")
         review_toggle.pack(fill="x", padx=14, pady=(8, 4), ipady=6)
@@ -655,6 +738,65 @@ class TranslationDialog(tk.Toplevel):
         self.future = self.executor.submit(read)
         self._poll(lambda rows: self._show_regions(rows, rotation) if rows is not None else None)
 
+    def _start_whole_book(self):
+        self.scope.set("book")
+        self._scope_changed()
+        self._start(True)
+
+    def _toggle_pause(self):
+        if not self.future or self.future.done():
+            return
+        if self.pause.is_set():
+            self.pause.clear()
+            self.pause_button.config(text=ui("Continuar", "Continue"))
+            state = load_prefs().get("translation_batch_job", {})
+            if (getattr(self, "active_scope", None) == "book" and
+                    state.get("book") == str(self.reader._content_key)):
+                state["status"] = "paused"
+                save_prefs(translation_batch_job=state)
+            self.status.config(text=ui("Pausado. A página atual será preservada.",
+                                       "Paused. The current page will be preserved."))
+        else:
+            self.pause.set()
+            self.pause_button.config(text=ui("Pausar", "Pause"))
+            state = load_prefs().get("translation_batch_job", {})
+            if (getattr(self, "active_scope", None) == "book" and
+                    state.get("book") == str(self.reader._content_key)):
+                state["status"] = "running"
+                save_prefs(translation_batch_job=state)
+
+    def _wait_if_paused(self):
+        while not self.pause.wait(.1):
+            if self.cancel.is_set():
+                raise CancelledError()
+
+    def _batch_confirmation(self, settings, glossary):
+        prefs = load_prefs()
+        saved = prefs.get("translation_batch_job", {})
+        configuration = _batch_configuration(settings, glossary, self.reader._manga,
+                                             self.reader._rotation)
+        compatible = (saved.get("book") == str(self.reader._content_key) and
+                      saved.get("configuration") == configuration)
+        completed = len(saved.get("completed", ())) if compatible else 0
+        pending = max(0, self.reader._count - completed)
+        low = self.batch_timing.remaining(pending) * .75
+        high = self.batch_timing.remaining(pending) * 1.3
+        estimate = ui(f"Cerca de {_friendly_duration(low)} a {_friendly_duration(high)}",
+                      f"About {_friendly_duration(low)} to {_friendly_duration(high)}")
+        mode = ui("IA local", "Local AI") if settings["translation_provider"] == "local" else settings["translation_provider"]
+        cost = (ui("\nA API pode cobrar por cada página ainda não armazenada.",
+                   "\nThe API may charge for each page not already stored.")
+                if settings["translation_provider"] != "local" else "")
+        title = (getattr(self.reader, "_reader_title", "") or
+                 Path(getattr(self.reader, "_path", "comic")).stem)
+        message = ui(
+            f"{title}\n\nTotal: {self.reader._count} páginas\nJá concluídas: {completed}\nPendentes: {pending}\n"
+            f"Idiomas: {settings['translation_source']} → {settings['translation_target']}\nModo: {mode}\nEstimativa inicial: {estimate}{cost}",
+            f"{title}\n\nTotal: {self.reader._count} pages\nAlready completed: {completed}\nPending: {pending}\n"
+            f"Languages: {settings['translation_source']} → {settings['translation_target']}\nMode: {mode}\nInitial estimate: {estimate}{cost}")
+        return messagebox.askyesno(ui("Traduzir HQ inteira", "Translate whole comic"),
+                                   message, parent=self)
+
     def _start(self, translate):
         if self.future and not self.future.done():
             return
@@ -676,10 +818,8 @@ class TranslationDialog(tk.Toplevel):
             key = (self.key.get().strip() or load_key(provider)) if translate and provider != "local" else ""
         except TranslationError as exc:
             self._error(exc); return
-        if self.scope.get() == "book" and provider != "local":
-            if not messagebox.askyesno(ui("Confirmar custo", "Confirm cost"),
-                                       ui("Traduzir a HQ inteira pode gerar cobranças da API. Continuar?",
-                                          "Translating the whole comic may incur API charges. Continue?"), parent=self):
+        if self.scope.get() == "book":
+            if not self._batch_confirmation(settings, glossary):
                 return
         if self.scope.get() == "region" and not self.list.curselection():
             self._error(TranslationError("select_region")); return
@@ -692,10 +832,44 @@ class TranslationDialog(tk.Toplevel):
         manga = self.reader._manga
         pages = [self.page] if scope != "book" else [self.page] + [p for p in range(self.reader._count) if p != self.page]
         self.cancel.clear()
+        self.pause.set()
+        self.pause_button.config(text=ui("Pausar", "Pause"))
+        self.batch_started = time.monotonic()
+        self.active_phase = None
+        self.phase_started = None
+        self.active_scope = scope
+        self.batch_errors = self.batch_reviews = 0
+        self.batch_progress["value"] = 0
+        if scope == "book":
+            saved = load_prefs().get("translation_batch_job", {})
+            configuration = _batch_configuration(settings, glossary, manga,
+                                                 self.reader._rotation)
+            compatible = (saved.get("book") == str(self.reader._content_key) and
+                          saved.get("configuration") == configuration)
+            save_prefs(translation_batch_job={"book": str(self.reader._content_key),
+                       "total": len(pages),
+                       "completed": saved.get("completed", []) if compatible else [],
+                       "errors": saved.get("errors", []) if compatible else [],
+                       "status": "running", "source": settings["translation_source"],
+                       "target": settings["translation_target"], "provider": provider,
+                       "configuration": configuration})
         self.status.config(text=ui("Processando...", "Processing..."))
         self.future = self.executor.submit(self._work, pages, selected, scope, panel, manga,
                                            self.reader._rotation, translate, settings, glossary, key)
-        self._poll(lambda _: self.status.config(text=ui("Concluído.", "Done.")))
+        self._poll(self._batch_done)
+
+    def _batch_done(self, _value):
+        if getattr(self, "active_scope", None) == "book":
+            state = load_prefs().get("translation_batch_job", {})
+            if state.get("book") == str(self.reader._content_key):
+                state["status"] = ("completed_with_review" if self.batch_reviews or
+                                   self.batch_errors else "completed")
+                save_prefs(translation_batch_job=state,
+                           translation_seconds_per_page=self.batch_timing.seconds_per_page)
+        self.batch_progress["value"] = 100
+        self.status.config(text=(ui("Concluído com revisões.", "Completed with reviews.")
+                                 if self.batch_reviews or self.batch_errors else
+                                 ui("Concluído.", "Done.")))
 
     def _export(self):
         if self.future and not self.future.done():
@@ -758,9 +932,34 @@ class TranslationDialog(tk.Toplevel):
 
     def _work(self, pages, selected, scope, panel, manga, rotation, translate, settings, glossary, key):
         prepared_pairs = set()
+        persisted = load_prefs().get("translation_batch_job", {}) if scope == "book" else {}
+        completed_pages = set(persisted.get("completed", ()))
+        failed_pages = set(persisted.get("errors", ()))
+
+        def report(page, regions, number, *, cached=False, error=None, seconds=0):
+            reviews = sum(region.uncertain for region in regions)
+            self.updates.put({"page": page, "rows": regions, "number": number,
+                              "total": len(pages), "rotation": rotation,
+                              "cached": cached, "error": error, "reviews": reviews,
+                              "seconds": seconds})
+            if scope == "book":
+                (failed_pages if error else completed_pages).add(page)
+                if not error:
+                    failed_pages.discard(page)
+                persisted.update(completed=sorted(completed_pages), errors=sorted(failed_pages),
+                                 status="running")
+                save_prefs(translation_batch_job=persisted)
+
+        def phase(page, number, state):
+            self.updates.put({"kind": "phase", "page": page, "number": number,
+                              "total": len(pages), "state": state})
+
         for number, page in enumerate(pages, 1):
             if self.cancel.is_set():
                 raise CancelledError()
+            self._wait_if_paused()
+            page_started = time.monotonic()
+            phase(page, number, "preparing")
             image = self._image(page, rotation)
             args = (self.reader._content_key, page, image, settings["translation_source"],
                     settings["translation_target"], settings["translation_provider"],
@@ -768,6 +967,7 @@ class TranslationDialog(tk.Toplevel):
             regions = read_cache(*args, settings["translation_endpoint"], glossary,
                                  settings["translation_ocr"], manga, settings["translation_vision"],
                                  turns=rotation // 90)
+            cached_result = regions is not None
             if regions is None and rotation:
                 original = self.reader._loader.get_pil(page).copy()
                 base_args = (self.reader._content_key, page, original,
@@ -777,11 +977,23 @@ class TranslationDialog(tk.Toplevel):
                                   settings["translation_ocr"], manga, settings["translation_vision"])
                 if base is not None:
                     regions = rotate_regions(base, rotation // 90)
+                    cached_result = True
             if regions is None:
+                phase(page, number, "detecting")
                 regions = read_ocr_cache(self.reader._content_key, page, image,
                                          settings["translation_ocr"], manga)
                 if regions is None:
-                    regions = recognize(image, settings["translation_ocr"], manga, self.cancel)
+                    try:
+                        regions = recognize(image, settings["translation_ocr"], manga, self.cancel)
+                    except TranslationError as exc:
+                        report(page, [], number, error=exc.code,
+                               seconds=time.monotonic() - page_started)
+                        continue
+                    except Exception:
+                        log.exception("Comic OCR failed unexpectedly; page=%s", page)
+                        report(page, [], number, error="processing_failed",
+                               seconds=time.monotonic() - page_started)
+                        continue
                     write_ocr_cache(self.reader._content_key, page, image,
                                     settings["translation_ocr"], manga, regions)
             apply_corrections(self.reader._content_key, page, regions, rotation // 90)
@@ -794,11 +1006,13 @@ class TranslationDialog(tk.Toplevel):
             elif page == self.page and scope == "panel" and panel is not None:
                 from komicove_app.comic_translation import _overlap
                 chosen = [region for region in regions if _overlap(region.box, panel) > 0]
+            page_error = None
             if translate and chosen:
                 pending = [region for region in chosen if auto_translation_candidate(region)
                            and not region.manual_translation
                            and not region.translated and not region.translation_attempted]
                 if pending:
+                    phase(page, number, "translating")
                     if settings["translation_provider"] == "local":
                         for region in pending:
                             exact = glossary_exact_match(region.original, glossary)
@@ -809,7 +1023,8 @@ class TranslationDialog(tk.Toplevel):
                         if not pending:
                             write_cache(*args, regions, settings["translation_endpoint"], glossary,
                                         settings["translation_ocr"], manga, settings["translation_vision"])
-                            self.updates.put((page, regions, number, len(pages), rotation))
+                            report(page, regions, number, cached=cached_result,
+                                   seconds=time.monotonic() - page_started)
                             continue
                         source = settings["translation_source"]
                         if source == "auto":
@@ -837,8 +1052,12 @@ class TranslationDialog(tk.Toplevel):
                                 raise CancelledError()
                             # Argos cannot guarantee line boundaries after translation.
                             # Each result belongs to exactly one OCR region.
-                            value = (region.original if source == pair[1] else
-                                     local_translate(region.original, source, pair[1]))
+                            try:
+                                value = (region.original if source == pair[1] else
+                                         local_translate(region.original, source, pair[1]))
+                            except TranslationError as exc:
+                                page_error = exc.code
+                                break
                             region.translated = value.strip()
                             region.translation_attempted = True
                     else:
@@ -851,17 +1070,23 @@ class TranslationDialog(tk.Toplevel):
                             nearby += [row.original for row in regions[max(0, first-4):min(len(regions), last+5)]
                                        if row not in batch and auto_translation_candidate(row)]
                             nearby = nearby[-8:]
-                            translate_remote(batch, settings["translation_source"],
-                                             settings["translation_target"],
-                                             provider=settings["translation_provider"], model=settings["translation_model"],
-                                             key=key, custom=settings["translation_endpoint"], glossary=glossary,
-                                             context=nearby,
-                                             image=image if settings["translation_vision"] else None)
+                            try:
+                                translate_remote(batch, settings["translation_source"],
+                                                 settings["translation_target"],
+                                                 provider=settings["translation_provider"], model=settings["translation_model"],
+                                                 key=key, custom=settings["translation_endpoint"], glossary=glossary,
+                                                 context=nearby,
+                                                 image=image if settings["translation_vision"] else None)
+                            except TranslationError as exc:
+                                page_error = exc.code
+                                break
                             write_cache(*args, regions, settings["translation_endpoint"], glossary,
                                         settings["translation_ocr"], manga, settings["translation_vision"])
             write_cache(*args, regions, settings["translation_endpoint"], glossary,
                         settings["translation_ocr"], manga, settings["translation_vision"])
-            self.updates.put((page, regions, number, len(pages), rotation))
+            phase(page, number, "rendering")
+            report(page, regions, number, cached=cached_result, error=page_error,
+                   seconds=time.monotonic() - page_started)
 
     def _poll(self, done):
         if not self.winfo_exists():
@@ -893,22 +1118,86 @@ class TranslationDialog(tk.Toplevel):
                                        f"Exporting {done_count}/{total_count}, {replaced} translated"))
         while True:
             try:
-                page, rows, number, total, rotation = self.updates.get_nowait()
+                update = self.updates.get_nowait()
             except Empty:
                 break
+            if update.get("kind") == "phase":
+                names = {
+                    "preparing": ui("preparando", "preparing"),
+                    "detecting": ui("detectando texto", "detecting text"),
+                    "translating": ui("traduzindo", "translating"),
+                    "rendering": ui("renderizando", "rendering"),
+                }
+                self.active_phase = update
+                self.phase_started = time.monotonic()
+                self.phase_status_refresh = 0
+                self.status.config(text=ui(
+                    f"Página {update['number']}/{update['total']}: {names[update['state']]}",
+                    f"Page {update['number']}/{update['total']}: {names[update['state']]}"))
+                continue
+            page, rows = update["page"], update["rows"]
+            self.active_phase = None
+            self.phase_started = None
+            number, total, rotation = update["number"], update["total"], update["rotation"]
             self._publish_page(page, rows, rotation)
-            self.status.config(text=f"{number} / {total}")
+            self.batch_timing.add(update["seconds"], cached=update["cached"])
+            self.batch_errors += bool(update["error"])
+            self.batch_reviews += bool(update["reviews"])
+            remaining = total - number
+            elapsed = time.monotonic() - self.batch_started if self.batch_started else 0
+            speed = self.batch_timing.seconds_per_page
+            eta = (ui("Calculando tempo restante...", "Calculating time remaining...")
+                   if not self.batch_timing.ready else
+                   ui(f"Aproximadamente {_friendly_duration(self.batch_timing.remaining(remaining))} restantes",
+                      f"Approximately {_friendly_duration(self.batch_timing.remaining(remaining))} remaining"))
+            state = (ui("erro recuperável", "recoverable error") if update["error"] else
+                     ui("revisão necessária", "review needed") if update["reviews"] else
+                     ui("armazenada", "stored") if update["cached"] else ui("concluída", "completed"))
+            self.status.config(text=ui(
+                f"Página {number}/{total}, {state} · {_friendly_duration(elapsed, False)} decorridos · "
+                f"{speed:.1f} s/página · {eta}",
+                f"Page {number}/{total}, {state} · {_friendly_duration(elapsed, False)} elapsed · "
+                f"{speed:.1f} s/page · {eta}"))
+            self.batch_progress["value"] = number * 100 / max(1, total)
         if self.future and not self.future.done():
+            if self.active_phase and self.phase_started is not None:
+                now = time.monotonic()
+                elapsed = int(now - self.phase_started)
+                if elapsed > self.phase_status_refresh:
+                    self.phase_status_refresh = elapsed
+                    state = self.active_phase["state"]
+                    names = {
+                        "preparing": ui("preparando", "preparing"),
+                        "detecting": ui("detectando texto", "detecting text"),
+                        "translating": ui("traduzindo", "translating"),
+                        "rendering": ui("renderizando", "rendering"),
+                    }
+                    self.status.config(text=ui(
+                        f"Página {self.active_phase['number']}/{self.active_phase['total']}: "
+                        f"{names[state]} ({elapsed} s)",
+                        f"Page {self.active_phase['number']}/{self.active_phase['total']}: "
+                        f"{names[state]} ({elapsed} s)"))
             self.after(100, lambda: self._poll(done)); return
+        self.active_phase = None
+        self.phase_started = None
         try:
             value = self.future.result()
             done(value)
         except CancelledError:
+            state = load_prefs().get("translation_batch_job", {})
+            if (getattr(self, "active_scope", None) == "book" and
+                    state.get("book") == str(self.reader._content_key)):
+                state["status"] = "cancelled"
+                save_prefs(translation_batch_job=state,
+                           translation_seconds_per_page=self.batch_timing.seconds_per_page)
+            self.pause.set()
+            self.pause_button.config(text=ui("Pausar", "Pause"))
             self.status.config(text=ui("Cancelado. Páginas concluídas preservadas.",
                                        "Cancelled. Completed pages kept."))
         except TranslationError as exc:
             self._error(exc)
         except Exception:
+            log.exception("Comic translation worker failed")
             self._error(TranslationError("processing_failed"))
 
     def _sync_rotation(self):
@@ -1153,6 +1442,8 @@ def draw_translation_overlay(frame, regions, transform, panel=None):
                min(frame.height, int(y0 + b * height))]
         if box[2] - box[0] < 24 or box[3] - box[1] < 12:
             continue
+        if region.uncertain and not region.manual_original:
+            continue
         angle = region.angle if abs(region.angle) > 5 else 0
         vertical = abs(angle) % 180 == 90
         natural_width = box[3]-box[1] if vertical else box[2]-box[0]
@@ -1193,22 +1484,13 @@ def draw_translation_overlay(frame, regions, transform, panel=None):
         layout_height = max(12, round(line_height))
         source_size = _source_font_size(frame, box, region.translated, angle,
                                         region.word_scales)
-        light_background = _clean_text_pixels(result, box)
-        if light_background is None:
-            _draw_review_badge(draw, box)
-            continue
         layout = _styled_layout(draw, region.translated, source_size,
                                 region.word_scales, layout_width-2, layout_height)
         if layout is None:
-            review = ui("Abrir tradução em Revisar", "Open translation in Review")
-            layout = _styled_layout(draw, review, min(source_size, 18), (),
-                                    layout_width-2, layout_height)
-            if layout is None:
-                review = ui("Revisar", "Review")
-                layout = _styled_layout(draw, review, min(source_size, 16), (),
-                                        layout_width-2, layout_height)
-            if layout is None:
-                continue
+            continue
+        light_background = _clean_text_pixels(result, box)
+        if light_background is None:
+            continue
         lines, heights = layout
         ink = (20, 17, 22) if light_background else (250, 248, 243)
         if angle:
@@ -1324,28 +1606,22 @@ def _clean_text_pixels(image, box):
                           sum(value > 180 for value in core) >= len(core) * .68)
     background_color = tuple(int(median(sample[channel] for sample in ring_colors))
                              for channel in range(3))
-    ring_unstable = (abs(background-core_background) > 40 and uniform_light_core or
-                     median(abs(value-background) for value in ring) > 22 or
-                     any(median(abs(sample[channel] - background_color[channel])
-                                for sample in ring_colors) > 22 for channel in range(3)))
+    ring_unstable = (not uniform_light_core and
+                     (median(abs(value-background) for value in ring) > 22 or
+                      any(median(abs(sample[channel] - background_color[channel])
+                                 for sample in ring_colors) > 22 for channel in range(3))))
     if uniform_light_core:
-        # A verified plain balloon is reconstructed as its actual sampled color.
-        # This also removes clipped first/last glyphs that touch the OCR bounds.
         light_core = [sample for sample in core_colors if min(sample) > 180]
-        core_color = tuple(int(median(sample[channel] for sample in light_core))
-                           for channel in range(3))
-        fill = (max(0, ox-3), max(0, oy-3),
-                min(crop.width, ox+r-l+3), min(crop.height, oy+b-t+3))
-        ImageDraw.Draw(crop).rectangle(fill, fill=core_color)
-        image.paste(crop, outer[:2])
-        return True
+        background_color = tuple(int(median(sample[channel] for sample in light_core))
+                                 for channel in range(3))
     if ring_unstable:
         return None
-    background_color = tuple(int(median(sample[channel] for sample in ring_colors))
-                             for channel in range(3))
-    if any(median(abs(sample[channel] - background_color[channel])
-                  for sample in ring_colors) > 22 for channel in range(3)):
-        return None
+    if not uniform_light_core:
+        background_color = tuple(int(median(sample[channel] for sample in ring_colors))
+                                 for channel in range(3))
+        if any(median(abs(sample[channel] - background_color[channel])
+                      for sample in ring_colors) > 22 for channel in range(3)):
+            return None
     polarity = -1 if background >= 120 else 1
     interior = [pixels[x, y] for y in range(oy, min(crop.height, oy+b-t), 2)
                 for x in range(ox, min(crop.width, ox+r-l), 2)

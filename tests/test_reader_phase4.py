@@ -20,6 +20,40 @@ def test_failed_state_write_returns_without_freezing_ui(monkeypatch, tmp_path):
     assert time.monotonic() - started < .2
 
 
+def test_state_write_retries_a_transient_windows_lock(monkeypatch, tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text('{"value": 1}', encoding='utf-8')
+    original = storage.os.replace
+    attempts = []
+
+    def temporarily_locked(source, destination):
+        attempts.append(destination)
+        if len(attempts) == 1:
+            raise PermissionError("File is being inspected")
+        return original(source, destination)
+
+    monkeypatch.setattr(storage.os, 'replace', temporarily_locked)
+    assert storage.json_save(str(path), {'value': 2})
+    assert storage.json_load(str(path), {}) == {'value': 2}
+    assert len(attempts) == 2
+    assert list(tmp_path.glob('state.json.tmp-*')) == []
+
+
+def test_failed_state_replace_preserves_previous_file(monkeypatch, tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text('{"value": 1}', encoding='utf-8')
+    monkeypatch.setattr(storage.os, 'replace',
+                        lambda *_: (_ for _ in ()).throw(PermissionError("locked")))
+
+    assert not storage.json_save(str(path), {'value': 2})
+    assert storage.json_load(str(path), {}) == {'value': 1}
+    assert list(tmp_path.glob('state.json.tmp-*')) == []
+    failure = storage.json_save_failure(str(path))
+    assert failure["operation"] == "replace state file"
+    assert failure["error_type"] == "PermissionError"
+    assert failure["attempts"] == 3
+
+
 @pytest.fixture
 def reader(monkeypatch, tmp_path):
     monkeypatch.setattr(reader_views, 'load_reader_state', lambda key: {})

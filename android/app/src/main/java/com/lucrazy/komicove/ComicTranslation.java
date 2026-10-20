@@ -57,9 +57,19 @@ import okhttp3.Response;
 
 final class ComicTranslation {
     static final String OCR_VERSION="mlkit-text-v2-9";
-    static final int TRANSLATION_CACHE_VERSION=9;
+    static final int TRANSLATION_CACHE_VERSION=11;
+    static final long OCR_PAGE_TIMEOUT_NANOS=TimeUnit.SECONDS.toNanos(75);
     static final float AUTO_TRANSLATE_CONFIDENCE=.65f;
-    static boolean autoTranslationCandidate(Region row){if(row.manualOriginal)return !row.original.trim().isEmpty();int letters=0;boolean distinctive=false;for(int i=0;i<row.original.length();i++){char value=row.original.charAt(i);if(Character.isLetter(value))letters++;if(value=='!'||value=='?'||value=='…'||value>127)distinctive=true;}if(letters<=4)return distinctive&&row.confidence>=.9f&&row.original.indexOf('\ufffd')<0;return row.confidence>=AUTO_TRANSLATE_CONFIDENCE&&row.original.indexOf('\ufffd')<0&&row.original.indexOf('\t')<0;}
+    static boolean autoTranslationCandidate(Region row){
+        String value=row.original==null?"":row.original.trim();
+        if(row.manualOriginal)return !value.isEmpty();
+        if(value.isEmpty()||row.box==null||row.box.width()<=0||row.box.height()<=0||row.box.width()*row.box.height()>.12f)return false;
+        int letters=0;boolean distinctive=false;
+        for(int i=0;i<value.length();i++){char character=value.charAt(i);if(Character.isLetter(character))letters++;if(character=='!'||character=='?'||character=='…'||character=='.'||character>127)distinctive=true;}
+        if(letters<=4)return distinctive&&row.confidence>=.9f&&value.indexOf('\ufffd')<0;
+        if(value.indexOf(' ')<0&&letters<=7&&!distinctive&&row.confidence<.8f)return false;
+        return row.confidence>=AUTO_TRANSLATE_CONFIDENCE&&value.indexOf('\ufffd')<0&&value.indexOf('\t')<0;
+    }
     static final String LOCAL_TRANSLATION_VERSION="mlkit-translate-17.0.3";
     static boolean supportsVision(String provider,String model){return provider.equals("openai")&&model.equals("gpt-5.4-mini")||provider.equals("anthropic")&&model.equals("claude-sonnet-5-5")||provider.equals("xai")&&model.equals("grok-4.7")||provider.equals("gemini")&&model.equals("gemini-3.8-flash");}
     private static String imageData(Bitmap image){Bitmap scaled=image;int longest=Math.max(image.getWidth(),image.getHeight());if(longest>1024)scaled=Bitmap.createScaledBitmap(image,Math.max(1,Math.round(image.getWidth()*1024f/longest)),Math.max(1,Math.round(image.getHeight()*1024f/longest)),true);try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();scaled.compress(Bitmap.CompressFormat.JPEG,75,bytes);return Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP);}finally{if(scaled!=image)scaled.recycle();}}
@@ -72,34 +82,38 @@ final class ComicTranslation {
     }
     static final class Failure extends Exception {final String code;Failure(String code){super(code);this.code=code;}}
     private static void check(AtomicBoolean cancel)throws Exception{if(cancel!=null&&cancel.get())throw new InterruptedException("cancelled");}
+    private static void check(AtomicBoolean cancel,long deadline)throws Exception{check(cancel);if(System.nanoTime()>=deadline)throw new Failure("ocr_timeout");}
     private static TextRecognizer recognizer(String script){switch(script){case "ja":return TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());case "zh":return TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());case "ko":return TextRecognition.getClient(new KoreanTextRecognizerOptions.Builder().build());default:return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);}}
     static List<Region> ocr(Bitmap bitmap,String script,boolean manga,AtomicBoolean cancel)throws Exception{
+        return ocr(bitmap,script,manga,cancel,System.nanoTime()+OCR_PAGE_TIMEOUT_NANOS);
+    }
+    private static List<Region> ocr(Bitmap bitmap,String script,boolean manga,AtomicBoolean cancel,long deadline)throws Exception{
         if("auto".equals(script)){
-            List<Region> best=ocr(bitmap,"latin",manga,cancel);
+            List<Region> best=ocr(bitmap,"latin",manga,cancel,deadline);
             if(manga||best.isEmpty()){
-                List<Region> japanese=ocr(bitmap,"ja",manga,cancel);
+                List<Region> japanese=ocr(bitmap,"ja",manga,cancel,deadline);
                 if(ocrScore(japanese)>ocrScore(best))best=japanese;
             }
             if(best.isEmpty())for(String writing:new String[]{"zh","ko"}){
-                List<Region> candidate=ocr(bitmap,writing,manga,cancel);
+                List<Region> candidate=ocr(bitmap,writing,manga,cancel,deadline);
                 if(ocrScore(candidate)>ocrScore(best))best=candidate;
             }
             return best;
         }
-        check(cancel);List<Region> rows=new ArrayList<>();
+        check(cancel,deadline);List<Region> rows=new ArrayList<>();
         int longest=Math.max(bitmap.getWidth(),bitmap.getHeight());
         Bitmap work=longest>1800?Bitmap.createScaledBitmap(bitmap,Math.max(1,Math.round(bitmap.getWidth()*1800f/longest)),Math.max(1,Math.round(bitmap.getHeight()*1800f/longest)),true):bitmap;
         try{
-            scan(work,script,rows,0,cancel);
+            scan(work,script,rows,0,cancel,deadline);
             for(int angle:new int[]{manga?-90:90,manga?90:-90}){
-                check(cancel);Matrix rotation=new Matrix();rotation.postRotate(angle);
+                check(cancel,deadline);Matrix rotation=new Matrix();rotation.postRotate(angle);
                 Bitmap turned=Bitmap.createBitmap(work,0,0,work.getWidth(),work.getHeight(),rotation,true);
-                try{scan(turned,script,rows,angle,cancel);}finally{if(turned!=work)turned.recycle();}
+                try{scan(turned,script,rows,angle,cancel,deadline);}finally{if(turned!=work)turned.recycle();}
             }
             int retried=0;
             for(Region row:rows){
                 if(row.confidence>=.7f||Math.abs(row.angle)>45||retried>=8)continue;
-                check(cancel);retried++;
+                check(cancel,deadline);retried++;
                 int pad=Math.max(6,Math.round(bitmap.getHeight()*.008f));
                 Rect area=new Rect(Math.max(0,Math.round(row.box.left*bitmap.getWidth())-pad),
                         Math.max(0,Math.round(row.box.top*bitmap.getHeight())-pad),
@@ -111,7 +125,7 @@ final class ComicTranslation {
                 if(Math.max(area.width(),area.height())<700)
                     enlarged=Bitmap.createScaledBitmap(cropped,area.width()*2,area.height()*2,true);
                 try{
-                    List<Region> alternatives=new ArrayList<>();scan(enlarged,script,alternatives,0,cancel);
+                    List<Region> alternatives=new ArrayList<>();scan(enlarged,script,alternatives,0,cancel,deadline);
                     Region best=null;
                     for(Region candidate:alternatives)if(candidate.original.length()>=Math.max(2,row.original.length()*.6f)
                             &&(best==null||candidate.confidence>best.confidence))best=candidate;
@@ -126,7 +140,7 @@ final class ComicTranslation {
             for(Region row:rows)if(row.original.trim().split("\\s+").length<=4){
                 Rect text=new Rect(Math.max(0,Math.round(row.box.left*bitmap.getWidth())),Math.max(0,Math.round(row.box.top*bitmap.getHeight())),Math.min(bitmap.getWidth(),Math.round(row.box.right*bitmap.getWidth())),Math.min(bitmap.getHeight(),Math.round(row.box.bottom*bitmap.getHeight())));
                 if(ComicTextReconstruction.likelyMissingLargeText(bitmap,text)){
-                    boolean recovered=emphasisRetries++<4&&recoverEmphasis(bitmap,script,row,text,cancel);
+                    boolean recovered=emphasisRetries++<4&&recoverEmphasis(bitmap,script,row,text,cancel,deadline);
                     if(!recovered)row.confidence=Math.min(row.confidence,.60f);
                 }
             }
@@ -144,8 +158,8 @@ final class ComicTranslation {
         }
         return merged;
     }
-    private static boolean recoverEmphasis(Bitmap bitmap,String script,Region row,Rect text,AtomicBoolean cancel)throws Exception{
-        check(cancel);Rect area=ComicTextReconstruction.emphasisArea(bitmap,text);
+    private static boolean recoverEmphasis(Bitmap bitmap,String script,Region row,Rect text,AtomicBoolean cancel,long deadline)throws Exception{
+        check(cancel,deadline);Rect area=ComicTextReconstruction.emphasisArea(bitmap,text);
         if(area.width()<16||area.height()<12||(long)area.width()*area.height()>1000000)return false;
         Bitmap crop=Bitmap.createBitmap(bitmap,area.left,area.top,area.width(),area.height()),scaled=crop,contrast=null,colored=null;
         if(Math.max(area.width(),area.height())<800)scaled=Bitmap.createScaledBitmap(crop,area.width()*3,area.height()*3,true);
@@ -153,9 +167,9 @@ final class ComicTranslation {
             contrast=ComicTextReconstruction.letteringContrast(scaled);
             colored=ComicTextReconstruction.coloredLetteringContrast(scaled);
             List<Region> found=new ArrayList<>();
-            scan(scaled,script,found,0,cancel);
-            scan(contrast,script,found,0,cancel);
-            scan(colored,script,found,0,cancel);
+            scan(scaled,script,found,0,cancel,deadline);
+            scan(contrast,script,found,0,cancel,deadline);
+            scan(colored,script,found,0,cancel,deadline);
             Region best=null;
             for(Region candidate:found){
                 int letters=0;for(int i=0;i<candidate.original.length();i++)if(Character.isLetter(candidate.original.charAt(i)))letters++;
@@ -178,12 +192,16 @@ final class ComicTranslation {
             return true;
         }finally{if(colored!=null)colored.recycle();if(contrast!=null)contrast.recycle();if(scaled!=crop)scaled.recycle();crop.recycle();}
     }
-    private static void scan(Bitmap bitmap,String script,List<Region> rows,int angle,AtomicBoolean cancel)throws Exception{
+    private static void scan(Bitmap bitmap,String script,List<Region> rows,int angle,AtomicBoolean cancel,long deadline)throws Exception{
         TextRecognizer client=recognizer(script);
         try{
-            Text result=Tasks.await(client.process(InputImage.fromBitmap(bitmap,0)),60,TimeUnit.SECONDS);
+            check(cancel,deadline);long remaining=deadline-System.nanoTime();
+            if(remaining<=0)throw new Failure("ocr_timeout");
+            Text result;
+            try{result=Tasks.await(client.process(InputImage.fromBitmap(bitmap,0)),Math.min(remaining,TimeUnit.SECONDS.toNanos(30)),TimeUnit.NANOSECONDS);}
+            catch(java.util.concurrent.TimeoutException timeout){throw new Failure("ocr_timeout");}
             for(Text.TextBlock block:result.getTextBlocks())for(Text.Line line:block.getLines()){
-                check(cancel);Rect r=line.getBoundingBox();String value=line.getText().trim();if(r==null||value.isEmpty())continue;
+                check(cancel,deadline);Rect r=line.getBoundingBox();String value=line.getText().trim();if(r==null||value.isEmpty())continue;
                 RectF box=new RectF(r.left/(float)bitmap.getWidth(),r.top/(float)bitmap.getHeight(),r.right/(float)bitmap.getWidth(),r.bottom/(float)bitmap.getHeight());
                 if(angle!=0){float l=box.left,t=box.top,rr=box.right,b=box.bottom;box=angle==90?new RectF(t,1-rr,b,1-l):new RectF(1-b,l,1-t,rr);if(box.height()*bitmap.getWidth()<=box.width()*bitmap.getHeight()*1.25f)continue;}
                 Region region=new Region(box,value,line.getConfidence());
@@ -239,10 +257,10 @@ final class ComicTranslation {
                 if(!autoTranslationCandidate(row)){if(!row.original.trim().isEmpty())uncertain++;continue;}
                 String exact=exactGlossary(row.original,terms);
                 if(exact!=null){row.translated=exact;row.translationAttempted=true;continue;}
+                // Comics normally keep one source language across a page. Re-identifying every
+                // short balloon caused OCR fragments to be treated as a different language and
+                // copied unchanged when that happened to match the target language.
                 String detected=pageSource;
-                if(source.equals("auto")&&row.original.length()>5){
-                    try{detected=identify(row.original);}catch(Failure e){if(!e.code.equals("source_unknown"))throw e;}
-                }
                 String from=detected==null?null:TranslateLanguage.fromLanguageTag(modelLanguage(detected));
                 if(from==null){uncertain++;continue;}
                 if(from.equals(to)){row.translated=target.equals("pt")||target.equals("pt-BR")?brazilianPortuguese(row.original):row.original;row.translationAttempted=true;continue;}

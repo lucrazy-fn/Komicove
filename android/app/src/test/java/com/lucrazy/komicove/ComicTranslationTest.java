@@ -88,12 +88,16 @@ public class ComicTranslationTest {
         ComicTranslation.Region fragment=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"on",.99f);
         ComicTranslation.Region mixedNoise=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"mo D'O",.74f);
         ComicTranslation.Region command=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.4f),"GO!",.92f);
+        ComicTranslation.Region fragmentWord=new ComicTranslation.Region(new RectF(.1f,.3f,.2f,.32f),"CONTRO",.73f);
+        ComicTranslation.Region hugeEditorial=new ComicTranslation.Region(new RectF(.05f,.1f,.95f,.4f),"LONG EDITORIAL TEXT",.95f);
         assertTrue(ComicTranslation.autoTranslationCandidate(dialogue));
         assertTrue(ComicTranslation.autoTranslationCandidate(effect));
         assertFalse(ComicTranslation.autoTranslationCandidate(noise));
         assertFalse(ComicTranslation.autoTranslationCandidate(fragment));
         assertFalse(ComicTranslation.autoTranslationCandidate(mixedNoise));
         assertTrue(ComicTranslation.autoTranslationCandidate(command));
+        assertFalse(ComicTranslation.autoTranslationCandidate(fragmentWord));
+        assertFalse(ComicTranslation.autoTranslationCandidate(hugeEditorial));
     }
     private View named(View root,String name){
         if(name.equals(root.getContentDescription()))return root;

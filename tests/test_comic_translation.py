@@ -10,8 +10,10 @@ import pytest
 from PIL import Image, ImageDraw
 
 from komicove_app import comic_translation as comic
+from komicove_app import translation_views as translation_ui
 from komicove_app.translation_views import (draw_translation_overlay, _source_font_size,
-                                             _styled_layout, _comic_font)
+                                             _styled_layout, _comic_font, BatchTiming,
+                                             _batch_configuration)
 from komicove_app.archive import ArchiveBackend
 from tools.translation_fixture import page as authorial_page
 
@@ -30,6 +32,7 @@ def test_ocr_lines_and_cancel(monkeypatch):
     monkeypatch.setattr(comic.shutil, "which", lambda _: "tesseract")
     def launch(*args, **kwargs):
         assert args[0][1:3] == ["stdin", "stdout"]
+        assert args[0][-2:] == ["-c", "tessedit_create_tsv=1"]
         assert kwargs["stdin"] is comic.subprocess.PIPE
         assert kwargs["stdout"] is comic.subprocess.PIPE
         assert kwargs["stderr"] is comic.subprocess.PIPE
@@ -70,6 +73,25 @@ def test_ocr_timeout_stops_child(monkeypatch):
     assert process.stopped
 
 
+def test_ocr_cleanup_does_not_wait_forever_after_kill(monkeypatch):
+    class Process:
+        killed = 0
+        calls = 0
+
+        def kill(self):
+            self.killed += 1
+
+        def communicate(self, timeout=None):
+            self.calls += 1
+            raise comic.subprocess.TimeoutExpired("tesseract", timeout)
+
+    process = Process()
+    comic._stop_ocr_process(process)
+
+    assert process.killed == 2
+    assert process.calls == 1
+
+
 def test_ocr_does_not_require_a_writable_temporary_directory(monkeypatch):
     tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
            "5\t1\t1\t1\t1\t1\t1\t1\t8\t8\t90\tHi\n").encode()
@@ -85,6 +107,62 @@ def test_ocr_does_not_require_a_writable_temporary_directory(monkeypatch):
     assert rows[0].original == "Hi"
 
 
+def test_batched_ocr_keeps_crop_pages_separate(monkeypatch):
+    header = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\t"
+              "width\theight\tconf\ttext\n")
+    tsv = (header +
+           "5\t1\t1\t1\t1\t1\t1\t1\t8\t8\t90\tFIRST\n" +
+           "5\t2\t1\t1\t1\t1\t2\t2\t7\t7\t91\tSECOND\n").encode()
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, input=None, timeout=None):
+            assert input[:2] in {b"II", b"MM"}
+            return tsv, b""
+
+    monkeypatch.setattr(comic, "_tesseract_binary", lambda: "tesseract")
+    monkeypatch.setattr(comic.subprocess, "Popen", lambda *args, **kwargs: Process())
+    rows = comic._ocr_many([Image.new("RGB", (10, 10), "white"),
+                            Image.new("RGB", (10, 10), "white")], "eng", 6)
+    assert [[row.original for row in page] for page in rows] == [["FIRST"], ["SECOND"]]
+
+
+def test_batched_ocr_bounds_large_crop_groups(monkeypatch):
+    calls = []
+    header = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\t"
+              "width\theight\tconf\ttext\n").encode()
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, input=None, timeout=None):
+            calls.append(input[:4])
+            return header, b""
+
+    monkeypatch.setattr(comic, "_tesseract_binary", lambda: "tesseract")
+    monkeypatch.setattr(comic.subprocess, "Popen", lambda *args, **kwargs: Process())
+    rows = comic._ocr_many([Image.new("RGB", (20, 20), "white") for _ in range(17)],
+                           "eng", 6)
+
+    assert len(rows) == 17
+    assert len(calls) == 3
+
+
+def test_ocr_deadline_reports_timeout_without_hiding_user_cancel(monkeypatch):
+    ticks = iter((10, 12, 20, 30))
+    monkeypatch.setattr(comic.time, "monotonic", lambda: next(ticks))
+    deadline = comic._OcrDeadline(Event(), 5)
+    comic._check(deadline)
+    with pytest.raises(comic.TranslationError, match="ocr_timeout"):
+        comic._check(deadline)
+
+    stopped = Event()
+    stopped.set()
+    with pytest.raises(CancelledError):
+        comic._check(comic._OcrDeadline(stopped, 5))
+
+
 def test_missing_latin_ocr_model_falls_back_to_installed_english(tmp_path):
     binary = tmp_path / "tesseract.exe"
     binary.touch()
@@ -93,8 +171,20 @@ def test_missing_latin_ocr_model_falls_back_to_installed_english(tmp_path):
     (tessdata / "eng.traineddata").touch()
     assert comic._ocr_model_language(str(binary), "por") == "eng"
     (tessdata / "por.traineddata").touch()
-    assert comic._ocr_model_language(str(binary), "por") == "por"
+    assert comic._ocr_model_language(str(binary), "por") == "por+eng"
     assert comic._ocr_model_language(str(binary), "jpn") == "jpn"
+
+
+def test_yellowed_balloon_is_detected_without_treating_colored_art_as_white():
+    page = Image.new("RGB", (420, 300), (85, 115, 145))
+    draw = ImageDraw.Draw(page)
+    draw.ellipse((55, 45, 365, 245), fill=(238, 235, 228), outline=(25, 25, 25), width=4)
+    draw.rectangle((150, 95, 270, 110), fill=(35, 35, 35))
+    draw.rectangle((140, 125, 280, 140), fill=(35, 35, 35))
+    boxes = comic._bright_boxes(page)
+    assert boxes
+    assert any(left < .2 and right > .8 and top < .2 and bottom > .7
+               for left, top, right, bottom in boxes)
 
 
 def test_ocr_tsv_treats_quotes_as_text_instead_of_joining_rows(monkeypatch):
@@ -125,10 +215,110 @@ def test_translation_candidate_accepts_readable_dialogue_and_rejects_short_noise
     assert comic.auto_translation_candidate(dialogue)
     assert comic.auto_translation_candidate(sound_effect)
     assert not comic.auto_translation_candidate(noise)
-    assert not comic.auto_translation_candidate(uncertain)
+    assert comic.auto_translation_candidate(uncertain)
     assert not comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "on", .99))
     assert not comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "mo D'O", .74))
     assert comic.auto_translation_candidate(comic.TextRegion((.1, .1, .2, .2), "GO!", .92))
+
+
+def test_ocr_keeps_short_exclamation_and_rejects_repetitive_japanese_art_noise():
+    assert comic._plausible_ocr_region(comic.TextRegion((.1, .1, .2, .2), "EI!", .91))
+    assert not comic._plausible_ocr_region(
+        comic.TextRegion((.1, .1, .2, .2), "ーーーーーー-", .96))
+    assert not comic._plausible_ocr_region(
+        comic.TextRegion((.1, .1, .2, .2), "ン ン ジジ ーー ジ ンー ジ", .88))
+
+
+def test_ocr_marks_mixed_case_and_clipped_uppercase_dialogue_for_review():
+    rows = comic._consolidate_uncertain_lines([
+        comic.TextRegion((.1, .1, .5, .2), "NÃO Cala DE JEITO NENHUM", .92),
+        comic.TextRegion((.1, .3, .5, .4), "DEIXE MEU FILHO FORA a.", .91),
+        comic.TextRegion((.1, .5, .5, .6), "EU NEM MESMO GOSTO DISSO.", .90),
+    ])
+    assert [row.uncertain for row in rows] == [True, True, False]
+
+
+def test_batch_timing_ignores_cache_hits_and_uses_recent_stable_speed():
+    timing = BatchTiming(30)
+    timing.add(.01, cached=True)
+    assert timing.seconds_per_page == 30
+    timing.add(20)
+    timing.add(24)
+    assert timing.ready
+    assert 20 <= timing.seconds_per_page <= 24
+    assert timing.remaining(5) == pytest.approx(timing.seconds_per_page * 5)
+
+
+def test_batch_timing_converges_within_twenty_five_percent_on_real_hard_pages():
+    timing = BatchTiming(27)
+    measured = [25.518, 29.171, 22.729]
+    timing.add(measured[0])
+    timing.add(measured[1])
+    prediction = timing.remaining(1)
+    assert abs(prediction - measured[2]) / measured[2] < .25
+
+
+def test_batch_resume_configuration_invalidates_only_result_affecting_changes():
+    settings = {"translation_source": "en", "translation_target": "pt-BR",
+                "translation_provider": "local", "translation_model": "",
+                "translation_endpoint": "", "translation_ocr": "eng",
+                "translation_vision": False}
+    first = _batch_configuration(settings, {"hero": "herói"}, False, 0)
+    assert first == _batch_configuration(dict(settings), {"hero": "herói"}, False, 360)
+    changed = dict(settings, translation_target="es")
+    assert first != _batch_configuration(changed, {"hero": "herói"}, False, 0)
+    assert first != _batch_configuration(settings, {"hero": "campeão"}, False, 0)
+
+
+def test_single_page_completion_does_not_finish_persisted_whole_comic_job(monkeypatch):
+    saved = []
+    dummy = SimpleNamespace(active_scope="page", reader=SimpleNamespace(_content_key="book"),
+                            batch_reviews=0, batch_errors=0,
+                            batch_timing=BatchTiming(27),
+                            batch_progress={}, status=SimpleNamespace(config=lambda **kwargs: None))
+    monkeypatch.setattr(translation_ui, "load_prefs", lambda: {
+        "translation_batch_job": {"book": "book", "status": "running"}})
+    monkeypatch.setattr(translation_ui, "save_prefs", lambda **values: saved.append(values))
+
+    translation_ui.TranslationDialog._batch_done(dummy, None)
+
+    assert saved == []
+    assert dummy.batch_progress["value"] == 100
+
+
+def test_uncertain_balloon_lines_stay_separate_and_art_noise_is_removed():
+    rows = [
+        comic.TextRegion((.10, .10, .32, .13), "ANTES QUE TUDO", .60),
+        comic.TextRegion((.12, .135, .30, .165), "FUJA AO NOSSO", .60),
+        comic.TextRegion((.70, .10, .71, .14), "ZzESQ", .66, angle=90),
+        comic.TextRegion((.50, .50, .51, .51), "AX", .92),
+    ]
+
+    consolidated = comic._consolidate_uncertain_lines(rows)
+
+    assert [row.original for row in consolidated] == ["ANTES QUE TUDO", "FUJA AO NOSSO"]
+    assert all(comic.auto_translation_candidate(row) for row in consolidated)
+
+
+def test_corrupt_ocr_is_kept_for_review_but_not_rendered_over_art():
+    row = comic.TextRegion((.2, .2, .7, .4), "TO HAPPEN ; MIND... d", .82,
+                           translated="Acontecer na mente")
+    consolidated = comic._consolidate_uncertain_lines([row])
+    assert consolidated[0].uncertain
+    image = Image.new("RGB", (400, 240), "#38546b")
+    result = draw_translation_overlay(image, consolidated, (0, 0, 400, 240))
+    assert result.getpixel((30, 30)) == image.getpixel((30, 30))
+
+
+def test_missing_subject_is_marked_for_review_instead_of_mistranslated_visually():
+    row = comic.TextRegion((.2, .2, .7, .4), "ARE TRYING TO STOP US?", .91)
+    assert comic._consolidate_uncertain_lines([row])[0].uncertain
+
+
+def test_implausibly_wide_single_line_is_reviewed_instead_of_crossing_ballons():
+    row = comic.TextRegion((.06, .12, .91, .14),
+                           "TEXT FROM TWO NEARBY BALLOONS WAS JOINED", .88)
+    assert comic._consolidate_uncertain_lines([row])[0].uncertain
 
 
 def test_dark_caption_box_is_detected_without_selecting_the_page_background():
@@ -166,6 +356,68 @@ def test_nearby_ocr_lines_merge_without_crossing_into_the_next_balloon():
     merged = comic._merge_nearby_ocr_lines(rows)
 
     assert [row.original for row in merged] == ["I'M JUST READING", "I'LL BE OUT SOON"]
+
+
+def test_tesseract_line_is_split_at_a_balloon_sized_word_gap():
+    words = [
+        ("LEFT", 90, (10, 20, 35, 12)),
+        ("BALLOON", 88, (50, 20, 60, 12)),
+        ("RIGHT", 92, (190, 20, 42, 12)),
+        ("BALLOON", 91, (238, 20, 60, 12)),
+    ]
+
+    assert [[word[0] for word in segment]
+            for segment in comic._split_ocr_words(words)] == [
+                ["LEFT", "BALLOON"], ["RIGHT", "BALLOON"]]
+
+
+def test_lines_in_touching_ballons_are_split_by_alignment_and_vertical_gap():
+    rows = [
+        comic.TextRegion((.08, .08, .42, .16), "UMA DECEPÇÃO", .80),
+        comic.TextRegion((.09, .17, .40, .25), "COMO MEU FILHO", .82),
+        comic.TextRegion((.57, .47, .92, .55), "UM FRACASSADO", .78),
+        comic.TextRegion((.56, .56, .93, .64), "QUE NUNCA SERÁ NADA", .84),
+    ]
+
+    merged = comic._merge_nearby_ocr_lines(rows, min_confidence=.1,
+                                            max_line_gap=1.7)
+
+    assert [row.original for row in merged] == [
+        "UMA DECEPÇÃO COMO MEU FILHO", "UM FRACASSADO QUE NUNCA SERÁ NADA"]
+
+
+def test_clipped_first_line_joins_its_balloon_without_duplicating_words():
+    rows = [
+        comic.TextRegion((.70, .10, .86, .115), "FIQUEI BEM DESA-", .60),
+        comic.TextRegion((.68, .118, .85, .20),
+                         "BEM DESA- PONTADO AO DESCOBRIR", .91),
+        comic.TextRegion((.10, .25, .30, .34), "OUTRO BALÃO", .90),
+    ]
+
+    merged = comic._merge_adjacent_ocr_fragments(rows)
+
+    assert [row.original for row in merged] == [
+        "FIQUEI BEM DESA- PONTADO AO DESCOBRIR", "OUTRO BALÃO"]
+
+
+def test_grayscale_caption_pass_keeps_multiline_text_as_one_region(monkeypatch):
+    page_rows = []
+    gray_rows = [
+        comic.TextRegion((.08, .50, .30, .53), "NÃO POSSO NEGAR", .48),
+        comic.TextRegion((.07, .535, .31, .565), "EU ESTAVA ATACANDO", .52),
+    ]
+    calls = iter((page_rows, gray_rows, [], []))
+    monkeypatch.setattr(comic, "_ocr_once", lambda *args, **kwargs: next(calls, []))
+    monkeypatch.setattr(comic, "_bright_boxes", lambda image: [])
+    monkeypatch.setattr(comic, "_dark_boxes", lambda image: [])
+    monkeypatch.setattr("komicove_app.guided.detect_result",
+                        lambda *args, **kwargs: type("Result", (), {"regions": []})())
+
+    found = comic.recognize(Image.new("RGB", (400, 600), "#6688aa"), "por")
+
+    assert len(found) == 1
+    assert found[0].original == "NÃO POSSO NEGAR EU ESTAVA ATACANDO"
+    assert found[0].uncertain
 
 
 def test_clean_panel_ocr_replaces_a_large_low_confidence_page_fragment():
@@ -499,7 +751,7 @@ def test_overlay_keeps_original_frame_and_guided_panel():
     assert result.crop((180, 20, 270, 70)).tobytes() == frame.crop((180, 20, 270, 70)).tobytes()
 
 
-def test_complex_background_keeps_art_and_shows_translation_label():
+def test_complex_background_keeps_art_unchanged_for_manual_review():
     frame = Image.new("RGB", (300, 200))
     drawing = ImageDraw.Draw(frame)
     for y in range(200):
@@ -507,8 +759,15 @@ def test_complex_background_keeps_art_and_shows_translation_label():
     drawing.line((30, 20, 120, 70), fill="black", width=3)
     row = comic.TextRegion((.1, .1, .4, .35), "Hello", .8, "Olá")
     result = draw_translation_overlay(frame, [row], (0, 0, 300, 200))
-    assert result.crop((0, 100, 300, 200)).tobytes() == frame.crop((0, 100, 300, 200)).tobytes()
-    assert result.crop((30, 20, 120, 70)).tobytes() != frame.crop((30, 20, 120, 70)).tobytes()
+    assert result.tobytes() == frame.tobytes()
+
+
+def test_uncertain_region_does_not_draw_a_review_badge_over_comic_art():
+    frame = Image.new("RGB", (300, 200), "white")
+    ImageDraw.Draw(frame).text((45, 45), "UNCLEAR", fill="black")
+    row = comic.TextRegion((.1, .1, .5, .5), "UNCLEAR", .60, "INCERTO")
+    result = draw_translation_overlay(frame, [row], (0, 0, 300, 200))
+    assert result.tobytes() == frame.tobytes()
 
 
 def test_uniform_balloon_removes_the_complete_original_text_box():
@@ -633,6 +892,29 @@ def test_local_component_download_reports_progress_and_can_cancel(monkeypatch, t
     comic.install_local_offer((None, ("en", "https://example.test/en.onnx", sentence_path)))
     assert sentence_path.read_bytes() == b"abcdefgh"
     assert not list(sentence_path.parent.glob("tmp*.onnx"))
+
+
+def test_local_component_download_installs_both_packages_in_indirect_route(
+        monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(comic.tempfile, "tempdir", str(tmp_path))
+    class Response:
+        headers = {"Content-Length": "4"}
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def raise_for_status(self): pass
+        def iter_content(self, _): yield b"data"
+    monkeypatch.setattr(comic.requests, "get", lambda *a, **k: Response())
+    installed = []
+    monkeypatch.setattr(comic, "install_local_model", lambda path: installed.append(path))
+    first = SimpleNamespace(links=["https://example.test/source-en.argosmodel"])
+    second = SimpleNamespace(links=["https://example.test/en-target.argosmodel"])
+
+    comic.install_local_offer(([first, second], None))
+
+    assert len(installed) == 2
+    assert not list(tmp_path.glob("komicove-model-*"))
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Credential Manager only")

@@ -247,6 +247,10 @@ class WebtoonContent:
         host.attributes('-fullscreen', fullscreen)
         if fullscreen:
             self.scrollbar.pack_forget()
+            # Fullscreen state is observable immediately. Hide chrome in the
+            # same turn instead of leaving it mapped during the exit animation.
+            self._apply_fullscreen_layout()
+            return
         else:
             self.scrollbar.pack(side='right', fill='y')
         started = time.perf_counter()
@@ -1186,7 +1190,7 @@ class ReaderContent:
 
     def _hud(self):
         compact=self.winfo_width()<1100
-        self._top.config(height=104 if self._guided and compact else 72)
+        self._top.config(height=136 if self._guided and compact else 72)
         title=self._reader_title
         if self._guided and len(title)>(16 if compact else 25):
             title=title[:13 if compact else 22]+'…'
@@ -1194,8 +1198,7 @@ class ReaderContent:
         for col,item in enumerate(self._guided_header_items):
             item.grid_forget()
             if compact:
-                item.grid(row=0 if col<2 else 1,column=0 if col==0 else 1 if col==1 else col-2,
-                          columnspan=2 if col==1 else 1,padx=3,pady=3,sticky='ew')
+                item.grid(row=col//2,column=col%2,padx=3,pady=3,sticky='ew')
             else:
                 item.grid(row=0,column=col,padx=3,pady=3)
         if self._guided:

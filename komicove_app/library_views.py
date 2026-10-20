@@ -32,8 +32,11 @@ from komicove_app.sync import apply_sync_response, seed_content_index
 from komicove_app.folder_views import render_folders, update_folders
 from komicove_app.library_grid import LibraryGrid
 from komicove_app.library_query import LibraryQuery
-from PIL import ImageOps, ImageEnhance, ImageDraw
+from PIL import ImageOps, ImageEnhance, ImageDraw, ImageChops, ImageFilter
 from urllib.parse import urlparse
+
+PIX_CODE = "00020126580014BR.GOV.BCB.PIX0136481dc694-0cb0-4e7b-9be7-293714d89a4f5204000053039865802BR5923Luan de Oliveira Santos6009SAO PAULO62140510b3oZThcALn6304BF40"
+WISE_HELP_URL = "https://wise.com/help/articles/2932353/guide-to-brl-transfers"
 
 class LibraryWindow(tk.Tk):
     def __init__(self):
@@ -81,6 +84,9 @@ class LibraryWindow(tk.Tk):
         self._sync_running = False
         self._sync_events = queue.SimpleQueue()
         self._sync_poll = self.after(100, self._poll_sync)
+        self._sync_failure_signature = None
+        self._sync_failure_count = 0
+        self._sync_failure_logged_at = 0.0
         self._session_expiry_handled = False
         register_change_listener(self._schedule_sync)
         self._notification_count = 0
@@ -221,10 +227,40 @@ class LibraryWindow(tk.Tk):
                     except OSError as failure:
                         error = failure
                 if error is not None:
-                    log.debug("Library sync unavailable: %s", error)
+                    storage_failure = getattr(error, "storage_failure", None)
+                    signature = ((type(error).__name__,
+                                  storage_failure.get("operation"),
+                                  storage_failure.get("error_type"),
+                                  storage_failure.get("errno"),
+                                  storage_failure.get("winerror"))
+                                 if storage_failure else (type(error).__name__, str(error)))
+                    if signature == getattr(self, "_sync_failure_signature", None):
+                        self._sync_failure_count = getattr(self, "_sync_failure_count", 0) + 1
+                    else:
+                        self._sync_failure_signature = signature
+                        self._sync_failure_count = 1
+                    now = time.monotonic()
+                    last = getattr(self, "_sync_failure_logged_at", 0.0)
+                    if self._sync_failure_count == 1 or now - last >= 300:
+                        repeated = (f"; repeated={self._sync_failure_count}"
+                                    if self._sync_failure_count > 1 else "")
+                        cause = error.__cause__
+                        exception_info = ((type(cause), cause, cause.__traceback__)
+                                          if cause is not None else None)
+                        log.debug("Library sync unavailable: %s%s", error, repeated,
+                                  exc_info=exception_info)
+                        self._sync_failure_logged_at = now
+                else:
+                    self._sync_failure_signature = None
+                    self._sync_failure_count = 0
                 # Retry offline state and pull changes from other devices while open.
-                if self._sync_job is None:
-                    self._sync_job = self.after(30000, lambda: self._sync_library_state(self.current_user))
+                permanent_storage_failure = (isinstance(error, OSError) and
+                    "Could not persist synchronized state" in str(error) and
+                    getattr(self, "_sync_failure_count", 0) >= 5)
+                if self._sync_job is None and not permanent_storage_failure:
+                    failures = max(0, getattr(self, "_sync_failure_count", 0) - 1)
+                    delay = min(300000, 30000 * (2 ** min(failures, 3)))
+                    self._sync_job = self.after(delay, lambda: self._sync_library_state(self.current_user))
         except queue.Empty:
             pass
         self._sync_poll = self.after(100, self._poll_sync)
@@ -1122,6 +1158,8 @@ class LibraryWindow(tk.Tk):
 
         tk.Frame(self._sb, bg=c["border"], width=1).place(relx=1, rely=0, relheight=1, anchor="ne")
 
+        self._sidebar_support_bubble()
+
         # Every rebuilt screen starts with the first navigation item exactly at
         # the top limit.  The user can then scroll only into the content below.
         def reset_sidebar_to_top():
@@ -1132,6 +1170,388 @@ class LibraryWindow(tk.Tk):
 
         self._main = tk.Frame(self, bg=c["bg"])
         self._main.pack(side="right", fill="both", expand=True)
+
+    def _sidebar_support_bubble(self):
+        c = THEME
+        width, height = 204, 48
+        bubble = tk.Canvas(
+            self._sb, width=width, height=height,
+            bg=c["surface"], highlightthickness=0, bd=0,
+            cursor="hand2", takefocus=1,
+        )
+        bubble.place(relx=0.0, rely=1.0, x=20, y=-96, anchor="sw")
+        gold = "#e8b23d" if IS_DARK else "#9a6500"
+        gold_dim = "#8a6818" if IS_DARK else "#c99424"
+        fill = "#241d10" if IS_DARK else "#fff7e2"
+        hover_fill = "#30250f" if IS_DARK else "#ffefc2"
+        pressed_fill = "#18140d" if IS_DARK else "#f6e3ad"
+        animation = {"level": 0, "target": 0, "job": None, "pressed": False}
+
+        def draw():
+            bubble.delete("all")
+            level = animation["level"]
+            current_fill = pressed_fill if animation["pressed"] else hover_fill if level else fill
+            if level >= 1:
+                _rounded_rect(bubble, 1, 1, width - 2, height - 2, 23,
+                              fill=c["surface"], outline=gold_dim)
+            if level >= 2:
+                _rounded_rect(bubble, 3, 3, width - 4, height - 4, 21,
+                              fill=c["surface"], outline=gold_dim)
+            inset = 4 if level < 2 else 3
+            _rounded_rect(bubble, inset, inset, width - inset, height - inset, 20,
+                          fill=current_fill, outline=gold)
+            bubble.create_text(27, height // 2 + 1, text="♥",
+                               font=design_heading(15), fill=gold)
+            bubble.create_text(49, height // 2, text=ui('Apoie o Komicove', 'Support Komicove'),
+                               anchor="w", font=design_body(9, bold=True), fill=gold)
+
+        def animate(target):
+            animation["target"] = target
+            if animation["job"] is not None:
+                bubble.after_cancel(animation["job"])
+                animation["job"] = None
+
+            def step():
+                current = animation["level"]
+                if current == animation["target"]:
+                    animation["job"] = None
+                    return
+                animation["level"] += 1 if current < animation["target"] else -1
+                draw()
+                animation["job"] = bubble.after(28, step)
+
+            step()
+
+        def enter(_event):
+            animate(2)
+
+        def leave(_event):
+            animate(0)
+
+        def press(_event):
+            animation["pressed"] = True
+            draw()
+
+        def release(event):
+            animation["pressed"] = False
+            inside = 0 <= event.x <= width and 0 <= event.y <= height
+            draw()
+            if inside:
+                self._show_support_dialog()
+
+        draw()
+        bubble.bind("<Enter>", enter)
+        bubble.bind("<Leave>", leave)
+        bubble.bind("<ButtonPress-1>", press)
+        bubble.bind("<ButtonRelease-1>", release)
+        bubble.bind("<Return>", lambda _e: self._show_support_dialog())
+        bubble.bind("<space>", lambda _e: self._show_support_dialog())
+        self._support_bubble = bubble
+        return bubble
+
+    def _show_support_dialog(self):
+        existing = getattr(self, "_support_dialog", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
+
+        c = THEME
+        self.update_idletasks()
+        root_x, root_y = self.winfo_rootx(), self.winfo_rooty()
+        root_w, root_h = self.winfo_width(), self.winfo_height()
+        gold = "#ffc23d" if IS_DARK else "#9a6500"
+        gold_soft = "#e8b23d" if IS_DARK else "#b57a08"
+        panel_color = "#0e151e" if IS_DARK else "#f8f9fc"
+        panel_alt = "#151e29" if IS_DARK else "#edf1f6"
+        border_color = "#344152" if IS_DARK else "#b8c1cf"
+        text_color = "#f8f9fb" if IS_DARK else "#11151b"
+        muted_color = "#b7c1d0" if IS_DARK else "#5e6978"
+        quiet_color = "#8491a3" if IS_DARK else "#687484"
+
+        overlay = tk.Toplevel(self)
+        self._support_overlay = overlay
+        overlay.overrideredirect(True)
+        overlay.configure(bg="#000000")
+        overlay.geometry(f"{root_w}x{root_h}+{root_x}+{root_y}")
+        overlay.transient(self)
+        try:
+            overlay.attributes("-alpha", 0.0)
+        except tk.TclError:
+            pass
+        overlay.lift()
+
+        base_width, base_height = 920, 580
+        scale = min(1.0, max(0.68, min((root_w - 32) / base_width,
+                                       (root_h - 32) / base_height)))
+        width, height = round(base_width * scale), round(base_height * scale)
+        x = max(0, root_x + (root_w - width) // 2)
+        y = max(0, root_y + (root_h - height) // 2)
+
+        dialog = tk.Toplevel(self)
+        self._support_dialog = dialog
+        dialog.overrideredirect(True)
+        dialog.configure(bg="#05070a")
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        dialog.transient(self)
+        try:
+            dialog.attributes("-alpha", 0.0)
+        except tk.TclError:
+            pass
+        dialog.lift()
+
+        shell = tk.Canvas(dialog, width=width, height=height, bg="#05070a",
+                          highlightthickness=0, bd=0)
+        shell.pack(fill="both", expand=True)
+        px = lambda value: round(value * scale)
+        font_size = lambda value: max(7, round(value * scale))
+
+        panel = Image.new("RGBA", (width, height), panel_color)
+        glow_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow_layer)
+        glow_draw.ellipse((-px(170), px(20), px(530), px(720)), fill=(255, 190, 45, 23))
+        glow_draw.ellipse((px(520), -px(180), px(1120), px(420)), fill=(45, 84, 125, 18))
+        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(max(24, px(86))))
+        panel = Image.alpha_composite(panel, glow_layer)
+        mask = Image.new("L", (width, height), 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (px(5), px(5), width - px(6), height - px(6)),
+            radius=px(19), fill=255,
+        )
+        panel.putalpha(mask)
+        self._support_panel_image = ImageTk.PhotoImage(panel)
+        shell.create_image(0, 0, image=self._support_panel_image, anchor="nw")
+        _rounded_rect(shell, px(2), px(2), width - px(3), height - px(3), px(21),
+                      fill="", outline="#5c430b")
+        _rounded_rect(shell, px(6), px(6), width - px(7), height - px(7), px(18),
+                      fill="", outline=gold)
+
+        closing = {"active": False}
+
+        def window_exists(window):
+            try:
+                return bool(window.winfo_exists())
+            except tk.TclError:
+                return False
+
+        def finish_close():
+            if getattr(self, "_support_dialog", None) is dialog:
+                self._support_dialog = None
+            if getattr(self, "_support_overlay", None) is overlay:
+                self._support_overlay = None
+            try:
+                overlay.grab_release()
+            except tk.TclError:
+                pass
+            # Remove the fullscreen blocker first. Even if Tk is already tearing
+            # down the dialog, the main window must never remain behind it.
+            for window in (overlay, dialog):
+                try:
+                    if window_exists(window):
+                        window.destroy()
+                except tk.TclError:
+                    pass
+            try:
+                if self.winfo_exists() and not self._closing_app:
+                    self.focus_force()
+            except tk.TclError:
+                pass
+
+        def close():
+            if closing["active"]:
+                return
+            closing["active"] = True
+
+            def fade_out(step=7):
+                if not window_exists(dialog):
+                    finish_close()
+                    return
+                try:
+                    dialog.attributes("-alpha", max(0.0, step / 7))
+                    if window_exists(overlay):
+                        overlay.attributes("-alpha", max(0.0, 0.72 * step / 7))
+                except tk.TclError:
+                    finish_close()
+                    return
+                if step > 0:
+                    self.after(17, lambda: fade_out(step - 1))
+                    return
+                finish_close()
+
+            fade_out()
+
+        qr_source = Image.open(resource_path("assets_redesign/pix-qr.png")).convert("RGB")
+        qr_difference = ImageChops.difference(qr_source.convert("L"),
+                                               Image.new("L", qr_source.size, 255))
+        qr_bounds = qr_difference.getbbox()
+        if qr_bounds:
+            qr_source = qr_source.crop(qr_bounds)
+        qr_source = qr_source.resize((px(354), px(354)), Image.Resampling.NEAREST)
+        self._support_qr_image = ImageTk.PhotoImage(qr_source)
+        _rounded_rect(shell, px(40), px(73), px(434), px(467), px(7),
+                      fill="#ffffff", outline="#ffffff")
+        shell.create_image(px(60), px(93), image=self._support_qr_image, anchor="nw")
+        shell.create_text(px(237), px(496),
+                          text=ui('Escaneie com o app do seu banco',
+                                  'Scan with your banking app'),
+                          font=design_body(font_size(10)), fill=muted_color)
+
+        shell.create_text(px(474), px(100), text="♥", anchor="w",
+                          font=design_heading(font_size(43)), fill=gold)
+        shell.create_text(px(540), px(106),
+                          text=ui('Apoie o Komicove', 'Support Komicove'),
+                          anchor="w", font=design_heading(font_size(27)), fill=text_color)
+        shell.create_text(px(474), px(154),
+                          text=ui('Ajude o Komicove a continuar gratuito\ne em desenvolvimento.',
+                                  'Help Komicove stay free and\nkeep improving.'),
+                          anchor="nw", justify="left",
+                          font=design_body(font_size(14)), fill=muted_color)
+
+        icon_images = []
+
+        def colored_icon(name, size, color):
+            icon_path = resource_path(
+                f"assets_redesign/icons/generated/dark-normal/{name}.png"
+            )
+            try:
+                source = Image.open(icon_path).convert("RGBA").resize(
+                    (px(size), px(size)), Image.Resampling.LANCZOS
+                )
+                alpha = source.getchannel("A")
+                rgb = tuple(bytes.fromhex(color.lstrip("#")))
+                tinted = Image.new("RGBA", source.size, (*rgb, 255))
+                tinted.putalpha(alpha)
+                image = ImageTk.PhotoImage(tinted)
+                icon_images.append(image)
+                return image
+            except (OSError, ValueError):
+                return None
+
+        heart_icon = colored_icon("heart", 19, gold)
+        amount_icon = colored_icon("chart-no-axes-column-increasing", 19, gold)
+        copy_icon = colored_icon("copy", 21, "#17120a")
+        wise_icon = colored_icon("upload", 21, text_color)
+        info_icon = colored_icon("circle-help", 20, muted_color)
+
+        def draw_badge(x1, width_value, label, image):
+            y1, badge_height = px(238), px(54)
+            _rounded_rect(shell, px(x1), y1, px(x1 + width_value), y1 + badge_height,
+                          px(21), fill=panel_alt, outline=border_color)
+            if image is not None:
+                shell.create_image(px(x1 + 27), y1 + badge_height // 2, image=image)
+            shell.create_text(px(x1 + 50), y1 + badge_height // 2, text=label,
+                              anchor="w", font=design_body(font_size(10)),
+                              fill=muted_color)
+
+        draw_badge(474, 178, ui('100% opcional', '100% optional'), heart_icon)
+        draw_badge(664, 220, ui('Você escolhe o valor', 'You choose the amount'), amount_icon)
+
+        button_specs = {
+            "pix": (474, 326, 410, 64, True,
+                    ui('Copiar código Pix', 'Copy Pix code'), copy_icon),
+            "wise": (474, 405, 410, 62, False,
+                     ui('Fora do Brasil? Use o Wise',
+                        'Outside Brazil? Use Wise'), wise_icon),
+        }
+        action_shapes = {}
+
+        def draw_action(tag, state="normal"):
+            bx, by, bw, bh, primary, label, image = button_specs[tag]
+            x1, y1 = px(bx), px(by)
+            x2, y2 = px(bx + bw), px(by + bh)
+            if primary:
+                fill = "#ffcb54" if state == "hover" else gold_soft
+                if state == "pressed":
+                    fill = "#c99527"
+                outline, label_color = "#ffd875", "#17120a"
+            else:
+                fill = "#1d2733" if state == "hover" else panel_alt
+                if state == "pressed":
+                    fill = "#0a0f15"
+                outline, label_color = muted_color, text_color
+            if tag in action_shapes:
+                shell.itemconfigure(action_shapes[tag], fill=fill, outline=outline)
+                return
+            shape = _rounded_rect(shell, x1, y1, x2, y2, px(14),
+                                  fill=fill, outline=outline)
+            action_shapes[tag] = shape
+            shell.addtag_withtag(tag, shape)
+            if image is not None:
+                item = shell.create_image(px(bx + 105), y1 + (y2 - y1) // 2,
+                                          image=image, tags=(tag,))
+                shell.addtag_withtag(tag, item)
+            shell.create_text(px(bx + 140), y1 + (y2 - y1) // 2,
+                              text=label, anchor="w", tags=(tag,),
+                              font=design_body(font_size(12), bold=True),
+                              fill=label_color)
+
+        def bind_action(tag, command):
+            shell.tag_bind(tag, "<Enter>", lambda _e: draw_action(tag, "hover"))
+            shell.tag_bind(tag, "<Leave>", lambda _e: draw_action(tag))
+            shell.tag_bind(tag, "<ButtonPress-1>",
+                           lambda _e: draw_action(tag, "pressed"))
+            shell.tag_bind(tag, "<ButtonRelease-1>", lambda _e: command())
+
+        status_item = shell.create_text(px(474), px(550), text="", anchor="w",
+                                        font=design_body(font_size(9)), fill=gold)
+
+        def copy_pix():
+            self.clipboard_clear()
+            self.clipboard_append(PIX_CODE)
+            self.update()
+            shell.itemconfigure(status_item,
+                                text=ui('Código Pix copiado!', 'Pix code copied!'))
+            draw_action("pix", "hover")
+
+        draw_action("pix")
+        draw_action("wise")
+        bind_action("pix", copy_pix)
+        bind_action("wise", lambda: webbrowser.open(WISE_HELP_URL))
+
+        if info_icon is not None:
+            shell.create_image(px(487), px(504), image=info_icon)
+        shell.create_text(px(514), px(504),
+                          text=ui('Confira o destinatário antes de confirmar.',
+                                  'Check the recipient before confirming.'),
+                          anchor="w", font=design_body(font_size(10)), fill=quiet_color)
+
+        close_tag = "support_close"
+        close_shape = _rounded_rect(
+            shell, px(862), px(24), px(902), px(64), px(14),
+            fill=panel_color, outline="",
+        )
+        shell.addtag_withtag(close_tag, close_shape)
+        shell.create_line(px(875), px(37), px(889), px(51),
+                          fill=text_color, width=max(2, px(2)),
+                          capstyle="round", tags=(close_tag,))
+        shell.create_line(px(889), px(37), px(875), px(51),
+                          fill=text_color, width=max(2, px(2)),
+                          capstyle="round", tags=(close_tag,))
+        shell.tag_bind(close_tag, "<Enter>", lambda _e: shell.itemconfigure(
+            close_shape, fill="#1c2632"))
+        shell.tag_bind(close_tag, "<Leave>", lambda _e: shell.itemconfigure(
+            close_shape, fill=panel_color))
+        shell.tag_bind(close_tag, "<ButtonRelease-1>", lambda _e: close())
+
+        self._support_icon_images = icon_images
+        overlay.bind("<Button-1>", lambda _e: close())
+        dialog.bind("<Escape>", lambda _e: close())
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        dialog.focus_force()
+
+        def fade_in(step=0):
+            if not dialog.winfo_exists() or closing["active"]:
+                return
+            ratio = min(1.0, step / 9)
+            try:
+                overlay.attributes("-alpha", 0.72 * ratio)
+                dialog.attributes("-alpha", ratio)
+            except tk.TclError:
+                return
+            if step < 9:
+                dialog.after(17, lambda: fade_in(step + 1))
+
+        dialog.after_idle(fade_in)
 
     def _check_updates(self, initial_data=None):
         dialog=tk.Toplevel(self); dialog.title(ui('Atualizações do Komicove', 'Komicove updates')); dialog.configure(bg=THEME["bg"])

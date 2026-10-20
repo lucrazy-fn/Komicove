@@ -183,6 +183,9 @@ final class ZoomPage extends View {
             if(region.translated==null||region.translated.isEmpty())continue;
             TranslationTile tile=null;
             for(TranslationTile candidate:translationTiles)if(candidate.index==index){tile=candidate;break;}
+            // A missing tile means reconstruction is still running or was rejected as unsafe.
+            // Keep the original page intact; review labels belong only to Compare mode.
+            if(!shouldDrawTranslation(translationCompare,tile!=null))continue;
             boolean label=translationCompare||tile==null;
             String shown=region.translated;
             TextPaint text=new TextPaint(Paint.ANTI_ALIAS_FLAG);text.setColor(label?Color.WHITE:tile.result.lightBackground?0xff201c20:Color.WHITE);
@@ -266,6 +269,7 @@ final class ZoomPage extends View {
             layout.draw(c);c.restore();
         }
     }
+    static boolean shouldDrawTranslation(boolean compare,boolean hasReconstructedTile){return compare||hasReconstructedTile;}
     @Override public boolean performClick(){super.performClick();return true;}
     @Override public boolean onTouchEvent(MotionEvent e){if(overviewRegion==null)scale.onTouchEvent(e);gestures.onTouchEvent(e);
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){stopAnimation();downX=lastX=e.getX();downY=lastY=e.getY();pinching=false;moved=false;}

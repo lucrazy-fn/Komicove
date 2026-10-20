@@ -60,4 +60,10 @@ public class ZoomPageGuidedRestoreTest {
             compared.recycle();
         }finally{context.getSharedPreferences("comic_translation_prefs",0).edit().putInt("view",0).commit();image.recycle();}
     }
+
+    @Test public void translatedViewNeverDrawsFallbackLabelsOverUnreconstructedArt() {
+        assertFalse(ZoomPage.shouldDrawTranslation(false,false));
+        assertTrue(ZoomPage.shouldDrawTranslation(false,true));
+        assertTrue(ZoomPage.shouldDrawTranslation(true,false));
+    }
 }

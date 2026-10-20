@@ -336,7 +336,21 @@ def apply_sync_response(items, paths_by_id):
         if changed:
             # One atomic journal protects both files if a process stops between writes.
             if not storage.json_save(storage.SYNC_STATE_FILE, state):
-                raise OSError("Could not persist synchronized state")
+                detail = storage.json_save_failure(storage.SYNC_STATE_FILE) or {}
+                message = ("Could not persist synchronized state"
+                           f"; operation={detail.get('operation', 'unknown')}"
+                           f"; error={detail.get('error_type', 'OSError')}"
+                           f"; errno={detail.get('errno')}"
+                           f"; winerror={detail.get('winerror')}"
+                           f"; attempts={detail.get('attempts', 1)}"
+                           f"; duration_ms={detail.get('duration_ms', 0)}"
+                           f"; worker={detail.get('thread', 'unknown')}")
+                error = OSError(message)
+                error.storage_failure = {
+                    key: detail.get(key)
+                    for key in ("operation", "error_type", "errno", "winerror")
+                }
+                raise error from detail.get("cause")
             storage.load_progress().update(progress)
             storage.json_save(storage.PROGRESS_FILE, progress)
             storage.json_save(storage.FAVORITES_FILE, sorted(favorites))

@@ -8,6 +8,9 @@ import time
 import threading
 from datetime import datetime, timezone
 
+_WRITE_FAILURE_LOCK = threading.Lock()
+_WRITE_FAILURES = {}
+
 def _migrate_legacy_data(legacy, destination):
     """Copy old local data once without replacing anything already in Komicove."""
     for source_dir, dirs, files in os.walk(legacy):
@@ -70,29 +73,66 @@ def json_load(path, default):
         with open(path, "r", encoding="utf-8") as source: return json.load(source)
     except (OSError, json.JSONDecodeError): return default
 
-def _temporary_state_path(path):
-    return f"{path}.tmp-{os.getpid()}-{threading.get_ident()}"
+def _temporary_state_path(path, attempt=0):
+    return (f"{path}.tmp-{os.getpid()}-{threading.get_ident()}-"
+            f"{time.time_ns()}-{attempt}")
+
+
+def _retryable_state_error(error):
+    return (isinstance(error, PermissionError)
+            or getattr(error, "winerror", None) in {5, 32, 33})
+
+
+def _remember_write_failure(path, operation, error, attempts, started):
+    failure = {
+        "operation": operation,
+        "error_type": type(error).__name__,
+        "errno": getattr(error, "errno", None),
+        "winerror": getattr(error, "winerror", None),
+        "attempts": attempts,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+        "thread": threading.current_thread().name,
+        "cause": error,
+    }
+    with _WRITE_FAILURE_LOCK:
+        _WRITE_FAILURES[os.path.abspath(path)] = failure
+
+
+def json_save_failure(path):
+    with _WRITE_FAILURE_LOCK:
+        failure = _WRITE_FAILURES.get(os.path.abspath(path))
+        return dict(failure) if failure else None
 
 def json_save(path, data):
-    temporary = _temporary_state_path(path)
-    try:
+    delays = (0, .015, .035)
+    started = time.monotonic()
+    for attempt, delay in enumerate(delays):
+        temporary = _temporary_state_path(path, attempt)
+        if delay:
+            time.sleep(delay)
+        operation = "create temporary file"
         try:
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            os.unlink(temporary)
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as target:
-            json.dump(data, target, indent=2)
-            target.flush()
-            os.fsync(target.fileno())
-        os.replace(temporary, path)
-    except OSError: return False
-    finally:
-        try:
-            if os.path.exists(temporary): os.remove(temporary)
-        except OSError:
-            pass
-    return True
+            operation = "write temporary file"
+            with os.fdopen(fd, "w", encoding="utf-8") as target:
+                json.dump(data, target, indent=2)
+                target.flush()
+                os.fsync(target.fileno())
+            operation = "replace state file"
+            os.replace(temporary, path)
+            with _WRITE_FAILURE_LOCK:
+                _WRITE_FAILURES.pop(os.path.abspath(path), None)
+            return True
+        except OSError as error:
+            if attempt == len(delays) - 1 or not _retryable_state_error(error):
+                _remember_write_failure(path, operation, error, attempt + 1, started)
+                return False
+        finally:
+            try:
+                if os.path.exists(temporary): os.remove(temporary)
+            except OSError:
+                pass
+    return False
 
 _progress_cache: dict = {}
 _progress_dirty = False
@@ -220,7 +260,11 @@ def load_prefs():
         json_save(PREFS_FILE, data)
     return data
 def save_prefs(**values):
-    data=load_prefs(); data.update(values); json_save(PREFS_FILE, data)
+    # Translation jobs persist progress from a worker while the UI may save a
+    # preference at the same time. Serialize the read-modify-write cycle so one
+    # update cannot silently erase the other.
+    with STATE_LOCK:
+        data=load_prefs(); data.update(values); json_save(PREFS_FILE, data)
 def _stats_data():
     data = json_load(STATS_FILE, {"books": {}, "daily": {}})
     if not isinstance(data, dict):

@@ -17,6 +17,8 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class MainActivity extends Activity {
+    private static final String PIX_CODE="00020126580014BR.GOV.BCB.PIX0136481dc694-0cb0-4e7b-9be7-293714d89a4f5204000053039865802BR5923Luan de Oliveira Santos6009SAO PAULO62140510b3oZThcALn6304BF40";
+    private static final String WISE_HELP_URL="https://wise.com/help/articles/2932353/guide-to-brl-transfers";
     private final ExecutorService work=Executors.newSingleThreadExecutor(),images=Executors.newFixedThreadPool(2);
     private final ExecutorService updateWork=Executors.newSingleThreadExecutor();
     private final ThreadPoolExecutor libraryWork=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new LinkedBlockingQueue<>());
@@ -33,7 +35,7 @@ public final class MainActivity extends Activity {
     private String collectionAliases;
     private boolean updateChecking;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private LibraryStore store;private volatile PanelApi api;private LinearLayout root,body,bottomNav;private TextView banner;private ProfileAvatarView headerAvatar,profileAvatar;
+    private LibraryStore store;private volatile PanelApi api;private LinearLayout root,body,bottomNav;private TextView banner;private ProfileAvatarView headerAvatar,profileAvatar;private ImageButton supportBubble;private FrameLayout supportBubbleDock;private boolean supportBubbleDismissed;
     private String seriesFilter="",authorFilter="";private String statusFilter="Todos";private String tab="Biblioteca",filter="",sortMode="recent";private String collectionKind="all",collectionSort="name";private CollectionGroups.Group activeCollection;private boolean favorites,selectMode,authPending;private final Set<String> selected=new HashSet<>();private int visibleLimit=80;private int screen;private volatile boolean dead,busy;private Runnable collectionSearchTask;
     private static final List<PanelApi.Transfer> transfers=new CopyOnWriteArrayList<>();
     private final ExecutorService syncWork=Executors.newSingleThreadExecutor();
@@ -131,11 +133,86 @@ public final class MainActivity extends Activity {
     @Override protected void onResume(){super.onResume();if(!authPending&&body==null&&api!=null&&!api.signedIn()&&getSharedPreferences("auth_state",0).getString("mode","").isEmpty()){authPending=true;startActivityForResult(new Intent(this,AuthActivity.class),AUTH);return;}if(body!=null){if(foldersVisible)showFolders();else if(tab.equals("Biblioteca")||tab.equals("Coleções"))showLibrary();}folderWatching=true;refreshFolders(false);syncActive=true;scheduleSync();}
     @Override protected void onPause(){if(libraryCovers!=null){libraryCovers.close();libraryCovers=null;}screen++;libraryPreparing=false;libraryGeneration++;if(libraryTask!=null)libraryTask.cancel(true);syncActive=false;handler.removeCallbacks(automaticSync);folderWatching=false;handler.removeCallbacks(folderPoll);if(folderFuture!=null)folderFuture.cancel(true);super.onPause();}
     private void validateSavedSession(){work.execute(()->{try{api.validateSession();}catch(Exception ignored){if(!api.signedIn())runOnUiThread(()->{getSharedPreferences("auth_state",0).edit().remove("mode").apply();authPending=true;startActivityForResult(new Intent(this,AuthActivity.class),AUTH);});}});}
-    private void shell(){Ui.configure(this);root=Ui.column(this);root.setBackgroundColor(Ui.BG);setContentView(root);Ui.insets(this,root);
+    private void shell(){Ui.configure(this);FrameLayout stage=new FrameLayout(this);stage.setBackgroundColor(Ui.BG);root=Ui.column(this);root.setBackgroundColor(Ui.BG);stage.addView(root,new FrameLayout.LayoutParams(-1,-1));setContentView(stage);Ui.insets(this,stage);
         LinearLayout head=Ui.row(this);head.setPadding(Ui.dp(this,16),Ui.dp(this,8),Ui.dp(this,16),Ui.dp(this,4));ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.komicove_logo);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);logo.setContentDescription("Komicove");head.addView(logo,new LinearLayout.LayoutParams(Ui.dp(this,108),Ui.dp(this,72)));head.addView(new Space(this),new LinearLayout.LayoutParams(0,1,1));ImageButton bell=Ui.iconButton(this,R.drawable.lucide_bell,false,()->{if(api.signedIn())notifications();else I18n.toast(this,"Entre na sua conta para ver notificações.",Toast.LENGTH_SHORT);});head.addView(bell,Ui.margin(Ui.dp(this,46),Ui.dp(this,46),this,0,0,8,0));headerAvatar=createAvatar(46);headerAvatar.setOnClickListener(v->{if(api.signedIn())profile();else startActivityForResult(new Intent(this,AuthActivity.class),AUTH);});head.addView(headerAvatar,new LinearLayout.LayoutParams(Ui.dp(this,46),Ui.dp(this,46)));root.addView(head);
         banner=Ui.text(this,"",14,Ui.MUTED);banner.setPadding(Ui.dp(this,18),0,Ui.dp(this,18),0);banner.setVisibility(View.GONE);root.addView(banner);
         body=Ui.column(this);root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
-        bottomNav=Ui.row(this);bottomNav.setPadding(Ui.dp(this,6),Ui.dp(this,5),Ui.dp(this,6),Ui.dp(this,5));bottomNav.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.BORDER,Ui.RADIUS_LARGE));root.addView(bottomNav,Ui.margin(-1,Ui.dp(this,76),this,8,4,8,8));refreshBottomNavigation();if(tab.equals("Biblioteca")||tab.equals("Coleções"))showLibrary();else if(tab.equals("Comunidade"))showCommunity();else settings();syncRemoteAvatar();}
+        bottomNav=Ui.row(this);bottomNav.setPadding(Ui.dp(this,6),Ui.dp(this,5),Ui.dp(this,6),Ui.dp(this,5));bottomNav.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.BORDER,Ui.RADIUS_LARGE));root.addView(bottomNav,Ui.margin(-1,Ui.dp(this,76),this,8,4,8,8));addSupportBubble(stage);refreshBottomNavigation();if(tab.equals("Biblioteca")||tab.equals("Coleções"))showLibrary();else if(tab.equals("Comunidade"))showCommunity();else settings();syncRemoteAvatar();}
+
+    private Drawable supportBubbleBackground(int fill,int outline){
+        GradientDrawable halo=new GradientDrawable();halo.setShape(GradientDrawable.OVAL);halo.setColor(0x24ffca4f);halo.setStroke(Ui.dp(this,1),0x55ffca4f);
+        GradientDrawable core=new GradientDrawable();core.setShape(GradientDrawable.OVAL);core.setColor(fill);core.setStroke(Ui.dp(this,1.5f),outline);
+        LayerDrawable layers=new LayerDrawable(new Drawable[]{halo,new InsetDrawable(core,Ui.dp(this,5))});
+        return layers;
+    }
+    private void addSupportBubble(FrameLayout stage){
+        if(supportBubbleDismissed)return;
+        int accent=supportAccent();boolean light=Ui.BG==0xfff3f4f7;
+        supportBubbleDock=new FrameLayout(this);supportBubbleDock.setClipChildren(false);supportBubbleDock.setClipToPadding(false);
+        supportBubble=new ImageButton(this);supportBubble.setImageResource(R.drawable.lucide_heart);supportBubble.setColorFilter(accent);
+        supportBubble.setPadding(Ui.dp(this,14),Ui.dp(this,14),Ui.dp(this,14),Ui.dp(this,14));supportBubble.setElevation(Ui.dp(this,8));supportBubble.setStateListAnimator(null);
+        StateListDrawable states=new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed},supportBubbleBackground(light?0xffffe6a1:0xff17130c,Ui.GOLD_BRIGHT));
+        states.addState(new int[]{},supportBubbleBackground(light?0xfffff4d1:0xff271f0f,light?0xffa46d05:Ui.GOLD));
+        supportBubble.setBackground(states);supportBubble.setContentDescription(I18n.t(this,"Apoie o Komicove"));supportBubble.setTooltipText(I18n.t(this,"Apoie o Komicove"));
+        supportBubble.setOnClickListener(v->showSupport());
+        FrameLayout.LayoutParams heartSize=new FrameLayout.LayoutParams(Ui.dp(this,52),Ui.dp(this,52),Gravity.START|Gravity.BOTTOM);heartSize.setMargins(0,Ui.dp(this,6),Ui.dp(this,6),0);supportBubbleDock.addView(supportBubble,heartSize);
+        ImageButton dismiss=Ui.iconButton(this,R.drawable.lucide_x,false,()->{
+            supportBubbleDismissed=true;
+            supportBubbleDock.animate().alpha(0f).scaleX(.78f).scaleY(.78f).setDuration(150).withEndAction(()->stage.removeView(supportBubbleDock)).start();
+        });
+        dismiss.setContentDescription(I18n.t(this,"Fechar"));dismiss.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5));dismiss.setColorFilter(light?0xff674b12:0xffffe09a);dismiss.setElevation(Ui.dp(this,11));dismiss.setBackground(Ui.bordered(this,light?0xfffff8e8:0xff161b23,light?0xffb67a08:Ui.GOLD_DARK,Ui.RADIUS_PILL));
+        FrameLayout.LayoutParams dismissSize=new FrameLayout.LayoutParams(Ui.dp(this,24),Ui.dp(this,24),Gravity.END|Gravity.TOP);supportBubbleDock.addView(dismiss,dismissSize);
+        FrameLayout.LayoutParams dockSize=new FrameLayout.LayoutParams(Ui.dp(this,64),Ui.dp(this,58),Gravity.END|Gravity.BOTTOM);dockSize.setMargins(0,0,Ui.dp(this,8),Ui.dp(this,89));stage.addView(supportBubbleDock,dockSize);
+        android.content.SharedPreferences bubblePrefs=getSharedPreferences("support_bubble",0);
+        int edge=Ui.dp(this,8),touchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
+        float[] down={0,0,0,0};boolean[] moved={false};
+        stage.post(()->{
+            if(!bubblePrefs.contains("x")||!bubblePrefs.contains("y"))return;
+            float minX=stage.getPaddingLeft()+edge,minY=stage.getPaddingTop()+edge;
+            float maxX=Math.max(minX,stage.getWidth()-stage.getPaddingRight()-supportBubbleDock.getWidth()-edge);
+            float maxY=Math.max(minY,stage.getHeight()-stage.getPaddingBottom()-supportBubbleDock.getHeight()-edge);
+            supportBubbleDock.setX(bubblePrefs.getFloat("x",1f)<.5f?minX:maxX);
+            supportBubbleDock.setY(minY+bubblePrefs.getFloat("y",.75f)*(maxY-minY));
+        });
+        supportBubble.setOnTouchListener((view,event)->{
+            if(event.getAction()==MotionEvent.ACTION_DOWN){
+                down[0]=event.getRawX();down[1]=event.getRawY();down[2]=supportBubbleDock.getX();down[3]=supportBubbleDock.getY();moved[0]=false;
+                supportBubbleDock.animate().scaleX(.94f).scaleY(.94f).setDuration(90).start();return true;
+            }
+            if(event.getAction()==MotionEvent.ACTION_MOVE){
+                float dx=event.getRawX()-down[0],dy=event.getRawY()-down[1];
+                if(!moved[0]&&Math.hypot(dx,dy)>touchSlop)moved[0]=true;
+                if(moved[0]){
+                    view.getParent().requestDisallowInterceptTouchEvent(true);
+                    float minX=stage.getPaddingLeft()+edge,minY=stage.getPaddingTop()+edge;
+                    float maxX=Math.max(minX,stage.getWidth()-stage.getPaddingRight()-supportBubbleDock.getWidth()-edge);
+                    float maxY=Math.max(minY,stage.getHeight()-stage.getPaddingBottom()-supportBubbleDock.getHeight()-edge);
+                    supportBubbleDock.setX(Math.max(minX,Math.min(maxX,down[2]+dx)));
+                    supportBubbleDock.setY(Math.max(minY,Math.min(maxY,down[3]+dy)));
+                }
+                return true;
+            }
+            if(event.getAction()==MotionEvent.ACTION_UP||event.getAction()==MotionEvent.ACTION_CANCEL){
+                view.getParent().requestDisallowInterceptTouchEvent(false);
+                if(event.getAction()==MotionEvent.ACTION_UP&&moved[0]){
+                    float minX=stage.getPaddingLeft()+edge,minY=stage.getPaddingTop()+edge;
+                    float maxX=Math.max(minX,stage.getWidth()-stage.getPaddingRight()-supportBubbleDock.getWidth()-edge);
+                    float maxY=Math.max(minY,stage.getHeight()-stage.getPaddingBottom()-supportBubbleDock.getHeight()-edge);
+                    float targetX=supportBubbleDock.getX()+supportBubbleDock.getWidth()/2f<stage.getWidth()/2f?minX:maxX;
+                    supportBubbleDock.animate().x(targetX).scaleX(1f).scaleY(1f).setDuration(180).start();
+                    float savedX=targetX==minX?0f:1f;
+                    float savedY=maxY==minY?0:(supportBubbleDock.getY()-minY)/(maxY-minY);
+                    bubblePrefs.edit().putFloat("x",savedX).putFloat("y",savedY).apply();
+                }else{
+                    supportBubbleDock.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
+                    if(event.getAction()==MotionEvent.ACTION_UP)view.performClick();
+                }
+                return true;
+            }
+            return true;
+        });
+    }
 
     private final class ProfileAvatarView extends ImageView {
         private final Paint outline=new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -356,6 +433,50 @@ public final class MainActivity extends Activity {
         else if(request==BACKUP){async("Salvando backup…",()->{try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out==null)throw new IOException("Destino indisponível.");store.exportBackup(out);}},()->Toast.makeText(this,"Backup exportado.",Toast.LENGTH_LONG).show());}
         else if(request==RESTORE){int[] count={0};async("Restaurando backup…",()->{try(InputStream in=getContentResolver().openInputStream(data.getData())){count[0]=store.restoreBackup(in);}},()->Toast.makeText(this,count[0]+" HQs atualizadas. Reimporte os arquivos ausentes antes de restaurar.",Toast.LENGTH_LONG).show());}}
     private void settings(){LinearLayout p=page("Ajustes");p.addView(Ui.text(this,"Personalize sua experiência no Komicove.",17,Ui.MUTED),Ui.margin(-1,-2,this,0,-8,0,16));p.addView(settingRow(R.drawable.lucide_profile,"Conta",api.signedIn()?"Perfil, e-mail e segurança.":"Entre para sincronizar e participar.",this::showCommunity,true),Ui.margin(-1,-2,this,0,0,0,18));p.addView(Ui.sectionTitle(this,"Leitor",R.drawable.lucide_book_open));LinearLayout reader=Ui.card(this);reader.addView(settingRow(R.drawable.lucide_book_open,"Modo e preferências de leitura","Página única, dupla, mangá, Webtoon e leitura guiada.",()->ReaderPreferences.show(this,null),false));reader.addView(settingRow(R.drawable.lucide_grid,"Estatísticas pessoais","Páginas, tempo e HQs concluídas neste dispositivo.",this::statistics,false));p.addView(reader,Ui.margin(-1,-2,this,0,6,0,14));p.addView(Ui.sectionTitle(this,"Aparência",R.drawable.lucide_sun));LinearLayout appearance=Ui.card(this);boolean light=getSharedPreferences("ui",0).getBoolean("light",false);appearance.addView(settingRow(light?R.drawable.lucide_sun:R.drawable.lucide_moon,"Tema",light?"Claro":"Escuro Komicove",()->{getSharedPreferences("ui",0).edit().putBoolean("light",!light).apply();shell();},false));p.addView(appearance,Ui.margin(-1,-2,this,0,6,0,14));p.addView(Ui.sectionTitle(this,"Idioma",R.drawable.lucide_compass));LinearLayout language=Ui.card(this);language.addView(settingRow(R.drawable.lucide_compass,"Idioma do aplicativo","en".equals(I18n.language(this))?"English":"Português (Brasil)",this::chooseLanguage,false));p.addView(language,Ui.margin(-1,-2,this,0,6,0,14));p.addView(Ui.sectionTitle(this,"Dados e armazenamento",R.drawable.lucide_folder));LinearLayout data=Ui.card(this);data.addView(settingRow(R.drawable.lucide_folder,"Pasta da biblioteca","Adicione HQs sem criar uma cópia permanente.",this::showFolders,false));data.addView(settingRow(R.drawable.lucide_backup,"Backup","Exporte progresso, favoritos e coleções.",()->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"komicove-android-backup.json"),BACKUP),false));data.addView(settingRow(R.drawable.lucide_restore,"Restaurar","Recupere seus dados de leitura.",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE),RESTORE),false));p.addView(data,Ui.margin(-1,-2,this,0,6,0,14));p.addView(Ui.sectionTitle(this,"Sistema",R.drawable.lucide_settings));LinearLayout system=Ui.card(this);system.addView(settingRow(R.drawable.lucide_download,"Atualizações","Komicove Android "+BuildConfig.VERSION_NAME,this::checkAndroidUpdates,false));system.addView(settingRow(R.drawable.lucide_shield,"Diagnóstico seguro","Relatório local sem dados sensíveis.",this::diagnostics,false));system.addView(settingRow(R.drawable.lucide_compass,"Código e licença","Projeto livre e de código aberto.",()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/lucrazy-fn/PANEL-ComicBookReader"))),false));p.addView(system,Ui.margin(-1,-2,this,0,6,0,14));}
+    private int supportAccent(){return Ui.BG==0xfff3f4f7?0xff9a6500:Ui.GOLD_BRIGHT;}
+    private void showSupport(){
+        Dialog dialog=new Dialog(this);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout sheet=Ui.column(this);sheet.setPadding(Ui.dp(this,20),Ui.dp(this,12),Ui.dp(this,20),Ui.dp(this,22));
+        sheet.setBackground(Ui.supportPanel(this));sheet.setElevation(Ui.dp(this,18));
+        boolean[] closing={false};
+        Runnable closeSupport=()->{if(closing[0])return;closing[0]=true;sheet.animate().alpha(0f).translationY(Ui.dp(this,34)).setDuration(160).withEndAction(dialog::dismiss).start();};
+        TextView handle=new TextView(this);handle.setBackground(Ui.shape(Ui.BORDER,Ui.dp(this,3)));sheet.addView(handle,Ui.margin(Ui.dp(this,58),Ui.dp(this,5),this,0,0,0,14));
+        ((LinearLayout.LayoutParams)handle.getLayoutParams()).gravity=Gravity.CENTER_HORIZONTAL;
+
+        LinearLayout header=Ui.row(this);
+        ImageView heart=new ImageView(this);heart.setImageResource(R.drawable.lucide_heart);heart.setColorFilter(supportAccent());heart.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5));
+        header.addView(heart,new LinearLayout.LayoutParams(Ui.dp(this,38),Ui.dp(this,38)));
+        TextView title=Ui.title(this,"Apoie o Komicove",23);header.addView(title,Ui.margin(0,-2,this,8,0,8,0));((LinearLayout.LayoutParams)title.getLayoutParams()).weight=1;
+        ImageButton close=Ui.iconButton(this,R.drawable.lucide_x,false,closeSupport);close.setContentDescription(I18n.t(this,"Fechar"));header.addView(close,new LinearLayout.LayoutParams(Ui.dp(this,44),Ui.dp(this,44)));
+        sheet.addView(header);
+        sheet.addView(Ui.text(this,"Ajude o Komicove a continuar gratuito e em desenvolvimento.",14,Ui.MUTED),Ui.margin(-1,-2,this,0,4,0,10));
+
+        LinearLayout badges=Ui.row(this);
+        TextView optional=supportBadge("100% opcional"),amount=supportBadge("Você escolhe o valor");
+        badges.addView(optional,new LinearLayout.LayoutParams(0,Ui.dp(this,38),1));
+        LinearLayout.LayoutParams amountSize=Ui.margin(0,Ui.dp(this,38),this,8,0,0,0);amountSize.weight=1;badges.addView(amount,amountSize);
+        sheet.addView(badges,Ui.margin(-1,-2,this,0,0,0,12));
+
+        ImageView qr=new ImageView(this);qr.setImageResource(R.drawable.pix_qr);qr.setScaleType(ImageView.ScaleType.FIT_CENTER);qr.setAdjustViewBounds(true);qr.setPadding(Ui.dp(this,8),Ui.dp(this,8),Ui.dp(this,8),Ui.dp(this,8));qr.setBackground(Ui.shape(Color.WHITE,Ui.dp(this,12)));
+        LinearLayout.LayoutParams qrSize=Ui.margin(Ui.dp(this,220),Ui.dp(this,220),this,0,0,0,4);qrSize.gravity=Gravity.CENTER_HORIZONTAL;sheet.addView(qr,qrSize);
+        TextView scan=Ui.text(this,"Escaneie com o app do seu banco",12,Ui.MUTED);scan.setGravity(Gravity.CENTER);sheet.addView(scan,Ui.margin(-1,-2,this,0,0,0,10));
+
+        Button copy=Ui.supportButton(this,"Copiar código Pix",()->{
+            ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Pix Komicove",PIX_CODE));
+            I18n.toast(this,"Código Pix copiado!",Toast.LENGTH_SHORT);
+        });
+        copy.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_copy,0,0,0);copy.setCompoundDrawablePadding(Ui.dp(this,9));copy.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(0xff17120a));
+        sheet.addView(copy,new LinearLayout.LayoutParams(-1,Ui.dp(this,52)));
+        Button wise=Ui.button(this,"Fora do Brasil? Use o Wise",()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(WISE_HELP_URL))));
+        wise.setCompoundDrawablesWithIntrinsicBounds(R.drawable.lucide_upload,0,R.drawable.lucide_chevron_right,0);wise.setCompoundDrawablePadding(Ui.dp(this,8));wise.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));
+        sheet.addView(wise,Ui.margin(-1,Ui.dp(this,50),this,0,8,0,0));
+        TextView note=Ui.text(this,"Confira o destinatário antes de confirmar.",11,Ui.MUTED);note.setGravity(Gravity.CENTER);sheet.addView(note,Ui.margin(-1,-2,this,0,8,0,0));
+
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setPadding(Ui.dp(this,10),Ui.dp(this,8),Ui.dp(this,10),Ui.dp(this,8));scroll.addView(sheet);dialog.setContentView(scroll);dialog.setCanceledOnTouchOutside(true);dialog.show();
+        Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);WindowManager.LayoutParams lp=window.getAttributes();lp.width=WindowManager.LayoutParams.MATCH_PARENT;lp.height=WindowManager.LayoutParams.WRAP_CONTENT;lp.gravity=Gravity.BOTTOM;lp.dimAmount=.68f;window.setAttributes(lp);}
+        sheet.setAlpha(0f);sheet.setTranslationY(Ui.dp(this,42));sheet.animate().alpha(1f).translationY(0).setDuration(220).start();
+    }
+    private TextView supportBadge(String label){TextView badge=Ui.text(this,label,11,supportAccent());badge.setGravity(Gravity.CENTER);badge.setBackground(Ui.bordered(this,Ui.SURFACE_ALT,Ui.GOLD_DARK,Ui.RADIUS_PILL));return badge;}
     private LinearLayout settingRow(int icon,String title,String subtitle,Runnable action,boolean highlighted){LinearLayout row=Ui.row(this);row.setPadding(Ui.dp(this,4),Ui.dp(this,6),Ui.dp(this,4),Ui.dp(this,6));ImageView image=new ImageView(this);image.setImageResource(icon);image.setColorFilter(highlighted?Ui.RED_BRIGHT:Ui.MUTED);row.addView(image,new LinearLayout.LayoutParams(Ui.dp(this,26),Ui.dp(this,26)));LinearLayout text=Ui.column(this);text.setPadding(Ui.dp(this,12),0,Ui.dp(this,8),0);text.addView(Ui.title(this,title,14));text.addView(Ui.text(this,subtitle,11,Ui.MUTED));row.addView(text,new LinearLayout.LayoutParams(0,-2,1));ImageView arrow=new ImageView(this);arrow.setImageResource(R.drawable.lucide_chevron_right);arrow.setColorFilter(Ui.MUTED);row.addView(arrow,new LinearLayout.LayoutParams(Ui.dp(this,20),Ui.dp(this,20)));row.setOnClickListener(v->action.run());row.setFocusable(true);return row;}
     private void showCommunity(){LinearLayout p=page("Comunidade");p.addView(Ui.text(this,"Leitores, criadores e histórias no mesmo universo.",17,Ui.MUTED),Ui.margin(-1,-2,this,0,-8,0,14));FrameLayout hero=new FrameLayout(this);hero.setBackground(Ui.glow(this,Ui.SURFACE,Ui.RADIUS_LARGE));ImageView art=new ImageView(this);art.setImageResource(R.drawable.noir_mobile_banner);art.setScaleType(ImageView.ScaleType.CENTER_CROP);art.setAlpha(.48f);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));LinearLayout heroText=Ui.column(this);heroText.setGravity(Gravity.BOTTOM);heroText.setPadding(Ui.dp(this,18),Ui.dp(this,16),Ui.dp(this,18),Ui.dp(this,16));heroText.addView(Ui.title(this,"Descubra a comunidade Komicove",22));heroText.addView(Ui.text(this,"Encontre novas histórias, conheça criadores e acompanhe seus envios.",14,Ui.MUTED));Button explore=Ui.primaryButton(this,"Explorar agora",()->catalog(false,false));explore.setCompoundDrawablesWithIntrinsicBounds(0,0,R.drawable.lucide_arrow_right,0);explore.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));explore.setCompoundDrawablePadding(Ui.dp(this,8));heroText.addView(explore,Ui.margin(-1,Ui.dp(this,50),this,0,10,0,0));hero.addView(heroText,new FrameLayout.LayoutParams(-1,-1));p.addView(hero,Ui.margin(-1,Ui.dp(this,210),this,0,0,0,18));if(api.base().isEmpty()){p.addView(Ui.text(this,"A comunidade está indisponível porque nenhum servidor foi configurado. A leitura local continua funcionando.",15,Ui.MUTED));return;}LinearLayout quick=Ui.row(this);if(api.signedIn()){quick.addView(Ui.chip(this,"Perfil",R.drawable.lucide_profile,false,this::profile),new LinearLayout.LayoutParams(0,Ui.dp(this,46),1));quick.addView(Ui.chip(this,"Notificações",R.drawable.lucide_bell,false,this::notifications),Ui.margin(0,Ui.dp(this,46),this,8,0,0,0));}else quick.addView(Ui.primaryButton(this,"Entrar / Criar conta",this::login),new LinearLayout.LayoutParams(-1,Ui.dp(this,48)));p.addView(quick,Ui.margin(-1,-2,this,0,0,0,16));if(api.signedIn()){LinearLayout account=Ui.card(this);account.addView(Ui.text(this,"Olá, "+api.user.optString("display_name",api.user.optString("username")),15,Ui.TEXT));account.addView(settingRow(R.drawable.lucide_restore,"Sincronizar biblioteca","Progresso e favoritos entre dispositivos.",this::sync,false));account.addView(settingRow(R.drawable.lucide_upload,"Meus envios","Acompanhe publicações pendentes e aprovadas.",()->catalog(true,false),false));if(api.moderator())account.addView(settingRow(R.drawable.lucide_shield,"Moderação","Revise publicações da comunidade.",()->catalog(false,true),false));p.addView(account,Ui.margin(-1,-2,this,0,0,0,16));}p.addView(Ui.sectionTitle(this,"Histórias da comunidade",R.drawable.lucide_book_open),Ui.margin(-1,-2,this,0,4,0,6));LinearLayout feed=Ui.column(this);p.addView(feed);loadCommunityFeed(feed,screen);p.addView(settingRow(R.drawable.lucide_download,"Central de downloads","Veja downloads ativos, concluídos e erros.",this::downloads,false),Ui.margin(-1,-2,this,0,14,0,4));}
     private void loadCommunityFeed(LinearLayout feed,int ticket){TextView loading=Ui.text(this,"Carregando histórias reais da comunidade...",14,Ui.MUTED);feed.addView(loading);work.execute(()->{try{JSONArray items=(JSONArray)api.json("GET","/publications/discovery",null);runOnUiThread(()->{if(dead||screen!=ticket)return;feed.removeAllViews();if(items.length()==0){feed.addView(Ui.text(this,"Ainda não há histórias publicadas. Quando a comunidade publicar, elas aparecerão aqui.",15,Ui.MUTED));return;}HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);LinearLayout cards=Ui.row(this);Map<String,Integer> authors=new LinkedHashMap<>();for(int i=0;i<Math.min(10,items.length());i++){JSONObject item=items.optJSONObject(i);String author=item.optString("author","Criador");authors.put(author,authors.getOrDefault(author,0)+1);LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,5),Ui.dp(this,9));card.setBackground(Ui.bordered(this,Ui.SURFACE,Ui.BORDER,Ui.RADIUS_LARGE));ImageView cover=new ImageView(this);cover.setImageResource(R.drawable.comic_cover_placeholder);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);card.addView(cover,new LinearLayout.LayoutParams(-1,Ui.dp(this,142)));TextView title=Ui.title(this,item.optString("title","Sem título"),14);title.setMaxLines(2);card.addView(title);card.addView(Ui.text(this,author,12,Ui.MUTED));card.setOnClickListener(v->catalog(false,false));cards.addView(card,Ui.margin(Ui.dp(this,142),-2,this,0,0,10,0));if(item.optBoolean("has_file"))images.execute(()->{try{byte[] bytes=api.bytes("/publications/"+item.optString("publication_id")+"/cover");Bitmap bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.length);runOnUiThread(()->{if(!dead&&screen==ticket)cover.setImageBitmap(bitmap);});}catch(Exception ignored){}});}scroll.addView(cards);feed.addView(scroll);feed.addView(Ui.sectionTitle(this,"Criadores em destaque",R.drawable.lucide_profile),Ui.margin(-1,-2,this,0,16,0,6));LinearLayout creatorCard=Ui.card(this);for(Map.Entry<String,Integer> entry:authors.entrySet())creatorCard.addView(settingRow(R.drawable.lucide_profile,entry.getKey(),entry.getValue()+" "+(entry.getValue()==1?"história":"histórias")+" nesta seleção",()->catalog(false,false),false));feed.addView(creatorCard);});}catch(Exception e){runOnUiThread(()->{if(dead||screen!=ticket)return;feed.removeAllViews();feed.addView(Ui.text(this,"Não foi possível carregar a comunidade agora. Toque em Explorar para tentar novamente.",15,Ui.MUTED));});}});}
