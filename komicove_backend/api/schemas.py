@@ -188,6 +188,7 @@ class ContributorInviteCreated(ContributorInvitePublic):
 
 class AppUpdateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    kind: Literal["update", "announcement"] = "update"
     source: Literal["manual", "github"] = "manual"
     title: str | None = Field(default=None, min_length=1, max_length=150)
     version: str | None = Field(default=None, min_length=3, max_length=64)
@@ -199,6 +200,12 @@ class AppUpdateCreate(BaseModel):
     @model_validator(mode="after")
     def validate_source(self):
         from komicove_client.releases import version_key
+        if self.kind == "announcement":
+            if self.source != "manual" or not self.title or not self.title.strip() or not self.notes or not self.notes.strip():
+                raise ValueError("Informe título e mensagem válidos para o anúncio.")
+            if any(value is not None for value in (self.version, self.repository, self.release_id, self.download_destination)):
+                raise ValueError("Anúncios não possuem versão, release ou botão de download.")
+            return self
         if self.source == "manual":
             if not self.title or not self.title.strip() or not self.notes or not self.notes.strip() or version_key(self.version) is None:
                 raise ValueError("Informe título, versão e changelog válidos.")
@@ -216,10 +223,16 @@ class AppUpdatePreview(BaseModel):
     notes: str = Field(max_length=50000)
 
 
+class AppUpdateVisibility(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    visible: bool
+
+
 class AppUpdatePublic(BaseModel):
     id: str
     title: str
     version: str
+    kind: str = "update"
     notes: str
     notes_html: str
     source: str
@@ -231,6 +244,7 @@ class AppUpdatePublic(BaseModel):
     created_by_username: str
     created_at: str
     selected: bool = False
+    visible: bool = False
     selection_token: str | None = None
     automatic: bool = False
 

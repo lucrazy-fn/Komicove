@@ -3,7 +3,7 @@ from datetime import timedelta
 import json
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 from komicove_backend.accounts import contributor_invites
 from komicove_backend.accounts.models import User, ContributorInvite, AdminAuditLog, AppUpdate, AppUpdateSelection, _now
@@ -143,6 +143,12 @@ def test_selected_update_is_the_only_public_item_and_history_is_preserved(backen
     history = client.get('/api/moderators/updates', headers=sessions['moderator']).json()
     assert [item['id'] for item in history] == [second['id'], first['id']]
     assert [item['selected'] for item in history] == [True, False]
+    hidden = client.put(f"/api/moderators/updates/{second['id']}/visibility", headers=sessions['moderator'], json={'visible': False})
+    assert hidden.status_code == 200 and hidden.json()['visible'] is False
+    assert client.get('/updates').json() == []
+    shown = client.put(f"/api/moderators/updates/{second['id']}/visibility", headers=sessions['moderator'], json={'visible': True})
+    assert shown.status_code == 200 and shown.json()['visible'] is True
+    assert client.get('/updates').json()[0]['id'] == second['id']
     changed = client.put(f"/api/moderators/updates/{first['id']}/selection", headers=sessions['admin'])
     assert changed.status_code == 200 and changed.json()['selected'] is True
     assert [item['id'] for item in client.get('/updates').json()] == [first['id']]
@@ -152,6 +158,17 @@ def test_selected_update_is_the_only_public_item_and_history_is_preserved(backen
     with factory() as db:
         assert db.get(AppUpdateSelection, 1).update_id == first['id']
         assert any(row.action == 'app_update_selected' for row in db.scalars(select(AdminAuditLog)))
+
+
+def test_announcement_has_no_download_and_can_be_hidden(backend):
+    client, sessions, _ = backend
+    payload={'kind':'announcement','source':'manual','title':'Aviso da equipe','notes':'Manutenção concluída.'}
+    response=client.post('/api/moderators/updates', headers=sessions['moderator'], json=payload)
+    assert response.status_code == 201
+    item=response.json()
+    assert item['kind']=='announcement' and item['version']=='0.0.0' and item['download_url'] is None
+    assert item['visible'] is True and client.get('/updates').json()[0]['id']==item['id']
+    assert client.post('/api/moderators/updates', headers=sessions['moderator'], json=dict(payload, version='0.2.2')).status_code == 422
 
 
 def test_import_is_read_only_and_server_resolves_official_release(backend, monkeypatch):
@@ -247,6 +264,28 @@ def test_incremental_migration_preserves_existing_account_and_library(tmp_path, 
         state = db.scalar(select(LibraryState))
         assert state.item_key == 'fixture-old-id' and state.page == 17 and state.favorite
         assert db.get(ModeratorInvite, invite_id).max_uses == 3 and db.get(ModeratorInvite, invite_id).is_usable()
+    engine.dispose()
+
+
+def test_incremental_migration_adds_message_kind_and_visibility(tmp_path, monkeypatch):
+    from komicove_backend import db as database
+    from sqlalchemy import inspect
+    engine = create_engine('sqlite:///' + str(tmp_path / 'old-updates.db'))
+    Base.metadata.create_all(engine, tables=[table for table in Base.metadata.sorted_tables
+        if table.name not in {'app_updates', 'app_update_selection'}])
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE app_updates (id VARCHAR(36) PRIMARY KEY, title VARCHAR(150) NOT NULL, version VARCHAR(64) NOT NULL, notes TEXT NOT NULL, source VARCHAR(16) NOT NULL, download_url VARCHAR(500), created_by_user_id VARCHAR(36) NOT NULL, created_by_username VARCHAR(64) NOT NULL, created_at DATETIME NOT NULL)"))
+        connection.execute(text("CREATE TABLE app_update_selection (id INTEGER PRIMARY KEY, update_id VARCHAR(36) NOT NULL UNIQUE, selected_at DATETIME NOT NULL)"))
+        connection.execute(text("INSERT INTO app_updates VALUES ('old', 'Versao antiga', '0.2.1', 'Notas', 'manual', NULL, 'owner', 'dono', '2026-01-01 00:00:00')"))
+        connection.execute(text("INSERT INTO app_update_selection VALUES (1, 'old', '2026-01-01 00:00:00')"))
+    monkeypatch.setattr(database, '_engine', engine)
+    database._migrate_legacy_schema(); database._migrate_legacy_schema()
+    inspector = inspect(engine)
+    assert 'kind' in {column['name'] for column in inspector.get_columns('app_updates')}
+    assert 'visible' in {column['name'] for column in inspector.get_columns('app_update_selection')}
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT kind FROM app_updates WHERE id = 'old'" )).scalar_one() == 'update'
+        assert connection.execute(text("SELECT visible FROM app_update_selection WHERE id = 1" )).scalar_one() == 1
     engine.dispose()
 
 

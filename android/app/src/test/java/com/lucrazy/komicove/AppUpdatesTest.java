@@ -32,8 +32,11 @@ public class AppUpdatesTest {
         JSONArray rows=AppUpdates.merge(Arrays.asList(AppUpdates.release(release("v0.2.2",AppUpdates.REPOSITORIES[0]),AppUpdates.REPOSITORIES[0],"0.2.1"),AppUpdates.release(release("0.2.2",AppUpdates.REPOSITORIES[1]),AppUpdates.REPOSITORIES[1],"0.2.1"),panel),"0.2.1");
         assertEquals(1,rows.length());assertEquals(AppUpdates.SITE,rows.getJSONObject(0).getString("url"));
         assertEquals("Fixture message",AppUpdates.automatic(rows,"0.2.1",Collections.emptySet()).getString("title"));
+        assertNull(AppUpdates.automatic(rows,"0.2.1",Collections.emptySet(),Collections.singleton("0.2.2")));
         assertNull(AppUpdates.automatic(rows,"0.2.2",Collections.singleton("notice:2")));
         assertNotNull(AppUpdates.automatic(rows,"0.2.2",Collections.singleton("notice:1")));
+        JSONObject announcement=AppUpdates.announcement(new JSONObject().put("id","announcement").put("kind","announcement").put("title","Notice").put("version","0.0.0").put("notes","Hello"));
+        JSONArray announcements=AppUpdates.merge(Collections.singletonList(announcement),"0.2.2");assertNotNull(AppUpdates.automatic(announcements,"0.2.2",Collections.emptySet(),Collections.singleton("0.2.2")));
     }
     @Test public void linksStayOnOfficialDestinationsAndMessagesAreTranslated(){
         assertEquals("",AppUpdates.safeUrl("javascript:alert(1)"));assertEquals("",AppUpdates.safeUrl("https://github.com/attacker/releases"));
@@ -51,6 +54,7 @@ public class AppUpdatesTest {
             assertTrue(dialog.isShowing());assertEquals("Download",dialog.getButton(Dialog.BUTTON_POSITIVE).getText().toString());
             dialog.getButton(Dialog.BUTTON_POSITIVE).performClick();org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(AppUpdates.SITE,org.robolectric.Shadows.shadowOf(activity).getNextStartedActivity().getDataString());
             assertTrue(context.getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet()).contains("fixture"));
+            assertTrue(context.getSharedPreferences("updates",0).getStringSet("downloaded_versions",Collections.emptySet()).contains("0.2.2"));
         }
     }
     @Test public void apiReadsBothRepositoriesWithoutSendingSessionToGithub()throws Exception{
@@ -63,6 +67,8 @@ public class AppUpdatesTest {
         assertEquals(Arrays.asList("/repos/lucrazy-fn/PANEL-ComicBookReader/releases/latest","/repos/lucrazy-fn/Komicove/releases/latest","/updates"),paths);
         http(api,chain->{Request request=chain.request();if(request.url().host().equals("api.github.com"))return response(request,200,"{\"tag_name\":\"0.2.9\",\"name\":\"GitHub\"}");return response(request,200,"[{\"id\":\"chosen\",\"version\":\"0.2.2\",\"title\":\"Chosen by admin\",\"notes\":\"Selected\"}]");});
         JSONArray selected=api.updates();assertEquals(1,selected.length());assertEquals("Chosen by admin",selected.getJSONObject(0).getString("title"));
+        http(api,chain->{Request request=chain.request();if(request.url().host().equals("api.github.com"))return response(request,200,"{\"tag_name\":\"0.2.9\",\"name\":\"GitHub\"}");return response(request,200,"[]");});
+        assertEquals(0,api.updates().length());
         http(api,chain->{Request request=chain.request();if(request.url().encodedPath().contains("/Komicove/"))return response(request,200,"{\"tag_name\":\"0.2.3\"}");return response(request,503,"{}");});
         assertEquals("0.2.3",api.updates().getJSONObject(0).getString("version"));assertTrue(api.signedIn());
     }

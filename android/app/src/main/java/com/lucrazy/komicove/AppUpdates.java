@@ -43,15 +43,18 @@ final class AppUpdates {
     }
     static JSONArray merge(List<JSONObject> items,String current)throws JSONException {
         Map<String,JSONObject> unique=new LinkedHashMap<>();
-        for(JSONObject item:items){if(item==null)continue;Version parsed=version(item.optString("version"));if(parsed==null)continue;JSONObject previous=unique.get(parsed.key);
+        for(JSONObject item:items){if(item==null)continue;Version parsed=version(item.optString("version"));if(parsed==null)continue;String key="announcement".equals(item.optString("kind"))?"announcement:"+item.optString("id"):parsed.key;JSONObject previous=unique.get(key);
             boolean panel="panel".equals(item.optString("source")),previousPanel=previous!=null&&"panel".equals(previous.optString("source"));
-            if(previous==null||(panel&&!previousPanel)||(panel==previousPanel&&item.optString("created_at").compareTo(previous.optString("created_at"))>0))unique.put(parsed.key,item);
+            if(previous==null||(panel&&!previousPanel)||(panel==previousPanel&&item.optString("created_at").compareTo(previous.optString("created_at"))>0))unique.put(key,item);
         }
         List<JSONObject> sorted=new ArrayList<>(unique.values());sorted.sort((a,b)->{boolean ac=compatible(a.optString("version"),current),bc=compatible(b.optString("version"),current);return ac!=bc?(ac?-1:1):version(b.optString("version")).compareTo(version(a.optString("version")));});
         JSONArray result=new JSONArray();for(JSONObject item:sorted)result.put(item);return result;
     }
     static String messageId(JSONObject item){String token=item.optString("selection_token");return token.isEmpty()?item.optString("id"):token;}
-    static JSONObject automatic(JSONArray items,String current,Set<String> seen){for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);if(item==null)continue;if(newer(item.optString("version"),current)||("panel".equals(item.optString("source"))&&!seen.contains(messageId(item))&&compatible(item.optString("version"),current)))return item;}return null;}
+    static String downloadId(JSONObject item){if(item==null||"announcement".equals(item.optString("kind")))return "";Version parsed=version(item.optString("version"));return parsed==null?"":parsed.key;}
+    static JSONArray visible(JSONArray items,Set<String> downloaded){JSONArray result=new JSONArray();for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);if(item!=null&&!downloaded.contains(downloadId(item)))result.put(item);}return result;}
+    static JSONObject automatic(JSONArray items,String current,Set<String> seen){return automatic(items,current,seen,Collections.emptySet());}
+    static JSONObject automatic(JSONArray items,String current,Set<String> seen,Set<String> downloaded){JSONArray candidates=visible(items,downloaded);for(int i=0;i<candidates.length();i++){JSONObject item=candidates.optJSONObject(i);if(item==null)continue;if(newer(item.optString("version"),current)||("panel".equals(item.optString("source"))&&!seen.contains(messageId(item))&&compatible(item.optString("version"),current)))return item;}return null;}
     static String date(String value){try{return OffsetDateTime.parse(value).atZoneSameInstant(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));}catch(Exception ignored){return "";}}
     static String plainNotes(String notes){return (notes==null?"":notes).replaceAll("(?m)^#{1,6}\\s*","").replaceAll("!\\[([^\\]]*)\\]\\([^)]*\\)","$1").replaceAll("\\[([^\\]]+)\\]\\(([^)]+)\\)","$1 ($2)").replaceAll("`+|\\*\\*","").trim();}
 }

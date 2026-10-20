@@ -199,7 +199,7 @@ final class I18n {
         put("Marcar / desmarcar página ","Add/remove bookmark on page "); put("Marcador removido","Bookmark removed"); put("Página marcada","Page bookmarked");
         put("A leitura guiada aproxima quadros separados por espaços claros. Quando não reconhece o layout, percorre trechos sobrepostos, indicados como Trecho no contador. Os trechos podem cortar quadros e balões; você pode arrastar, ajustar o zoom ou usar Encaixar. Use as setas ou toque nas bordas para avançar. Disponível em página única e modo mangá.","Guided reading zooms into panels separated by light gaps. When the layout is not recognized, it moves through overlapping sections shown as Section in the counter. Sections may crop panels or speech balloons; you can drag, adjust zoom or use Fit. Use the arrows or tap the edges to move. Available in single-page and manga modes.");
         put("Aguarde a operação atual.","Please wait for the current operation."); put("Entendi","Got it");
-        put("Verificando atualizacoes...","Checking for updates..."); put("Voce ja esta usando a versao mais recente.","You are already using the latest version.");
+        put("Verificando atualizacoes...","Checking for updates..."); put("Voce ja esta usando a versao mais recente.","You are already using the latest version."); put("Anúncio","Announcement");
         put("Novidades e correcoes para o leitor.","Reader improvements and fixes.");
         put("Série (vazio: todas)","Series (empty: all)"); put("Autor (vazio: todos)","Author (empty: all)");
         put("Editar informações","Edit information"); put("A cópia importada no Komicove será apagada. O arquivo original não será alterado.","The copy imported into Komicove will be deleted. The original file will not be changed.");

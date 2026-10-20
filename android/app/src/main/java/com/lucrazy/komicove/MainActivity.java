@@ -443,22 +443,23 @@ public final class MainActivity extends Activity {
         if(dead||updateChecking)return;updateChecking=true;int ticket=screen;
         updateWork.execute(()->{try{JSONArray items=api.updates();handler.post(()->{
             updateChecking=false;if(dead||!syncActive||(!silent&&ticket!=screen))return;
-            if(silent){Set<String> seen=getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet());JSONObject item=AppUpdates.automatic(items,BuildConfig.VERSION_NAME,seen);if(item!=null)showUpdate(item);return;}
-            if(items.length()==0){I18n.toast(this,"Você já está usando a versão mais recente.",Toast.LENGTH_SHORT);return;}
-            if(items.length()==1){showUpdate(items.optJSONObject(0));return;}
-            String[] titles=new String[items.length()];for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);titles[i]=item.optString("title")+" ("+item.optString("version")+")";}
-            new AlertDialog.Builder(this).setTitle("Atualizações").setItems(titles,(dialog,index)->showUpdate(items.optJSONObject(index))).setNegativeButton("Fechar",null).show();
+            Set<String> downloaded=getSharedPreferences("updates",0).getStringSet("downloaded_versions",Collections.emptySet());
+            if(silent){Set<String> seen=getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet());JSONObject item=AppUpdates.automatic(items,BuildConfig.VERSION_NAME,seen,downloaded);if(item!=null)showUpdate(item);return;}
+            JSONArray visible=AppUpdates.visible(items,downloaded);if(visible.length()==0){I18n.toast(this,"Você já está usando a versão mais recente.",Toast.LENGTH_SHORT);return;}
+            if(visible.length()==1){showUpdate(visible.optJSONObject(0));return;}
+            String[] titles=new String[visible.length()];for(int i=0;i<visible.length();i++){JSONObject item=visible.optJSONObject(i);String label="announcement".equals(item.optString("kind"))?I18n.t(this,"Anúncio"):item.optString("version");titles[i]=item.optString("title")+" ("+label+")";}
+            new AlertDialog.Builder(this).setTitle("Atualizações").setItems(titles,(dialog,index)->showUpdate(visible.optJSONObject(index))).setNegativeButton("Fechar",null).show();
         });}catch(Exception error){handler.post(()->{updateChecking=false;if(!dead&&!silent&&ticket==screen)I18n.toast(this,"Não foi possível verificar atualizações.",Toast.LENGTH_LONG);});}});
     }
     private void showUpdate(JSONObject item){
         if(item==null||dead)return;ScrollView scroll=new ScrollView(this);LinearLayout content=Ui.column(this);Ui.pad(content,18);scroll.addView(content);
         TextView title=Ui.title(this,"",21);title.setText(item.optString("title"));content.addView(title);
-        content.addView(Ui.text(this,item.optString("version")+" · "+AppUpdates.date(item.optString("created_at")),14,Ui.MUTED));
+        String label="announcement".equals(item.optString("kind"))?I18n.t(this,"Anúncio"):item.optString("version");content.addView(Ui.text(this,label+" · "+AppUpdates.date(item.optString("created_at")),14,Ui.MUTED));
         TextView notes=Ui.text(this,"",16,Ui.TEXT);String html=item.optString("notes_html");
         if("panel".equals(item.optString("source"))&&!html.isEmpty())notes.setText(Html.fromHtml(html,Html.FROM_HTML_MODE_LEGACY));
         else {String plain=AppUpdates.plainNotes(item.optString("notes"));notes.setText(plain.isEmpty()?I18n.t(this,"Sem notas publicadas."):plain);}notes.setTextIsSelectable(true);content.addView(notes);
-        android.app.AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle(AppUpdates.newer(item.optString("version"),BuildConfig.VERSION_NAME)?"Nova versão disponível":"Mensagem de atualização").setView(scroll).setNegativeButton("Fechar",null);
-        String url=AppUpdates.safeUrl(item.optString("url"));if(!url.isEmpty())dialog.setPositiveButton("Baixar",(closed,which)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url))));dialog.show();
+        android.app.AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("announcement".equals(item.optString("kind"))?I18n.t(this,"Anúncio"):AppUpdates.newer(item.optString("version"),BuildConfig.VERSION_NAME)?"Nova versão disponível":"Mensagem de atualização").setView(scroll).setNegativeButton("Fechar",null);
+        String url=AppUpdates.safeUrl(item.optString("url"));if(!url.isEmpty())dialog.setPositiveButton("Baixar",(closed,which)->{String id=AppUpdates.downloadId(item);Set<String> downloaded=new LinkedHashSet<>(getSharedPreferences("updates",0).getStringSet("downloaded_versions",Collections.emptySet()));if(!id.isEmpty())downloaded.add(id);while(downloaded.size()>100)downloaded.remove(downloaded.iterator().next());getSharedPreferences("updates",0).edit().putStringSet("downloaded_versions",downloaded).apply();startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));});dialog.show();
         if("panel".equals(item.optString("source"))){Set<String> seen=new LinkedHashSet<>(getSharedPreferences("updates",0).getStringSet("seen_messages",Collections.emptySet()));seen.add(AppUpdates.messageId(item));while(seen.size()>100)seen.remove(seen.iterator().next());getSharedPreferences("updates",0).edit().putStringSet("seen_messages",seen).apply();}
     }
     private void diagnostics(){String report="Komicove Android "+BuildConfig.VERSION_NAME+"\nAPI configurada: sim\nConta conectada: "+(api.signedIn()?"sim":"não")+"\nDispositivo: "+Build.MANUFACTURER+" "+Build.MODEL+"\nAndroid: "+Build.VERSION.RELEASE+"\nLivros locais: "+store.all().size();new AlertDialog.Builder(this).setTitle("Diagnóstico seguro").setMessage(report).setPositiveButton("Copiar",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("Diagnóstico Komicove",report));Toast.makeText(this,"Diagnóstico copiado sem dados sensíveis.",Toast.LENGTH_SHORT).show();}).setNegativeButton("Fechar",null).show();}

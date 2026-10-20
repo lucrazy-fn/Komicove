@@ -36,6 +36,7 @@ def root():
 @pytest.mark.parametrize('language', ['pt-BR', 'en'])
 def test_update_selection_changelog_date_and_real_download(monkeypatch, language, root):
     monkeypatch.setattr(runtime, 'LANG', language)
+    storage.save_prefs(update_downloaded_versions=[])
     records = [dict(id='fixture', title='Original title', version='0.2.2', source='panel',
         notes='# Original changelog\n\n**Original notes**', created_at='2026-10-06T10:00:00Z', url=releases.SITE_DOWNLOAD_URL),
         dict(id='no-download', title='Message without download', version='0.2.1', source='panel', notes='Original content', created_at='2026-10-06T09:00:00Z', url=None)]
@@ -43,6 +44,8 @@ def test_update_selection_changelog_date_and_real_download(monkeypatch, language
     opened = []
     monkeypatch.setattr(views.webbrowser, 'open', opened.append)
     root._release_notes = lambda data: views.LibraryWindow._release_notes(root, data)
+    root._update_version_label = lambda data: views.LibraryWindow._update_version_label(root, data)
+    root._download_update = lambda data: views.LibraryWindow._download_update(root, data)
     try:
         views.LibraryWindow._check_updates(root)
         dialog = next(w for w in root.winfo_children() if isinstance(w, tk.Toplevel))
@@ -54,6 +57,7 @@ def test_update_selection_changelog_date_and_real_download(monkeypatch, language
         button = next(w for w in children(dialog) if isinstance(w, KomicoveButton))
         button._invoke()
         assert opened == [releases.SITE_DOWNLOAD_URL]
+        assert '0.2.2' in storage.load_prefs()['update_downloaded_versions']
         selector.current(1); selector.event_generate('<<ComboboxSelected>>'); root.update()
         assert not button.winfo_ismapped() and notes.get('1.0', 'end').strip() == 'Original content'
         assert 'fixture' in storage.load_prefs()['update_seen_messages']

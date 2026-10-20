@@ -29,8 +29,8 @@ def wire(monkeypatch, primary, secondary, messages=None):
     return calls
 
 
-def test_queries_both_official_repositories_and_selects_version_not_publish_date(monkeypatch):
-    calls = wire(monkeypatch, release('0.2.9', releases.REPOSITORIES[0], published_at='2026-10-06T23:00:00Z'), release('v0.2.10', releases.REPOSITORIES[1], published_at='2026-10-05T10:00:00Z'))
+def test_queries_both_official_repositories_when_panel_feed_is_offline(monkeypatch):
+    calls = wire(monkeypatch, release('0.2.9', releases.REPOSITORIES[0], published_at='2026-10-06T23:00:00Z'), release('v0.2.10', releases.REPOSITORIES[1], published_at='2026-10-05T10:00:00Z'), requests.ConnectionError('panel offline'))
     assert updater.check()['version'] == '0.2.10'
     assert updater.API_URL in calls and updater.SECOND_API_URL in calls
 
@@ -45,9 +45,9 @@ def test_alias_repositories_same_version_make_one_update_and_panel_keeps_downloa
 
 
 def test_offline_source_does_not_hide_other_source_and_legacy_panel_series_is_ignored(monkeypatch):
-    wire(monkeypatch, requests.ConnectionError('fixture offline'), release('0.3.0', releases.REPOSITORIES[1]))
+    wire(monkeypatch, requests.ConnectionError('fixture offline'), release('0.3.0', releases.REPOSITORIES[1]), requests.ConnectionError('panel offline'))
     assert updater.check()['version'] == '0.3.0'
-    wire(monkeypatch, release('v1.4.99', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]))
+    wire(monkeypatch, release('v1.4.99', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]), requests.ConnectionError('panel offline'))
     assert updater.check() is None
 
 
@@ -59,6 +59,21 @@ def test_messages_for_installed_version_are_visible_once_without_new_version_cla
     assert updater.check(['notice']) is None
     assert updater.fetch()[0]['url'] is None
     assert not updater.is_newer(message)
+
+
+def test_downloaded_version_is_hidden_but_announcement_is_not(monkeypatch):
+    update={'id':'release','title':'Release','version':'0.2.2','kind':'update','notes':'Changes','download_url':releases.SITE_DOWNLOAD_URL,'source':'manual'}
+    announcement={'id':'announcement','title':'News','version':'0.0.0','kind':'announcement','notes':'Notice','download_url':None,'source':'manual'}
+    wire(monkeypatch, release('0.2.2', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]), [update])
+    assert updater.check([], ['0.2.2']) is None
+    wire(monkeypatch, release('0.2.2', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]), [announcement])
+    assert updater.check([], ['0.2.2'])['id'] == 'announcement'
+    assert updater.check(['announcement'], ['0.2.2']) is None
+
+
+def test_empty_panel_feed_hides_automatic_github_release(monkeypatch):
+    wire(monkeypatch, release('0.2.9', releases.REPOSITORIES[0]), release('0.2.8', releases.REPOSITORIES[1]), [])
+    assert updater.fetch() == []
 
 
 def test_server_selection_overrides_github_and_reselection_has_a_new_identity(monkeypatch):
@@ -94,7 +109,7 @@ def test_changelog_is_not_replaced_in_english_and_role_is_translated(monkeypatch
 def test_revision_release_is_recognized_and_android_marker_keeps_four_numbers(monkeypatch):
     assert releases.platform_version('v0.2.1.1', 'Android version 0.2.1.1', 'android') == '0.2.1.1'
     monkeypatch.setattr(updater, 'CURRENT_VERSION', '0.2.1')
-    wire(monkeypatch, release('v0.2.1.1', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]))
+    wire(monkeypatch, release('v0.2.1.1', releases.REPOSITORIES[0]), release('0.2.1', releases.REPOSITORIES[1]), requests.ConnectionError('panel offline'))
     assert updater.check()['version'] == '0.2.1.1'
     monkeypatch.setattr(updater, 'CURRENT_VERSION', '0.2.1.1')
     assert updater.check() is None
@@ -105,8 +120,12 @@ def test_legacy_manifest_override_is_preserved_with_second_source(monkeypatch):
     class Response:
         status_code=200
         def raise_for_status(self): pass
-        def json(self): return {'version':'0.2.5','notes':'Custom fixture'} if 'manifest' in calls[-1] else [] if calls[-1].endswith('/updates') else release('0.2.4', releases.REPOSITORIES[1])
-    monkeypatch.setattr(updater.requests,'get',lambda url,**kw: (calls.append(url),Response())[1])
+        def json(self): return {'version':'0.2.5','notes':'Custom fixture'} if 'manifest' in calls[-1] else release('0.2.4', releases.REPOSITORIES[1])
+    def get(url,**kw):
+        calls.append(url)
+        if url.endswith('/updates'): raise requests.ConnectionError('panel offline')
+        return Response()
+    monkeypatch.setattr(updater.requests,'get',get)
     monkeypatch.setenv('PANEL_UPDATE_MANIFEST_URL','https://fixture.invalid/manifest')
     assert updater.check()['version']=='0.2.5'
     assert updater.SECOND_API_URL in calls

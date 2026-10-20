@@ -114,6 +114,20 @@ def _migrate_legacy_schema() -> None:
                 connection.execute(text("ALTER TABLE comics ADD COLUMN series_title VARCHAR(255)"))
             if "chapter_number" not in comic_columns:
                 connection.execute(text("ALTER TABLE comics ADD COLUMN chapter_number INTEGER"))
+    tables = set(inspector.get_table_names())
+    if "app_updates" in tables:
+        update_columns = {column["name"] for column in inspector.get_columns("app_updates")}
+        if "kind" not in update_columns:
+            with _engine.begin() as connection:
+                connection.execute(text("ALTER TABLE app_updates ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'update'"))
+    if "app_update_selection" in tables:
+        selection_columns = {column["name"] for column in inspector.get_columns("app_update_selection")}
+        if "visible" not in selection_columns:
+            boolean_default = "TRUE" if _engine.dialect.name == "postgresql" else "1"
+            with _engine.begin() as connection:
+                connection.execute(text(
+                    f"ALTER TABLE app_update_selection ADD COLUMN visible BOOLEAN NOT NULL DEFAULT {boolean_default}"
+                ))
 
 
 @contextmanager

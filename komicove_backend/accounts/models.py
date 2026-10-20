@@ -149,6 +149,7 @@ class AppUpdate(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     title: Mapped[str] = mapped_column(String(150))
     version: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="update")
     notes: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(16))
     source_repository: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -165,6 +166,7 @@ class AppUpdateSelection(Base):
     __tablename__ = "app_update_selection"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     update_id: Mapped[str] = mapped_column(ForeignKey("app_updates.id"), unique=True)
+    visible: Mapped[bool] = mapped_column(Boolean, default=True)
     selected_at: Mapped[datetime] = mapped_column(DateTime(), default=_now)
 
 

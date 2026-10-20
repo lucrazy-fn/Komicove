@@ -29,12 +29,21 @@ $('contributorCopy').onclick=async()=>{
   catch {msg('contributorMsg',t('Não foi possível copiar. Selecione e copie o token acima.'),true);}
 };
 function updateSourceChanged() {
-  const imported=$('updateSource').value==='github';$('releaseFields').classList.toggle('hidden',!imported);
+  const imported=$('updateKind').value==='update'&&$('updateSource').value==='github';$('releaseFields').classList.toggle('hidden',!imported);
   for(const id of ['updateTitle','updateVersion','updateNotes'])$(id).readOnly=imported;
   $('updatePreviewBody').replaceChildren();
   renderDownloadDestination();
 }
 $('updateSource').onchange=updateSourceChanged;
+function updateKindChanged() {
+  const announcement=$('updateKind').value==='announcement';
+  $('updateReleaseOptions').classList.toggle('hidden',announcement);
+  $('updateVersionField').classList.toggle('hidden',announcement);
+  $('updateDestinationFields').classList.toggle('hidden',announcement);
+  if(announcement)$('updateSource').value='manual';
+  updateSourceChanged();
+}
+$('updateKind').onchange=updateKindChanged;
 $('releaseRepository').onchange=()=>{importedReleases=[];releasePage=0;$('releasesMore').classList.add('hidden');$('releaseChoice').replaceChildren(new Option(t('Selecione uma Release'),''));for(const id of ['updateTitle','updateVersion','updateNotes'])$(id).value='';$('updatePreviewBody').replaceChildren();renderDownloadDestination();};
 async function loadReleases(more=false){
   const button=$('loadReleases'),repository=$('releaseRepository').value,page=more?releasePage+1:1,selected=$('releaseChoice').value;button.disabled=true;$('releasesMore').disabled=true;
@@ -60,19 +69,24 @@ async function previewUpdate() {
 }
 $('updatePreview').onclick=previewUpdate;
 function renderDownloadDestination(){
+  if($('updateKind').value==='announcement'){$('updateDownload').textContent='';return;}
   const version=$('updateVersion').value.trim().replace(/^[vV]/,'');
   $('updateDownload').textContent=$('updateDestination').value==='site'?'https://lucrazy-fn.github.io/Komicove/#downloads':version?`https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases/tag/v${encodeURIComponent(version)}`:t('Informe a versão para ver o destino.');
 }
 $('updateVersion').oninput=renderDownloadDestination;$('updateDestination').onchange=renderDownloadDestination;
 renderDownloadDestination();
+updateKindChanged();
 $('updatePublish').onclick=async()=>{
   const button=$('updatePublish');button.disabled=true;
   try {
-    const payload={source:$('updateSource').value,download_destination:$('updateDestination').value};
+    const payload={kind:$('updateKind').value,source:$('updateSource').value};
+    if(payload.kind==='announcement'){
+      payload.title=$('updateTitle').value;payload.notes=$('updateNotes').value;
+    } else payload.download_destination=$('updateDestination').value;
     if(payload.source==='github') {
       if(!$('releaseChoice').value)throw Error(t('Selecione uma Release antes de publicar.'));
       payload.repository=$('releaseRepository').value;payload.release_id=$('releaseChoice').value;
-    } else {payload.title=$('updateTitle').value;payload.version=$('updateVersion').value;payload.notes=$('updateNotes').value;}
+    } else if(payload.kind==='update'){payload.title=$('updateTitle').value;payload.version=$('updateVersion').value;payload.notes=$('updateNotes').value;}
     const created=await api('/api/moderators/updates',{method:'POST',body:JSON.stringify(payload)});
     msg('updateMsg',t('Mensagem publicada nos apps.'));await loadUpdates(created.id);
   }catch(error){msg('updateMsg',error.message,true);}finally{button.disabled=false;}
@@ -80,20 +94,25 @@ $('updatePublish').onclick=async()=>{
 function renderUpdateHistory() {
   const controls=$('updateHistoryControls');
   controls.classList.toggle('hidden',updateRows.length===0);
-  if(!updateRows.length){$('updateRows').innerHTML=`<p>${t('Nenhuma atualização publicada.')}</p>`;return;}
+  if(!updateRows.length){$('updateRows').innerHTML=`<p>${t('Nenhuma mensagem publicada.')}</p>`;return;}
   updateIndex=Math.max(0,Math.min(updateIndex,updateRows.length-1));
   const choice=$('updateHistoryChoice');
-  choice.replaceChildren(...updateRows.map((item,index)=>new Option(`${item.title} (${item.version})${index===0?` · ${t('Mais recente')}`:''}${item.automatic?` · ${t('Detectada automaticamente')}`:''}${item.selected?` · ${t('Exibida nos aplicativos')}`:''}`,item.id)));
+  choice.replaceChildren(...updateRows.map((item,index)=>new Option(`${item.title}${item.kind==='announcement'?` · ${t('Anúncio')}`:` (${item.version})`}${index===0?` · ${t('Mais recente')}`:''}${item.automatic?` · ${t('Detectada automaticamente')}`:''}${item.visible?` · ${t('Exibida nos aplicativos')}`:item.selected?` · ${t('Oculta nos aplicativos')}`:''}`,item.id)));
   choice.value=updateRows[updateIndex].id;
   $('updatePrevious').disabled=updateIndex>=updateRows.length-1;
   $('updateNext').disabled=updateIndex<=0;
   const item=updateRows[updateIndex];
-  $('updateRows').innerHTML=`<article class="update-log${item.selected?' selected':''}"><div class="update-log-head"><div><h3>${esc(item.title)}</h3><span class="badge">${esc(item.version)}</span>${updateIndex===0?`<span class="badge">${t('Mais recente')}</span>`:''}${item.automatic?`<span class="badge">${t('Detectada automaticamente')}</span>`:''}${item.selected?`<span class="badge update-selected-badge">${t('Exibida nos aplicativos')}</span>`:''}</div>${item.selected?`<button class="btn secondary" disabled>${t('Exibida nos aplicativos')}</button>`:`<button class="btn" data-select-update="${esc(item.id)}">${t('Exibir nos aplicativos')}</button>`}</div>${item.automatic?`<small>${t('Detectada automaticamente')} · GitHub · ${date(item.created_at)}</small>`:`<small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small>`}<small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)} · #${esc(item.source_release_id)}`:''}</small><small>${t('Destino')}: ${t(item.download_destination==='site'?'Site do Komicove':item.download_destination==='github'?'GitHub':'Sem botão Baixar')}</small>${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`;
-  const selectButton=document.querySelector('[data-select-update]');
-  if(selectButton)selectButton.onclick=async()=>{
-    selectButton.disabled=true;
-    try{await api(`/api/moderators/updates/${encodeURIComponent(item.id)}/selection`,{method:'PUT'});msg('updateMsg',t('Atualização selecionada para os aplicativos.'));await loadUpdates(item.id);}
-    catch(error){msg('updateMsg',error.message,true);selectButton.disabled=false;}
+  const versionBadge=item.kind==='announcement'?`<span class="badge">${t('Anúncio')}</span>`:`<span class="badge">${esc(item.version)}</span>`;
+  const stateBadge=item.visible?`<span class="badge update-selected-badge">${t('Exibida nos aplicativos')}</span>`:item.selected?`<span class="badge amber">${t('Oculta nos aplicativos')}</span>`:'';
+  const visibilityButton=item.visible?`<button class="btn secondary" data-update-visibility="false">${t('Ocultar dos aplicativos')}</button>`:`<button class="btn" data-update-visibility="true">${t('Exibir nos aplicativos')}</button>`;
+  const destination=item.kind==='announcement'?'':`<small>${t('Destino')}: ${t(item.download_destination==='site'?'Site do Komicove':item.download_destination==='github'?'GitHub':'Sem botão Baixar')}</small>`;
+  $('updateRows').innerHTML=`<article class="update-log${item.visible?' selected':''}"><div class="update-log-head"><div><h3>${esc(item.title)}</h3>${versionBadge}${updateIndex===0?`<span class="badge">${t('Mais recente')}</span>`:''}${item.automatic?`<span class="badge">${t('Detectada automaticamente')}</span>`:''}${stateBadge}</div>${visibilityButton}</div>${item.automatic?`<small>${t('Detectada automaticamente')} · GitHub · ${date(item.created_at)}</small>`:`<small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small>`}<small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)} · #${esc(item.source_release_id)}`:''}</small>${destination}${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`;
+  const visibility=document.querySelector('[data-update-visibility]');
+  if(visibility)visibility.onclick=async()=>{
+    visibility.disabled=true;
+    const visible=visibility.dataset.updateVisibility==='true';
+    try{await api(`/api/moderators/updates/${encodeURIComponent(item.id)}/visibility`,{method:'PUT',body:JSON.stringify({visible})});msg('updateMsg',t(visible?'Mensagem exibida nos aplicativos.':'Mensagem ocultada dos aplicativos.'));await loadUpdates(item.id);}
+    catch(error){msg('updateMsg',error.message,true);visibility.disabled=false;}
   };
 }
 function updateVersionId(value) {
@@ -111,10 +130,10 @@ async function loadAutomaticUpdates() {
         rows=rows.concat(batch);
       } while(batch.length===30);
     } catch(_error) { return []; }
-    return rows.map(item=>({id:`auto-${repositoryIndex}-${item.id}`,title:item.title,version:item.version,notes:item.notes,
+    return rows.map(item=>({id:`auto-${repositoryIndex}-${item.id}`,title:item.title,version:item.version,kind:'update',notes:item.notes,
       notes_html:item.notes_html,source:'github',source_repository:repository,source_release_id:item.id,
       source_release_url:item.url,download_destination:'github',download_url:item.url,
-      created_by_username:'GitHub',created_at:item.created_at,selected:false,selection_token:null,automatic:true}));
+      created_by_username:'GitHub',created_at:item.created_at,selected:false,visible:false,selection_token:null,automatic:true}));
   }));
   return groups.flat();
 }
@@ -122,7 +141,7 @@ async function loadUpdates(preferredId=null) {
   try {
     const currentId=preferredId||(updateRows[updateIndex]&&updateRows[updateIndex].id);let rows=[],page=[];
     do{page=await api(`/api/moderators/updates?offset=${rows.length}&limit=100`);rows=rows.concat(page);}while(page.length===100);
-    const seen=new Set(rows.map(item=>updateVersionId(item.version)));
+    const seen=new Set(rows.filter(item=>item.kind!=='announcement').map(item=>updateVersionId(item.version)));
     for(const item of await loadAutomaticUpdates())if(!seen.has(updateVersionId(item.version))){rows.push(item);seen.add(updateVersionId(item.version));}
     updateRows=rows.sort((first,second)=>String(second.created_at||'').localeCompare(String(first.created_at||'')));
     const requested=updateRows.findIndex(item=>item.id===currentId),selected=updateRows.findIndex(item=>item.selected);

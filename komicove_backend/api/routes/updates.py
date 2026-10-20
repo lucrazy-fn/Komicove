@@ -7,7 +7,7 @@ from komicove_backend import updates
 from komicove_backend.accounts import audit
 from komicove_backend.accounts.models import AppUpdate, AppUpdateSelection, User, _now
 from komicove_backend.api.deps import get_db, require_moderator
-from komicove_backend.api.schemas import AppUpdateCreate, AppUpdatePreview, AppUpdatePublic
+from komicove_backend.api.schemas import AppUpdateCreate, AppUpdatePreview, AppUpdatePublic, AppUpdateVisibility
 from komicove_client import releases
 
 router = APIRouter(tags=["app-updates"])
@@ -18,9 +18,9 @@ def _selection(db):
     if selection:
         item = db.get(AppUpdate, selection.update_id)
         if item:
-            return item, f"{item.id}:{selection.selected_at.isoformat()}Z"
+            return item, f"{item.id}:{selection.selected_at.isoformat()}Z", selection.visible
     item = db.scalars(select(AppUpdate).order_by(AppUpdate.created_at.desc(), AppUpdate.id).limit(1)).first()
-    return (item, f"legacy:{item.id}") if item else (None, None)
+    return (item, f"legacy:{item.id}", True) if item else (None, None, False)
 
 
 def _select(db, item):
@@ -31,17 +31,19 @@ def _select(db, item):
     else:
         selection.update_id = item.id
         selection.selected_at = _now()
+    selection.visible = True
     db.flush()
     return selection
 
 
-def public(item, selected_id=None, selection_token=None):
-    return AppUpdatePublic(id=item.id, title=item.title, version=item.version, notes=item.notes,
+def public(item, selected_id=None, selection_token=None, visible=False):
+    return AppUpdatePublic(id=item.id, title=item.title, version=item.version, kind=item.kind, notes=item.notes,
         notes_html=updates.markdown(item.notes), source=item.source, source_repository=item.source_repository,
         source_release_id=item.source_release_id, source_release_url=item.source_release_url,
         download_destination=item.download_destination, download_url=item.download_url,
         created_by_username=item.created_by_username, created_at=item.created_at.isoformat() + "Z",
         selected=item.id == selected_id,
+        visible=item.id == selected_id and visible,
         selection_token=selection_token if item.id == selected_id else None)
 
 
@@ -65,7 +67,7 @@ def _automatic_release(update_id, actor, db):
         raise HTTPException(422, str(error))
     except requests.RequestException:
         raise HTTPException(502, "Não foi possível consultar as releases do GitHub.")
-    item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), notes=content["notes"],
+    item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), kind="update", notes=content["notes"],
         source="github", source_repository=repository, source_release_id=release_id,
         source_release_url=content["url"], download_destination="github",
         download_url=releases.release_url(content["version"]),
@@ -79,15 +81,15 @@ def _automatic_release(update_id, actor, db):
 def feed(db: Session = Depends(get_db), offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
     if offset:
         return []
-    item, token = _selection(db)
-    return [public(item, item.id, token)] if item else []
+    item, token, visible = _selection(db)
+    return [public(item, item.id, token, True)] if item and visible else []
 
 
 @router.get("/api/moderators/updates", response_model=list[AppUpdatePublic])
 def history(actor: User = Depends(require_moderator), db: Session = Depends(get_db), offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
-    selected, token = _selection(db)
+    selected, token, visible = _selection(db)
     selected_id = selected.id if selected else None
-    return [public(item, selected_id, token) for item in db.scalars(
+    return [public(item, selected_id, token, visible) for item in db.scalars(
         select(AppUpdate).order_by(AppUpdate.created_at.desc(), AppUpdate.id).offset(offset).limit(limit))]
 
 
@@ -113,7 +115,7 @@ def preview(payload: AppUpdatePreview, actor: User = Depends(require_moderator))
 
 @router.post("/api/moderators/updates", response_model=AppUpdatePublic, status_code=201)
 def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), db: Session = Depends(get_db)):
-    content = {"title": payload.title, "version": payload.version, "notes": payload.notes, "url": None}
+    content = {"title": payload.title, "version": payload.version or "0.0.0", "notes": payload.notes, "url": None}
     if payload.source == "github":
         try:
             content = updates.imported(payload.repository, payload.release_id)
@@ -126,7 +128,7 @@ def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), 
         url = releases.SITE_DOWNLOAD_URL
     elif payload.download_destination == "github":
         url = releases.release_url(content["version"])
-    item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), notes=content["notes"],
+    item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), kind=payload.kind, notes=content["notes"],
         source=payload.source, source_repository=payload.repository, source_release_id=payload.release_id,
         source_release_url=content["url"], download_destination=payload.download_destination, download_url=url,
         created_by_user_id=actor.id, created_by_username=actor.username)
@@ -134,8 +136,8 @@ def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), 
     db.flush()
     _select(db, item)
     audit.record(db, actor, "app_update_published", details=f"atualização {item.id}, {item.version}, {item.source}, {item.download_destination or 'none'}")
-    _, token = _selection(db)
-    return public(item, item.id, token)
+    _, token, _ = _selection(db)
+    return public(item, item.id, token, True)
 
 
 @router.put("/api/moderators/updates/{update_id}/selection", response_model=AppUpdatePublic)
@@ -146,4 +148,24 @@ def select_for_apps(update_id: str, actor: User = Depends(require_moderator), db
     selection = _select(db, item)
     audit.record(db, actor, "app_update_selected", details=f"atualização {item.id}, {item.version}")
     token = f"{item.id}:{selection.selected_at.isoformat()}Z"
-    return public(item, item.id, token)
+    return public(item, item.id, token, True)
+
+
+@router.put("/api/moderators/updates/{update_id}/visibility", response_model=AppUpdatePublic)
+def set_visibility(update_id: str, payload: AppUpdateVisibility, actor: User = Depends(require_moderator), db: Session = Depends(get_db)):
+    item = _automatic_release(update_id, actor, db) or db.get(AppUpdate, update_id)
+    if item is None:
+        raise HTTPException(404, "Atualização não encontrada.")
+    selection = db.get(AppUpdateSelection, 1)
+    if payload.visible:
+        selection = _select(db, item)
+    elif selection is None or selection.update_id != item.id:
+        raise HTTPException(409, "Esta mensagem não está sendo exibida.")
+    else:
+        selection.visible = False
+        selection.selected_at = _now()
+        db.flush()
+    action = "app_update_shown" if payload.visible else "app_update_hidden"
+    audit.record(db, actor, action, details=f"mensagem {item.id}, {item.kind}, {item.version}")
+    token = f"{item.id}:{selection.selected_at.isoformat()}Z"
+    return public(item, item.id, token, selection.visible)

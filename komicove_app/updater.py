@@ -19,7 +19,7 @@ def deduplicate(items):
     for item in items:
         if releases.version_key(item.get("version")) is None:
             continue
-        key = releases.version_id(item["version"])
+        key = ("announcement:" + str(item.get("id"))) if item.get("kind") == "announcement" else releases.version_id(item["version"])
         previous = selected.get(key)
         priority = (item.get("source") == "panel", item.get("created_at") or "")
         if previous is None or priority > (previous.get("source") == "panel", previous.get("created_at") or ""):
@@ -59,8 +59,7 @@ def fetch():
             if not isinstance(rows, list):
                 raise ValueError("Invalid update feed")
             selected = [dict(row, source="panel", origin=row.get("source"), url=row.get("download_url")) for row in rows]
-            if selected:
-                items = selected
+            items = selected
             succeeded += 1
     except (requests.RequestException, ValueError, TypeError, AttributeError) as error:
         errors.append(error)
@@ -78,8 +77,17 @@ def message_id(data):
     return data.get("selection_token") or data.get("id")
 
 
-def check(seen_messages=None):
-    return next((data for data in fetch() if is_newer(data)
+def download_id(data):
+    return releases.version_id(data.get("version")) if data.get("kind") != "announcement" else None
+
+
+def visible(items, downloaded_versions=None):
+    downloaded = set(downloaded_versions or [])
+    return [data for data in items if download_id(data) not in downloaded]
+
+
+def check(seen_messages=None, downloaded_versions=None):
+    return next((data for data in visible(fetch(), downloaded_versions) if is_newer(data)
         or (seen_messages is not None and data.get("source") == "panel"
             and message_id(data) not in seen_messages and releases.compatible(data["version"], CURRENT_VERSION))), None)
 

@@ -899,27 +899,37 @@ class LibraryWindow(tk.Tk):
         if getattr(self, "_update_check_started", False): return
         self._update_check_started = True
         from komicove_app.account_views import _run_async
-        _run_async(self, lambda: updater.check(load_prefs().get("update_seen_messages", [])),
+        _run_async(self, lambda: updater.check(load_prefs().get("update_seen_messages", []), load_prefs().get("update_downloaded_versions", [])),
             lambda result, error: self._show_update_notice(result) if result and not error else None)
 
     def _release_notes(self, data):
         return updater.plain_notes(data.get("notes")) or ui('Sem notas publicadas.', 'No release notes published.')
 
+    def _update_version_label(self, data):
+        return ui('Anúncio', 'Announcement') if data.get("kind") == "announcement" else data.get("version", "")
+
+    def _download_update(self, data):
+        download_id = updater.download_id(data)
+        if download_id:
+            downloaded = list(dict.fromkeys(load_prefs().get("update_downloaded_versions", []) + [download_id]))[-100:]
+            save_prefs(update_downloaded_versions=downloaded)
+        webbrowser.open(updater.safe_url(data.get("url")))
+
     def _show_update_notice(self, data):
         if getattr(self, "_update_notice", None) and self._update_notice.winfo_exists(): return
         dialog=tk.Toplevel(self); self._update_notice=dialog
-        dialog.title(ui('Atualização disponível', 'Update available') if updater.is_newer(data) else ui('Mensagem de atualização', 'Update message')); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
+        dialog.title(ui('Anúncio', 'Announcement') if data.get("kind") == "announcement" else ui('Atualização disponível', 'Update available') if updater.is_newer(data) else ui('Mensagem de atualização', 'Update message')); dialog.configure(bg=THEME["bg"]); dialog.resizable(False,False)
         dialog.transient(self); dialog.attributes("-topmost", True)
         card=tk.Frame(dialog,bg=THEME["surface"],highlightthickness=1,highlightbackground=THEME["accent"]); card.pack(padx=2,pady=2)
         tk.Label(card,text=data.get("title") or f"Komicove {data['version']}",font=FTITLE,bg=THEME["surface"],fg=THEME["text"],wraplength=390).pack(anchor="w",padx=22,pady=(18,4))
-        tk.Label(card,text=f"{data['version']} · {updater.display_date(data.get('created_at'))}",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=22,pady=(0,8))
+        tk.Label(card,text=f"{self._update_version_label(data)} · {updater.display_date(data.get('created_at'))}",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"]).pack(anchor="w",padx=22,pady=(0,8))
         notes=self._release_notes(data)
         summary=notes.split("\n\n",1)[0][:220]
         tk.Label(card,text=summary,font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=390,justify="left").pack(anchor="w",padx=22,pady=(0,14))
         actions=tk.Frame(card,bg=THEME["surface"]);actions.pack(fill="x",padx=18,pady=(0,16))
         make_pill(actions,ui("Depois", "Later"),dialog.destroy,variant="soft",font=FSMALL).pack(side="right")
         if data.get("url"):
-            make_pill(actions,ui('Baixar', 'Download'),lambda:webbrowser.open(updater.safe_url(data.get("url"))),variant="accent",font=FSMALL).pack(side="right",padx=7)
+            make_pill(actions,ui('Baixar', 'Download'),lambda:self._download_update(data),variant="accent",font=FSMALL).pack(side="right",padx=7)
         if data.get("source") == "panel":
             save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [updater.message_id(data)]))[-100:])
         make_pill(actions,ui('Ver novidades', "See what's new"),lambda:self._open_update_details(data),variant="ghost",font=FSMALL).pack(side="left")
@@ -1143,22 +1153,23 @@ class LibraryWindow(tk.Tk):
             data = items[selection.current()]
             if data.get("source") == "panel":
                 save_prefs(update_seen_messages=list(dict.fromkeys(load_prefs().get("update_seen_messages", []) + [updater.message_id(data)]))[-100:])
-            status.config(text=(ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}")
+            status.config(text=(ui("Anúncio", "Announcement") if data.get("kind") == "announcement" else ui(f"Nova versão disponível: {data['version']}", f"New version available: {data['version']}")
                 if updater.is_newer(data) else ui("Mensagem de atualização", "Update message")), fg=THEME["read_badge_text"])
-            date_label.config(text=f"{data['version']} · {updater.display_date(data.get('created_at'))}")
+            date_label.config(text=f"{self._update_version_label(data)} · {updater.display_date(data.get('created_at'))}")
             notes.configure(state="normal"); notes.delete("1.0", "end"); notes.insert("1.0", self._release_notes(data)); notes.configure(state="disabled")
             download.pack_forget()
             if data.get("url"):
-                download.command = lambda: webbrowser.open(updater.safe_url(data["url"]))
+                download.command = lambda: self._download_update(data)
                 download.pack(side="right", padx=8)
         def done(items, error):
             if error and initial_data:
                 items = [initial_data]
             elif error:
                 status.config(text=ui('Não foi possível verificar agora. A leitura local continua disponível.', 'Could not check right now. Local reading remains available.'),fg=THEME["accent2"]); return
+            items = updater.visible(items, load_prefs().get("update_downloaded_versions", []))
             if not items:
                 status.config(text=ui('Você já está usando a versão mais recente.', 'You are already using the latest version.'),fg=THEME["read_badge_text"]); return
-            selection.configure(values=[f"{data['title']} ({data['version']})" for data in items])
+            selection.configure(values=[f"{data['title']} ({self._update_version_label(data)})" for data in items])
             selection.current(0)
             selection.bind("<<ComboboxSelected>>", lambda event: selected(items))
             selected(items)
