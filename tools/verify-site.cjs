@@ -42,6 +42,7 @@ for (const [file, html] of Object.entries(htmlByPage)) {
   assert.match(html, /class="brand-official" src="assets\/logo\.png"/, `Missing official logo in ${file}`);
   assert.match(html, /href="apoie\.html"/, `Missing support link in ${file}`);
   assert.match(html, /href="mobile\.css\?v=\d+"/, `Missing phone layout in ${file}`);
+  assert.match(html, /fonts\.googleapis\.com\/css2\?family=Barlow\+Condensed/, `Missing shared typography in ${file}`);
 }
 
 const indexHtml = htmlByPage['index.html'];
