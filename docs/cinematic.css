@@ -102,6 +102,28 @@ html[data-theme='dark'] .support-spotlight{background:#38282a;color:#fff}html[da
 @media(max-width:600px){.journey-float{right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom))}.journey-float-toggle{width:58px;height:58px}.journey-float-panel{bottom:calc(100% + 10px)}}
 @media(prefers-reduced-motion:reduce){.journey-float,.journey-float-toggle,.journey-float-bars span,.journey-float-panel{animation:none!important;transition:none!important}}
 
+/* A compact bottom dock keeps the main paths close without repeating a full section. */
+.journey-float{right:auto;bottom:max(22px,env(safe-area-inset-bottom));left:50%;transform:translate(-50%,34px) scale(.94);transform-origin:bottom center}
+.journey-float.is-visible{transform:translate(-50%,0) scale(1)}
+.journey-dock{display:flex;align-items:stretch;gap:5px;padding:5px;border:1px solid #ffffff2c;border-radius:16px;background:#17191ee8;box-shadow:0 18px 45px #0006;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.journey-dock a,.journey-dock button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:48px;padding:0 17px;border:1px solid transparent;border-radius:11px;color:#ececef;font:800 .75rem/1 'DM Sans',Arial,sans-serif;letter-spacing:-.01em;text-decoration:none;white-space:nowrap;transition:background .2s,border-color .2s,color .2s,transform .2s}
+.journey-dock button{cursor:pointer}
+.journey-dock a:hover,.journey-dock a:focus-visible,.journey-dock a.is-active,.journey-dock button:hover,.journey-dock button:focus-visible{border-color:#ffffff1d;background:#2b2e34;color:#fff;transform:translateY(-2px)}
+.journey-dock a:focus-visible,.journey-dock button:focus-visible{outline:2px solid #ff767b;outline-offset:2px}
+.journey-dock .journey-dock-brand{width:48px;padding:0;background:#f2efea}
+.journey-dock-brand img{display:block;width:32px;height:32px;object-fit:contain}
+.journey-dock .journey-dock-support{background:#f1efec;color:#17191e}
+.journey-dock .journey-dock-support:hover,.journey-dock .journey-dock-support:focus-visible{background:#fff;color:#b9252f}
+.journey-dock-support span:last-child{color:#d93540}
+
+@media(max-width:600px){
+  .journey-float{right:auto;bottom:max(10px,env(safe-area-inset-bottom));left:50%;width:calc(100% - 20px)}
+  .journey-dock{width:100%;gap:3px;padding:4px;border-radius:14px}
+  .journey-dock a,.journey-dock button{flex:1;min-width:0;min-height:46px;padding:0 7px;font-size:.67rem}
+  .journey-dock .journey-dock-brand{flex:0 0 45px;width:45px}
+  .journey-dock .journey-dock-support span:last-child{display:none}
+}
+
 /* Two real-app previews share an editorial stage; Android leads on narrow screens. */
 .demo-feature{margin:0 0 68px;border-top:1px solid #ffffff55}
 .demo-topline{display:flex;justify-content:space-between;gap:22px;padding:16px 0;color:#c9cbd0;font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}

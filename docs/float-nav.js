@@ -1,67 +1,46 @@
-// Keep the quick paths available after their full section scrolls away.
+// Reveal a compact navigation dock after the opening screen leaves view.
 (() => {
-  const section = document.querySelector('.journey-index');
   const root = document.querySelector('.journey-float');
-  if (!section || !root) return;
+  const hero = document.querySelector('.cinematic-hero');
+  if (!root || !hero) return;
 
-  const button = root.querySelector('.journey-float-toggle');
-  const panel = root.querySelector('.journey-float-panel');
+  const links = [...root.querySelectorAll('a[href^="#"]')];
+  const sections = links
+    .map(link => ({link, section: document.querySelector(link.getAttribute('href'))}))
+    .filter(item => item.section);
   let framePending = false;
 
-  function syncLabels() {
-    const language = document.documentElement.lang === 'pt-BR' ? 'pt-BR' : 'en';
-    const key = button.getAttribute('aria-expanded') === 'true' ? 'journey.floatClose' : 'journey.floatOpen';
-    const label = window.KOMICOVE_MESSAGES[language][key];
-    button.setAttribute('aria-label', label);
-    button.setAttribute('title', label);
-  }
-
-  function setOpen(open) {
-    const next = open && root.classList.contains('is-visible');
-    panel.hidden = !next;
-    button.setAttribute('aria-expanded', String(next));
-    root.classList.toggle('is-open', next);
-    syncLabels();
-  }
-
-  function updateVisibility() {
-    const visible = section.getBoundingClientRect().bottom <= 96;
-    if (!visible) setOpen(false);
+  function update() {
+    const visible = hero.getBoundingClientRect().bottom <= 120;
     root.classList.toggle('is-visible', visible);
     root.inert = !visible;
-    button.tabIndex = visible ? 0 : -1;
+
+    if (!visible) return;
+    const marker = Math.min(innerHeight * .42, 360);
+    let current = sections[0];
+    for (const item of sections) {
+      if (item.section.getBoundingClientRect().top <= marker) current = item;
+    }
+    for (const item of sections) {
+      const active = item === current;
+      item.link.classList.toggle('is-active', active);
+      if (active) item.link.setAttribute('aria-current', 'location');
+      else item.link.removeAttribute('aria-current');
+    }
   }
 
-  function scheduleVisibility() {
+  function schedule() {
     if (framePending) return;
     framePending = true;
     requestAnimationFrame(() => {
       framePending = false;
-      updateVisibility();
+      update();
     });
   }
 
-  button.addEventListener('click', event => {
-    const opening = button.getAttribute('aria-expanded') !== 'true';
-    setOpen(opening);
-    if (opening && event.detail === 0) panel.querySelector('a')?.focus();
-  });
-  panel.addEventListener('click', event => {
-    if (event.target.closest('a')) setOpen(false);
-  });
-  document.addEventListener('pointerdown', event => {
-    if (!root.contains(event.target)) setOpen(false);
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || button.getAttribute('aria-expanded') !== 'true') return;
-    setOpen(false);
-    button.focus();
-  });
-  window.addEventListener('scroll', scheduleVisibility, {passive: true});
-  window.addEventListener('resize', scheduleVisibility);
-  window.addEventListener('pageshow', scheduleVisibility);
-  window.KomicoveFloat = {syncLabels};
-  syncLabels();
-  updateVisibility();
-  requestAnimationFrame(updateVisibility);
+  addEventListener('scroll', schedule, {passive: true});
+  addEventListener('resize', schedule);
+  addEventListener('pageshow', schedule);
+  update();
+  requestAnimationFrame(update);
 })();
