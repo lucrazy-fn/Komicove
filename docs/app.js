@@ -109,13 +109,13 @@ if ('IntersectionObserver' in window && !reduced.matches && Element.prototype.an
     const isHeading = element.matches('.section-heading, .guide-hero-grid');
     const direction = element.matches('.journey-grid a:nth-child(even), .download-card:nth-child(even)') ? -1 : 1;
     const from = isVisual
-      ? {opacity: .08, clipPath: 'inset(0 22% 0 0)', transform: 'translateX(40px)'}
-      : {opacity: .05, clipPath: 'inset(0 0 30% 0)', transform: `translate3d(${isHeading ? 0 : 30 * direction}px, ${isHeading ? 48 : 34}px, 0)`};
+      ? {opacity: .08, clipPath: 'inset(0 22% 0 0)', transform: 'translateX(40px)', filter: 'blur(3px)'}
+      : {opacity: .05, clipPath: 'inset(0 0 30% 0)', transform: `translate3d(${isHeading ? 0 : 30 * direction}px, ${isHeading ? 48 : 34}px, 0)`, filter: `blur(${isHeading ? 15 : 5}px)`};
     const to = isVisual
-      ? {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none'}
-      : {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none'};
+      ? {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none', filter: 'blur(0)'}
+      : {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none', filter: 'blur(0)'};
     playAssembly(element, [from, to], {
-      duration: isVisual ? 720 : 610,
+      duration: isVisual ? 780 : (isHeading ? 760 : 650),
       delay,
       easing: 'cubic-bezier(.16, 1, .3, 1)'
     });
