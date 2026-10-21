@@ -62,7 +62,7 @@ assert.ok(indexHtml.indexOf('id="community"') < indexHtml.indexOf('id="novidades
 assert.ok(indexHtml.indexOf('class="support-spotlight"') < indexHtml.indexOf('id="faq"'), 'Support should precede the final help section');
 assert.match(indexHtml, /class="hero cinematic-hero"/, 'Missing cinematic cover');
 assert.match(indexHtml, /class="hero-scene"/, 'Missing cover artwork');
-assert.match(indexHtml, /class="button mobile-android-link"[^>]*Komicove-Android-0\.2\.1\.1\.apk/, 'Missing direct phone download in the cover');
+assert.match(indexHtml, /class="button mobile-android-link"[^>]*Komicove-Android-0\.2\.2\.apk/, 'Missing direct phone download in the cover');
 assert.match(indexHtml, /<video id="product-demo"[^>]*controls muted loop playsinline/, 'Missing accessible product video');
 assert.match(indexHtml, /<video id="android-demo"[^>]*controls muted loop playsinline/, 'Missing accessible Android video');
 assert.match(indexHtml, /id="android-demo-play"[^>]*aria-controls="android-demo"/, 'Missing Android play control');
@@ -83,7 +83,7 @@ const downloadHtml = htmlByPage['download.html'];
 for (const file of ['index.html', 'download.html']) {
   const html = htmlByPage[file];
   assert.match(html, /data-download-picker/, `Missing version picker with no-JavaScript fallback in ${file}`);
-  assert.match(html, /data-download-current>v0\.2\.1\.1/, `Missing static latest release in ${file}`);
+  assert.match(html, /data-download-current>v0\.2\.2/, `Missing static latest release in ${file}`);
   assert.match(html, /data-download-options/, `Missing release options in ${file}`);
   assert.match(html, /src="download-versions\.js\?v=\d+"/, `Missing release selector logic in ${file}`);
   assert.match(html, /href="download-versions\.css\?v=\d+"/, `Missing release selector styles in ${file}`);
@@ -100,8 +100,8 @@ for (const id of ['tutorial-android', 'tutorial-desktop', 'tutorial-reader', 'tu
 }
 assert.match(docsHtml, /data-i18n="docs\.backupNote"/, 'Docs must explain that comic files are not backed up');
 assert.match(supportHtml, /data-i18n="supportPage\.costAmount"/, 'Support page must show the known annual domain cost');
-for (const asset of ['Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip', 'Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Linux-0.2.1.1-x86_64.flatpak', 'Komicove-Android-0.2.1.1.apk']) {
-  assert.ok(downloadHtml.includes(`releases/download/v0.2.1.1/${asset}`), `Missing download page package: ${asset}`);
+for (const asset of ['Komicove-Setup-0.2.2.exe', 'Komicove-Windows-0.2.2-portable.zip', 'Komicove-Linux-0.2.2-x86_64.tar.gz', 'Komicove-Linux-0.2.2-x86_64.flatpak', 'Komicove-Android-0.2.2.apk']) {
+  assert.ok(downloadHtml.includes(`releases/download/v0.2.2/${asset}`), `Missing download page package: ${asset}`);
 }
 for (const id of ['get-android', 'get-windows', 'get-linux', 'before-install']) assert.ok(downloadHtml.includes(`id="${id}"`));
 for (const file of ['docs.html', 'tutoriais.html', 'download.html']) {
@@ -122,13 +122,13 @@ assert.match(indexHtml, /id="support-dialog"/, 'Missing existing Pix dialog');
 assert.ok(indexHtml.includes('class="wrap footer-grid"'), 'Missing footer navigation');
 
 for (const asset of [
-  'Komicove-Setup-0.2.1.1.exe',
-  'Komicove-Windows-0.2.1.1-portable.zip',
-  'Komicove-Linux-0.2.1.1-x86_64.tar.gz',
-  'Komicove-Linux-0.2.1.1-x86_64.flatpak',
-  'Komicove-Android-0.2.1.1.apk'
+  'Komicove-Setup-0.2.2.exe',
+  'Komicove-Windows-0.2.2-portable.zip',
+  'Komicove-Linux-0.2.2-x86_64.tar.gz',
+  'Komicove-Linux-0.2.2-x86_64.flatpak',
+  'Komicove-Android-0.2.2.apk'
 ]) {
-  assert.ok(indexHtml.includes(`releases/download/v0.2.1.1/${asset}`), `Missing direct download: ${asset}`);
+  assert.ok(indexHtml.includes(`releases/download/v0.2.2/${asset}`), `Missing direct download: ${asset}`);
 }
 
 const screenshots = {

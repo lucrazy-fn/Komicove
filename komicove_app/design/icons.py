@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageTk
 
 
-_ROOT = Path(__file__).resolve().parents[2]
+def _resource_root() -> Path:
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        return Path(frozen_root)
+    if Path("/.flatpak-info").exists():
+        return Path("/app")
+    return Path(__file__).resolve().parents[2]
+
+
+_ROOT = _resource_root()
 _GENERATED = _ROOT / "assets_redesign" / "icons" / "generated"
 _CACHE: dict[tuple[str, int, str, bool], ImageTk.PhotoImage] = {}
 

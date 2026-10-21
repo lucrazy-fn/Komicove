@@ -8,13 +8,13 @@
 
 Leitor de quadrinhos gratuito e de código aberto para Windows, Linux e Android. Organize sua coleção, acompanhe seu progresso e leia seus arquivos locais sem conta ou internet.
 
-<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.1.1</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.1.1</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.1.1</strong> · Licença MIT</p>
+<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.2</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.2</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.2</strong> · Licença MIT</p>
 
 [Site](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Projeto em desenvolvimento. Os recursos descritos correspondem ao código atual; versões antigas podem não incluí-los.
 
-## Versão mais recente: 0.2.1.1
+## Versão mais recente: 0.2.2
 
 Esta revisão melhora o controle de brilho durante a leitura no Windows, Linux e Android.
 
@@ -26,9 +26,9 @@ Esta revisão melhora o controle de brilho durante a leitura no Windows, Linux e
 - O controle manual fica claramente desativado enquanto o brilho do sistema está selecionado.
 - A troca do modo de brilho preserva todas as outras preferências do leitor.
 - No Android, cancelar a prévia das preferências restaura a configuração de brilho salva.
-- O atualizador agora reconhece versões com quatro números, como `0.2.1.1`.
+- O atualizador agora reconhece versões com quatro números, como `0.2.2`.
 
-A versão 0.2.1.1 está disponível como instalador e pacote portátil para Windows, pacotes `tar.gz` e Flatpak para Linux e APK universal para Android.
+A versão 0.2.2 está disponível como instalador e pacote portátil para Windows, pacotes `tar.gz` e Flatpak para Linux e APK universal para Android.
 
 ## Conheça a interface
 

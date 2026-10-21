@@ -18,7 +18,7 @@ Existing technical documentation, release notes, and image assets are retained.
 - `translations.js`: shared English and Brazilian Portuguese messages.
 - `theme.js`: system theme detection, saved theme choice, theme controls, and tab synchronization.
 - `app.js`: translation, saved language preference, grouped mobile navigation, gallery tabs, image fallback, dialog, and FAQ interactions.
-- `novidades.html`: short bilingual release page for version 0.2.1.1.
+- `novidades.html`: short bilingual release page for version 0.2.2.
 - `news.js`: language handling for the release page.
 - `docs.html`, `tutoriais.html`, `download.html`, and `apoie.html`: device guides, six complete text tutorials ready for future videos, an official package download index, and support information with Pix and the known annual domain cost.
 - `GRAVACOES_TUTORIAIS.md`: the creator's two-day recording checklist for site review and tutorial footage.

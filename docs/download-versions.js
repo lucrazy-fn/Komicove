@@ -5,6 +5,7 @@
   const cacheKey = 'komicove.site.releaseCatalog.v2';
   const choiceKey = 'komicove.site.downloadVersion';
   const fallbackFiles = {
+    'v0.2.2': ['Komicove-Android-0.2.2.apk', 'Komicove-Linux-0.2.2-x86_64.flatpak', 'Komicove-Linux-0.2.2-x86_64.tar.gz', 'Komicove-Setup-0.2.2.exe', 'Komicove-Windows-0.2.2-portable.zip'],
     'v0.2.1.1': ['Komicove-Android-0.2.1.1.apk', 'Komicove-Linux-0.2.1.1-x86_64.flatpak', 'Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
     'v0.2.1': ['Komicove-Android-0.2.1.apk', 'Komicove-Linux-0.2.1-x86_64.flatpak', 'Komicove-Linux-0.2.1-x86_64.tar.gz', 'Komicove-Setup-0.2.1.exe', 'Komicove-Windows-0.2.1-portable.zip'],
     'v0.2.0': ['Komicove-Android-0.2.0.apk', 'Komicove-Linux-0.2.0-x86_64.flatpak', 'Komicove-Linux-0.2.0-x86_64.tar.gz', 'Komicove-Setup-0.2.0.exe'],
@@ -135,14 +136,14 @@
     });
     document.querySelectorAll('[data-download-older-note]').forEach(node => {
       node.textContent = t('downloads.olderNote');
-      node.hidden = release.tag === 'v0.2.1.1';
+      node.hidden = release.tag === 'v0.2.2';
     });
     document.querySelectorAll('[data-download-release-link]').forEach(link => {
       link.href = release.url;
       link.textContent = t('downloads.release');
     });
     document.querySelectorAll('[data-download-notes-link]').forEach(link => {
-      link.href = release.tag === 'v0.2.1.1' ? 'novidades.html' : release.url;
+      link.href = release.tag === 'v0.2.2' ? 'novidades.html' : release.url;
     });
     document.querySelectorAll('[data-download-asset]').forEach(link => {
       const asset = assets[link.dataset.downloadAsset];

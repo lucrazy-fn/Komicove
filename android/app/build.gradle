@@ -11,8 +11,8 @@ android {
         applicationId 'com.lucrazy.panel'
         minSdk 26
         targetSdk 36
-        versionCode 10722
-        versionName '0.2.1.1'
+        versionCode 10723
+        versionName '0.2.2'
         manifestPlaceholders = [appLabel: 'Komicove']
         testInstrumentationRunner providers.gradleProperty('fullscreenTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderFullscreenInstrumentation' : providers.gradleProperty('authLanguageTest').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.AuthLanguageInstrumentation' : providers.gradleProperty('phase4Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.ReaderPhase4Instrumentation' : providers.gradleProperty('phase2Test').getOrElse('false').toBoolean() ? 'com.lucrazy.komicove.FolderPhase2Instrumentation' : 'com.lucrazy.komicove.ReaderPhase1Instrumentation'
     }
@@ -55,6 +55,9 @@ android {
             }
         }
         release {
+            // One APK for physical Android phones and tablets. Emulator-only x86
+            // binaries nearly double the package without helping real devices.
+            ndk.abiFilters.addAll(['arm64-v8a', 'armeabi-v7a'])
             minifyEnabled false
             if (releaseSigning.values().every { it }) signingConfig signingConfigs.release
         }

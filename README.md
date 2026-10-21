@@ -8,13 +8,13 @@
 
 A free, open-source comic book reader for Windows, Linux, and Android. Organize your collection, track your progress, and read your local files with no account and no internet connection.
 
-<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.1.1</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.1.1</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.1.1</strong> · MIT License</p>
+<p><img src="docs/assets/windows-10.svg" width="18" alt=""> <strong>Windows 0.2.2</strong> · <img src="docs/assets/android.svg" width="18" alt=""> <strong>Android 0.2.2</strong> · <img src="docs/assets/linux-tux.svg" width="18" alt=""> <strong>Linux 0.2.2</strong> · MIT License</p>
 
 [Website](https://lucrazy-fn.github.io/PANEL-ComicBookReader/) · [Downloads](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Issues](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
 > Work in progress. The features described here match the current code; older versions may not include them.
 
-## Latest version: 0.2.1.1
+## Latest version: 0.2.2
 
 This revision improves brightness control while reading on Windows, Linux, and Android.
 
@@ -26,9 +26,9 @@ This revision improves brightness control while reading on Windows, Linux, and A
 - The manual control is clearly disabled while system brightness is selected.
 - Switching brightness modes preserves every other reader preference.
 - On Android, cancelling the preferences preview restores the saved brightness setting.
-- The update checker now recognizes four-component versions such as `0.2.1.1`.
+- The update checker now recognizes four-component versions such as `0.2.2`.
 
-Version 0.2.1.1 is available as a Windows installer and portable package, Linux `tar.gz` and Flatpak packages, and a universal Android APK.
+Version 0.2.2 is available as a Windows installer and portable package, Linux `tar.gz` and Flatpak packages, and a universal Android APK.
 
 ## Take a look at the interface
 
