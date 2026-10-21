@@ -49,26 +49,35 @@ def public(item, selected_id=None, selection_token=None, visible=False):
 
 def _automatic_release(update_id, actor, db):
     match = re.fullmatch(r"auto-(\d+)-(\d+)", update_id)
-    if match is None:
+    tag_match = re.fullmatch(r"auto-tag-(\d+)-(.+)", update_id)
+    if match is None and tag_match is None:
         return None
-    repository_index, release_id = (int(value) for value in match.groups())
-    if repository_index >= len(releases.REPOSITORIES) or release_id <= 0 or release_id > 2**63 - 1:
+    repository_index = int((match or tag_match).group(1))
+    release_id = int(match.group(2)) if match else None
+    release_tag = tag_match.group(2) if tag_match else None
+    if (repository_index >= len(releases.REPOSITORIES) or
+            (release_id is not None and (release_id <= 0 or release_id > 2**63 - 1)) or
+            (release_tag is not None and releases.version_key(release_tag) is None)):
         raise HTTPException(404, "Atualização não encontrada.")
     repository = releases.REPOSITORIES[repository_index]
-    existing = db.scalars(select(AppUpdate).where(
-        AppUpdate.source_repository == repository,
-        AppUpdate.source_release_id == release_id,
-    )).first()
+    query = select(AppUpdate).where(AppUpdate.source_repository == repository)
+    query = query.where(AppUpdate.source_release_id == release_id) if release_id is not None else query.where(
+        AppUpdate.source_release_url == releases.tag_url(repository, release_tag))
+    existing = db.scalars(query).first()
     if existing:
         return existing
     try:
-        content = updates.imported(repository, release_id)
+        content = updates.imported(repository, release_id, release_tag)
     except ValueError as error:
         raise HTTPException(422, str(error))
     except requests.RequestException:
         raise HTTPException(502, "Não foi possível consultar as releases do GitHub.")
+    existing = db.scalars(select(AppUpdate).where(
+        AppUpdate.source == "github", AppUpdate.source_release_url == content["url"])).first()
+    if existing:
+        return existing
     item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), kind="update", notes=content["notes"],
-        source="github", source_repository=repository, source_release_id=release_id,
+        source="github", source_repository=repository, source_release_id=content["release_id"] or release_id,
         source_release_url=content["url"], download_destination="github",
         download_url=releases.release_url(content["version"]),
         created_by_user_id=actor.id, created_by_username=actor.username)
@@ -98,7 +107,7 @@ def releases_list(repository: str, actor: User = Depends(require_moderator), pag
     if repository not in releases.REPOSITORIES:
         raise HTTPException(422, "Repositório não permitido.")
     try:
-        rows = releases.github_get(repository, "?per_page=30" + (f"&page={page}" if page > 1 else "")) or []
+        rows = releases.github_releases(repository, page)
         return [{"id": r["id"], "title": r.get("name") or r.get("tag_name"), "version": r.get("tag_name"),
             "notes": r.get("body") or "", "notes_html": updates.markdown(r.get("body") or ""),
             "url": r.get("html_url"), "created_at": r.get("published_at") or r.get("created_at")}
@@ -118,7 +127,7 @@ def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), 
     content = {"title": payload.title, "version": payload.version or "0.0.0", "notes": payload.notes, "url": None}
     if payload.source == "github":
         try:
-            content = updates.imported(payload.repository, payload.release_id)
+            content = updates.imported(payload.repository, payload.release_id, payload.release_tag)
         except ValueError as error:
             raise HTTPException(422, str(error))
         except requests.RequestException:
@@ -129,7 +138,8 @@ def publish(payload: AppUpdateCreate, actor: User = Depends(require_moderator), 
     elif payload.download_destination == "github":
         url = releases.release_url(content["version"])
     item = AppUpdate(title=content["title"].strip(), version=content["version"].strip(), kind=payload.kind, notes=content["notes"],
-        source=payload.source, source_repository=payload.repository, source_release_id=payload.release_id,
+        source=payload.source, source_repository=payload.repository,
+        source_release_id=content.get("release_id") or payload.release_id,
         source_release_url=content["url"], download_destination=payload.download_destination, download_url=url,
         created_by_user_id=actor.id, created_by_username=actor.username)
     db.add(item)

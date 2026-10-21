@@ -195,6 +195,7 @@ class AppUpdateCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=50000)
     repository: Literal["lucrazy-fn/PANEL-ComicBookReader", "lucrazy-fn/Komicove"] | None = None
     release_id: int | None = Field(default=None, gt=0, le=2**63-1)
+    release_tag: str | None = Field(default=None, min_length=3, max_length=64)
     download_destination: Literal["github", "site"] | None = None
 
     @model_validator(mode="after")
@@ -203,16 +204,20 @@ class AppUpdateCreate(BaseModel):
         if self.kind == "announcement":
             if self.source != "manual" or not self.title or not self.title.strip() or not self.notes or not self.notes.strip():
                 raise ValueError("Informe título e mensagem válidos para o anúncio.")
-            if any(value is not None for value in (self.version, self.repository, self.release_id, self.download_destination)):
+            if any(value is not None for value in (self.version, self.repository, self.release_id, self.release_tag, self.download_destination)):
                 raise ValueError("Anúncios não possuem versão, release ou botão de download.")
             return self
         if self.source == "manual":
             if not self.title or not self.title.strip() or not self.notes or not self.notes.strip() or version_key(self.version) is None:
                 raise ValueError("Informe título, versão e changelog válidos.")
-            if self.repository is not None or self.release_id is not None:
+            if self.repository is not None or self.release_id is not None or self.release_tag is not None:
                 raise ValueError("Mensagem manual não tem release de origem.")
-        elif self.repository is None or self.release_id is None:
+        elif self.repository is None or (self.release_id is None and self.release_tag is None):
             raise ValueError("Selecione o repositório e a release.")
+        elif self.release_id is not None and self.release_tag is not None:
+            raise ValueError("Informe apenas uma referência da release.")
+        elif self.release_tag is not None and version_key(self.release_tag) is None:
+            raise ValueError("Release inválida.")
         elif any(value is not None for value in (self.title, self.version, self.notes)):
             raise ValueError("O conteúdo importado é lido no GitHub pelo servidor.")
         return self

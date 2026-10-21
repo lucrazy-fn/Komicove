@@ -193,6 +193,19 @@ def test_import_is_read_only_and_server_resolves_official_release(backend, monke
         assert client.post('/api/moderators/updates', headers=sessions['admin'], json=dict(payload, **invalid)).status_code == 422
 
 
+def test_import_accepts_official_release_tag_when_api_id_is_unavailable(backend, monkeypatch):
+    client, sessions, _ = backend
+    raw = {'id': None, 'tag_name': 'v0.2.2', 'name': 'Feed fixture', 'body': 'Feed notes',
+        'html_url': 'https://github.com/lucrazy-fn/Komicove/releases/tag/v0.2.2'}
+    monkeypatch.setattr(releases, 'github_release_by_tag', lambda repository, tag: raw)
+    payload = {'source': 'github', 'repository': releases.REPOSITORIES[1],
+        'release_tag': 'v0.2.2', 'download_destination': 'github'}
+    response = client.post('/api/moderators/updates', headers=sessions['moderator'], json=payload)
+    assert response.status_code == 201
+    assert response.json()['title'] == 'Feed fixture'
+    assert response.json()['source_release_id'] is None
+
+
 def test_automatic_github_release_can_be_selected_and_is_persisted(backend, monkeypatch):
     client, sessions, factory = backend
     raw = {'id': 29, 'tag_name': 'v0.2.4', 'name': 'Automatic fixture', 'body': '**Automatic** notes',

@@ -51,14 +51,14 @@ async function loadReleases(more=false){
     const rows=await api(`/api/moderators/releases?repository=${encodeURIComponent(repository)}&page=${page}`);
     if(repository!==$('releaseRepository').value)return;
     releasePage=page;importedReleases=more?importedReleases.concat(rows):rows;
-    $('releaseChoice').replaceChildren(new Option(t('Selecione uma Release'),''),...importedReleases.map(item=>new Option(`${item.title} (${item.version})`,String(item.id))));msg('updateMsg','');
+    $('releaseChoice').replaceChildren(new Option(t('Selecione uma Release'),''),...importedReleases.map(item=>new Option(`${item.title} (${item.version})`,item.version)));msg('updateMsg','');
     if(more)$('releaseChoice').value=selected;
     $('releasesMore').classList.toggle('hidden',rows.length<30);
   }catch(error){msg('updateMsg',error.message,true);}finally{button.disabled=false;$('releasesMore').disabled=false;}
 }
 $('loadReleases').onclick=()=>loadReleases();$('releasesMore').onclick=()=>loadReleases(true);
 $('releaseChoice').onchange=()=>{
-  const release=importedReleases.find(item=>String(item.id)===$('releaseChoice').value);if(!release)return;
+  const release=importedReleases.find(item=>item.version===$('releaseChoice').value);if(!release)return;
   $('updateTitle').value=release.title;$('updateVersion').value=release.version;$('updateNotes').value=release.notes;
   renderDownloadDestination();previewUpdate();
 };
@@ -85,7 +85,7 @@ $('updatePublish').onclick=async()=>{
     } else payload.download_destination=$('updateDestination').value;
     if(payload.source==='github') {
       if(!$('releaseChoice').value)throw Error(t('Selecione uma Release antes de publicar.'));
-      payload.repository=$('releaseRepository').value;payload.release_id=$('releaseChoice').value;
+      payload.repository=$('releaseRepository').value;payload.release_tag=$('releaseChoice').value;
     } else if(payload.kind==='update'){payload.title=$('updateTitle').value;payload.version=$('updateVersion').value;payload.notes=$('updateNotes').value;}
     const created=await api('/api/moderators/updates',{method:'POST',body:JSON.stringify(payload)});
     msg('updateMsg',t('Mensagem publicada nos apps.'));await loadUpdates(created.id);
@@ -106,7 +106,7 @@ function renderUpdateHistory() {
   const stateBadge=item.visible?`<span class="badge update-selected-badge">${t('Exibida nos aplicativos')}</span>`:item.selected?`<span class="badge amber">${t('Oculta nos aplicativos')}</span>`:'';
   const visibilityButton=item.visible?`<button class="btn secondary" data-update-visibility="false">${t('Ocultar dos aplicativos')}</button>`:`<button class="btn" data-update-visibility="true">${t('Exibir nos aplicativos')}</button>`;
   const destination=item.kind==='announcement'?'':`<small>${t('Destino')}: ${t(item.download_destination==='site'?'Site do Komicove':item.download_destination==='github'?'GitHub':'Sem botão Baixar')}</small>`;
-  $('updateRows').innerHTML=`<article class="update-log${item.visible?' selected':''}"><div class="update-log-head"><div><h3>${esc(item.title)}</h3>${versionBadge}${updateIndex===0?`<span class="badge">${t('Mais recente')}</span>`:''}${item.automatic?`<span class="badge">${t('Detectada automaticamente')}</span>`:''}${stateBadge}</div>${visibilityButton}</div>${item.automatic?`<small>${t('Detectada automaticamente')} · GitHub · ${date(item.created_at)}</small>`:`<small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small>`}<small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)} · #${esc(item.source_release_id)}`:''}</small>${destination}${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`;
+  $('updateRows').innerHTML=`<article class="update-log${item.visible?' selected':''}"><div class="update-log-head"><div><h3>${esc(item.title)}</h3>${versionBadge}${updateIndex===0?`<span class="badge">${t('Mais recente')}</span>`:''}${item.automatic?`<span class="badge">${t('Detectada automaticamente')}</span>`:''}${stateBadge}</div>${visibilityButton}</div>${item.automatic?`<small>${t('Detectada automaticamente')} · GitHub · ${date(item.created_at)}</small>`:`<small>${t('por')} @${esc(item.created_by_username)} · ${date(item.created_at)}</small>`}<small>${t(item.source==='github'?'Importada do GitHub':'Manual')}${item.source_repository?` · ${esc(item.source_repository)}${item.source_release_id?` · #${esc(item.source_release_id)}`:''}`:''}</small>${destination}${item.source_release_url?`<a href="${esc(item.source_release_url)}" target="_blank" rel="noopener noreferrer">${t('Release')}</a>`:''}<div class="markdown">${item.notes_html}</div>${item.download_url?`<a class="btn secondary" href="${esc(item.download_url)}" target="_blank" rel="noopener noreferrer">${t('Baixar')}</a>`:''}</article>`;
   const visibility=document.querySelector('[data-update-visibility]');
   if(visibility)visibility.onclick=async()=>{
     visibility.disabled=true;
@@ -130,7 +130,7 @@ async function loadAutomaticUpdates() {
         rows=rows.concat(batch);
       } while(batch.length===30);
     } catch(_error) { return []; }
-    return rows.map(item=>({id:`auto-${repositoryIndex}-${item.id}`,title:item.title,version:item.version,kind:'update',notes:item.notes,
+    return rows.map(item=>({id:item.id?`auto-${repositoryIndex}-${item.id}`:`auto-tag-${repositoryIndex}-${item.version}`,title:item.title,version:item.version,kind:'update',notes:item.notes,
       notes_html:item.notes_html,source:'github',source_repository:repository,source_release_id:item.id,
       source_release_url:item.url,download_destination:'github',download_url:item.url,
       created_by_username:'GitHub',created_at:item.created_at,selected:false,visible:false,selection_token:null,automatic:true}));

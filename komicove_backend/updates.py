@@ -10,11 +10,13 @@ def markdown(notes):
     return parser.render(notes or "")
 
 
-def imported(repository, release_id):
-    raw = releases.github_release(repository, release_id)
+def imported(repository, release_id=None, release_tag=None):
+    raw = (releases.github_release_by_tag(repository, release_tag) if release_tag
+           else releases.github_release(repository, release_id))
     title = raw.get("name") or raw.get("tag_name") or "Komicove"
     version = raw.get("tag_name") or ""
     notes = raw.get("body") or ""
     if releases.version_key(version) is None or len(version) > 64 or len(title) > 150 or len(notes) > 50000:
         raise ValueError("Release incompatível com os limites da mensagem.")
-    return {"title": title, "version": version, "notes": notes, "url": raw["html_url"]}
+    return {"title": title, "version": version, "notes": notes, "url": raw["html_url"],
+        "release_id": raw.get("id") if isinstance(raw.get("id"), int) else None}

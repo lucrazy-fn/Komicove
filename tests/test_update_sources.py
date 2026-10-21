@@ -76,6 +76,31 @@ def test_empty_panel_feed_hides_automatic_github_release(monkeypatch):
     assert updater.fetch() == []
 
 
+def test_release_feed_falls_back_to_github_atom(monkeypatch):
+    raw = release('v0.2.2', releases.REPOSITORIES[1])
+    monkeypatch.setattr(releases, 'github_get', lambda *args: (_ for _ in ()).throw(requests.HTTPError('rate limited')))
+    monkeypatch.setattr(releases, 'github_atom', lambda repository: [raw])
+    assert releases.github_releases(releases.REPOSITORIES[1]) == [raw]
+    assert releases.github_release_by_tag(releases.REPOSITORIES[1], '0.2.2') == raw
+
+
+def test_github_atom_is_parsed_as_safe_release_text(monkeypatch):
+    repository = releases.REPOSITORIES[1]
+    xml = '''<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <updated>2026-10-21T17:37:30Z</updated>
+      <link rel="alternate" href="https://github.com/lucrazy-fn/Komicove/releases/tag/v0.2.2" />
+      <title>Komicove 0.2.2</title><content type="html">&lt;h2&gt;Novidades&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Mais rápido&lt;/li&gt;&lt;/ul&gt;</content>
+    </entry></feed>'''
+    class Response:
+        text = xml
+        def raise_for_status(self): pass
+    monkeypatch.setattr(releases.requests, 'get', lambda *args, **kwargs: Response())
+    rows = releases.github_atom(repository)
+    assert rows[0]['tag_name'] == 'v0.2.2'
+    assert rows[0]['body'] == 'Novidades\n\n- Mais rápido'
+
+
 def test_server_selection_overrides_github_and_reselection_has_a_new_identity(monkeypatch):
     selected={'id':'selected','selection_token':'selected:2','title':'Chosen update','version':'0.2.1.1',
         'notes':'Chosen notes','download_url':None,'source':'manual'}
