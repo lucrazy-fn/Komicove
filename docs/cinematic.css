@@ -141,9 +141,10 @@ html[data-theme='dark'] .support-spotlight{background:#38282a;color:#fff}html[da
 .product-ticker::before,.product-ticker::after{content:'';position:absolute;top:0;bottom:0;z-index:1;width:80px;pointer-events:none}
 .product-ticker::before{left:0;background:linear-gradient(90deg,#111318,transparent)}
 .product-ticker::after{right:0;background:linear-gradient(270deg,#111318,transparent)}
-.product-ticker-track{display:flex;align-items:center;gap:24px;width:max-content;min-height:52px;padding-inline:24px;font:800 .67rem/1 'DM Sans',Arial,sans-serif;letter-spacing:.14em;white-space:nowrap;animation:product-ticker-run 28s linear infinite}
+.product-ticker-track{display:flex;width:max-content;min-height:52px;font:800 .67rem/1 'DM Sans',Arial,sans-serif;letter-spacing:.14em;white-space:nowrap;animation:product-ticker-run 28s linear infinite;will-change:transform;backface-visibility:hidden}
+.product-ticker-group{display:flex;flex:none;align-items:center;gap:24px;padding-right:24px}
 .product-ticker-track b{color:#ff555d;font-size:.75rem}
-@keyframes product-ticker-run{to{transform:translateX(-50%)}}
+@keyframes product-ticker-run{to{transform:translate3d(-50%,0,0)}}
 
 /* The shorter title leaves more room for the artwork and primary actions. */
 .hero h1{max-width:650px;font-size:clamp(4rem,7vw,7rem);line-height:.92}
@@ -151,7 +152,8 @@ html[data-theme='dark'] .support-spotlight{background:#38282a;color:#fff}html[da
 .hero .lead{max-width:520px}
 
 @media(max-width:900px){
-  .product-ticker-track{min-height:46px;gap:19px;animation-duration:23s}
+  .product-ticker-track{min-height:46px;animation-duration:23s}
+  .product-ticker-group{gap:19px;padding-right:19px}
 }
 @media(max-width:600px){
   .hero h1{max-width:9ch;font-size:clamp(3.05rem,13vw,4.45rem)}
