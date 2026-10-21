@@ -3,7 +3,9 @@
   const repository = 'lucrazy-fn/PANEL-ComicBookReader';
   const endpoint = `https://api.github.com/repos/${repository}/releases?per_page=100`;
   const cacheKey = 'komicove.site.releaseCatalog.v2';
-  const choiceKey = 'komicove.site.downloadVersion';
+  // Version the preference key when a release must become the default for everyone.
+  // Existing visitors start on 0.2.2 once, then their next manual choice is remembered.
+  const choiceKey = 'komicove.site.downloadVersion.v022';
   const fallbackFiles = {
     'v0.2.2': ['Komicove-Android-0.2.2.apk', 'Komicove-Linux-0.2.2-x86_64.flatpak', 'Komicove-Linux-0.2.2-x86_64.tar.gz', 'Komicove-Setup-0.2.2.exe', 'Komicove-Windows-0.2.2-portable.zip'],
     'v0.2.1.1': ['Komicove-Android-0.2.1.1.apk', 'Komicove-Linux-0.2.1.1-x86_64.flatpak', 'Komicove-Linux-0.2.1.1-x86_64.tar.gz', 'Komicove-Setup-0.2.1.1.exe', 'Komicove-Windows-0.2.1.1-portable.zip'],
