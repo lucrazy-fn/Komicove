@@ -124,6 +124,41 @@ html[data-theme='dark'] .support-spotlight{background:#38282a;color:#fff}html[da
   .journey-dock .journey-dock-support span:last-child{display:none}
 }
 
+/* A compact product header keeps navigation visible without dominating the page. */
+@media(min-width:901px){
+  .header,.news-page .header{margin-bottom:-68px;border-bottom:1px solid #ffffff18}
+  .nav{min-height:68px;height:68px;gap:24px}
+  .brand-official{width:82px;height:55px}
+  .nav #menu{gap:20px}
+  .nav-primary{gap:20px}
+  .header-support-link{min-height:38px;padding:8px 4px;border:0;border-radius:0;color:#e9e9eb}
+  .header-support-link:hover{border:0;background:transparent;color:#ff777c;transform:none}
+  .header-download{min-height:40px;padding:9px 16px;border-radius:6px;box-shadow:none}
+}
+
+/* A moving index of formats and platforms adds motion without another text section. */
+.product-ticker{position:relative;overflow:hidden;border-top:1px solid #ffffff18;border-bottom:1px solid #ffffff18;background:#111318;color:#d8d9dc}
+.product-ticker::before,.product-ticker::after{content:'';position:absolute;top:0;bottom:0;z-index:1;width:80px;pointer-events:none}
+.product-ticker::before{left:0;background:linear-gradient(90deg,#111318,transparent)}
+.product-ticker::after{right:0;background:linear-gradient(270deg,#111318,transparent)}
+.product-ticker-track{display:flex;align-items:center;gap:24px;width:max-content;min-height:52px;padding-inline:24px;font:800 .67rem/1 'DM Sans',Arial,sans-serif;letter-spacing:.14em;white-space:nowrap;animation:product-ticker-run 28s linear infinite}
+.product-ticker-track b{color:#ff555d;font-size:.75rem}
+@keyframes product-ticker-run{to{transform:translateX(-50%)}}
+
+/* The shorter title leaves more room for the artwork and primary actions. */
+.hero h1{max-width:650px;font-size:clamp(4rem,7vw,7rem);line-height:.92}
+.hero h1>span:last-child{color:#ff555d}
+.hero .lead{max-width:520px}
+
+@media(max-width:900px){
+  .product-ticker-track{min-height:46px;gap:19px;animation-duration:23s}
+}
+@media(max-width:600px){
+  .hero h1{max-width:9ch;font-size:clamp(3.05rem,13vw,4.45rem)}
+  .product-ticker::before,.product-ticker::after{width:38px}
+}
+@media(prefers-reduced-motion:reduce){.product-ticker-track{animation:none}}
+
 /* Two real-app previews share an editorial stage; Android leads on narrow screens. */
 .demo-feature{margin:0 0 68px;border-top:1px solid #ffffff55}
 .demo-topline{display:flex;justify-content:space-between;gap:22px;padding:16px 0;color:#c9cbd0;font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
