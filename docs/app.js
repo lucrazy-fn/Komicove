@@ -92,15 +92,62 @@ document.addEventListener('keydown', e => {
 mobileMenu.addEventListener('change', () => setMenu(false));
 setMenu(false);
 
-if ('IntersectionObserver' in window && !reduced.matches) {
+// Assemble the page as it is read. Content stays visible if scripts or motion are unavailable.
+if ('IntersectionObserver' in window && !reduced.matches && Element.prototype.animate) {
+  const assemblyAnimations = new Set();
+  const playAssembly = (element, frames, options) => {
+    const animation = element.animate(frames, {...options, fill: 'both'});
+    assemblyAnimations.add(animation);
+    animation.addEventListener('finish', () => {
+      animation.cancel();
+      assemblyAnimations.delete(animation);
+    }, {once: true});
+    return animation;
+  };
+  const assemble = (element, delay = 0) => {
+    const isVisual = element.matches('.demo-feature, .gallery, .android-install-preview, .feature.featured');
+    const isHeading = element.matches('.section-heading, .guide-hero-grid');
+    const direction = element.matches('.journey-grid a:nth-child(even), .download-card:nth-child(even)') ? -1 : 1;
+    const from = isVisual
+      ? {opacity: .08, clipPath: 'inset(0 22% 0 0)', transform: 'translateX(40px)'}
+      : {opacity: .05, clipPath: 'inset(0 0 30% 0)', transform: `translate3d(${isHeading ? 0 : 30 * direction}px, ${isHeading ? 48 : 34}px, 0)`};
+    const to = isVisual
+      ? {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none'}
+      : {opacity: 1, clipPath: 'inset(0 0 0 0)', transform: 'none'};
+    playAssembly(element, [from, to], {
+      duration: isVisual ? 720 : 610,
+      delay,
+      easing: 'cubic-bezier(.16, 1, .3, 1)'
+    });
+    element.classList.remove('assembly-pending');
+    element.classList.add('assembled');
+  };
+
+  const hero = document.querySelector('.cinematic-hero');
+
   const observer = new IntersectionObserver(entries => entries.forEach(entry => {
     if (!entry.isIntersecting) return;
-    const siblings = [...entry.target.parentElement.children];
-    const delay = entry.target.classList.contains('feature') ? (siblings.indexOf(entry.target) % 3) * 65 : 0;
-    entry.target.animate([{opacity: .25, transform: 'translateY(22px)'}, {opacity: 1, transform: 'none'}], {duration: 600, delay, easing: 'cubic-bezier(.2,.75,.25,1)'});
-    observer.unobserve(entry.target);
-  }), {threshold: .12});
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    const element = entry.target;
+    const siblings = [...element.parentElement.children];
+    const staggered = element.matches('.feature, .download-card, .journey-grid a, .roadmap-card, .tutorial-row, .guide-step');
+    assemble(element, staggered ? (siblings.indexOf(element) % 4) * 45 : 0);
+    observer.unobserve(element);
+  }), {rootMargin: '0px 0px 60px 0px', threshold: .01});
+  document.querySelectorAll('.reveal, .journey-grid a, .download-card, .guide-chapter, .tutorial-row, .support-use-list article').forEach(element => {
+    if (hero?.contains(element)) return;
+    const bounds = element.getBoundingClientRect();
+    if (bounds.top < innerHeight && bounds.bottom > 0) return;
+    element.classList.add('assembly-pending');
+    observer.observe(element);
+  });
+  reduced.addEventListener('change', () => {
+    if (reduced.matches) {
+      observer.disconnect();
+      document.querySelectorAll('.assembly-pending').forEach(element => element.classList.remove('assembly-pending'));
+      assemblyAnimations.forEach(animation => animation.cancel());
+      assemblyAnimations.clear();
+    }
+  });
 }
 
 const tabs = [...document.querySelectorAll('[data-tab]')];
