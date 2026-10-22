@@ -95,8 +95,6 @@ def download_file(
         path = resolve_asset(asset.stored_name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no armazenamento.") from exc
-    except RemoteStorageError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(path, filename=asset.original_filename, media_type="application/octet-stream")
 
 
@@ -110,8 +108,6 @@ def cover(
     try:
         preview = resolve_cover(asset.stored_name)
         content = preview.read_bytes() if preview is not None else cover_jpeg(resolve_asset(asset.stored_name))
-    except RemoteStorageError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (FileNotFoundError, UnsafeAssetError, OSError) as exc:
         raise HTTPException(status_code=422, detail=f"Não foi possível gerar a capa: {exc}") from exc
     return Response(content=content, media_type="image/jpeg")
@@ -143,7 +139,9 @@ def decide(
             raise HTTPException(409,"Envie o arquivo antes da aprovação.")
         try:
             resolve_asset(asset.stored_name)
-        except (FileNotFoundError, RemoteStorageError, UnsafeAssetError) as exc:
+        except RemoteStorageError:
+            raise
+        except (FileNotFoundError, UnsafeAssetError) as exc:
             raise HTTPException(409,"O arquivo precisa estar disponível para aprovação.") from exc
 
     record.manual_override_status = payload.decision

@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from komicove_backend.db import Base
@@ -46,6 +46,10 @@ class Comic(Base):
 
 class Publication(Base):
     __tablename__ = "publications"
+    __table_args__ = (
+        Index("ix_phase9_publications_status_published", "status", "published_at"),
+        Index("ix_phase9_publications_user_created", "user_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     comic_id: Mapped[str] = mapped_column(ForeignKey("comics.id"), unique=True)
