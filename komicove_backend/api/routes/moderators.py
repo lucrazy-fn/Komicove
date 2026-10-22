@@ -17,6 +17,7 @@ from komicove_backend.catalog.models import Comic, Publication
 
 router = APIRouter(tags=["moderators"])
 _PAGE = Path(__file__).resolve().parents[2] / "web" / "moderators.html"
+_ENTRY_PAGE = _PAGE.parent / "admin.html"
 
 def _public(u: User) -> ManagedUserPublic:
     return ManagedUserPublic(id=u.id, username=u.username, display_name=u.display_name or u.username,
@@ -37,6 +38,10 @@ def _can_manage(actor: User, target: User):
     if target.role == "owner": raise HTTPException(403, "A conta do dono não pode ser alterada.")
     if actor.role == "admin" and target.role == "admin":
         raise HTTPException(403, "Administradores não podem alterar outros administradores.")
+
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+def admin_entry(): return HTMLResponse(_ENTRY_PAGE.read_text(encoding="utf-8"))
 
 @router.get("/moderators", response_class=HTMLResponse, include_in_schema=False)
 def page(): return HTMLResponse(_PAGE.read_text(encoding="utf-8"))

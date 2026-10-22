@@ -304,6 +304,14 @@ def test_incremental_migration_adds_message_kind_and_visibility(tmp_path, monkey
 
 def test_panel_assets_allowlist_and_release_pagination(backend, monkeypatch):
     client, sessions, _ = backend
+    for path in ('/', '/admin'):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert '/moderators' in response.text
+        assert 'Área da equipe' in response.text
+    panel = client.get('/moderators')
+    assert panel.status_code == 200
+    assert 'Essa conta não tem acesso' in panel.text
     for asset in ('moderators-i18n.js','moderators-features.js'):
         response = client.get('/moderators/' + asset)
         assert response.status_code == 200 and 'javascript' in response.headers['content-type']
