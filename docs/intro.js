@@ -26,16 +26,17 @@
 
     intro.classList.add('is-moving');
     const movement = icon.animate([
-      {opacity: 0, transform: 'translate3d(0,0,0) scale(.68)', offset: 0},
-      {opacity: 1, transform: 'translate3d(0,0,0) scale(1)', offset: .18},
-      {opacity: 1, transform: 'translate3d(0,0,0) scale(1)', offset: .61},
+      {opacity: 0, transform: 'translate3d(0,0,0) scale(.7)', offset: 0},
+      {opacity: 0, transform: 'translate3d(0,0,0) scale(.7)', offset: .12},
+      {opacity: 1, transform: 'translate3d(0,0,0) scale(1)', offset: .28},
+      {opacity: 1, transform: 'translate3d(0,0,0) scale(1)', offset: .64},
       {opacity: 1, transform: `translate3d(${dx}px,${dy}px,0) scale(${scale})`, offset: 1}
     ], {
-      duration: 1740,
+      duration: 2200,
       easing: 'cubic-bezier(.76,0,.24,1)',
       fill: 'forwards'
     });
-    movement.finished.then(() => setTimeout(finish, 190), finish);
-    setTimeout(finish, 2300);
+    movement.finished.then(() => setTimeout(finish, 180), finish);
+    setTimeout(finish, 2900);
   }));
 })();
