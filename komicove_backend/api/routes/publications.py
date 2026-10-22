@@ -17,7 +17,7 @@ from komicove_backend.api.schemas import (
 )
 from komicove_backend.catalog import service as catalog
 from komicove_backend.catalog.assets import (
-    UnsafeAssetError, asset_exists, cover_jpeg, delete_remote,
+    RemoteStorageError, UnsafeAssetError, asset_exists, cover_jpeg, delete_remote,
     resolve_asset, resolve_cover, save_cover_preview, save_upload,
 )
 from komicove_backend.catalog.models import Comic, Publication, PublicationAsset
@@ -93,6 +93,8 @@ def content(
         path = resolve_asset(asset.stored_name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no armazenamento.") from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(path, filename=asset.original_filename, media_type="application/octet-stream")
 
 
@@ -105,6 +107,8 @@ def publication_cover(
     asset = _authorized_asset(publication_id, authorization, db)
     try:
         data = _asset_cover(asset)
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (FileNotFoundError, UnsafeAssetError, OSError) as exc:
         raise HTTPException(status_code=422, detail=f"Não foi possível gerar a capa: {exc}") from exc
     return Response(content=data, media_type="image/jpeg")
@@ -129,6 +133,8 @@ async def upload_cover(
         await save_cover_preview(cover, asset.stored_name)
     except UnsafeAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return PublicationAssetResponse(
         publication_id=publication_id, original_filename=asset.original_filename,
         size_bytes=asset.size_bytes, sha256=asset.sha256,
@@ -160,6 +166,8 @@ async def upload_file(
             raise
     except UnsafeAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RemoteStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     asset = PublicationAsset(
         publication_id=publication_id, stored_name=stored_name,

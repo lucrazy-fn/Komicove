@@ -16,17 +16,13 @@ class RemoteStorageError(RuntimeError):
     pass
 
 
-class StorageConfigurationError(RemoteStorageError):
-    pass
-
-
 def configured() -> bool:
     names = ("B2_ENDPOINT", "B2_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET")
     values = {name: os.environ.get(name, "").strip() for name in names}
     if not any(values.values()):
         return False
     if not all(values.values()):
-        raise StorageConfigurationError("Configuração do Backblaze B2 incompleta no servidor.")
+        raise RemoteStorageError("Configuração do Backblaze B2 incompleta no servidor.")
     return True
 
 
@@ -35,14 +31,14 @@ def _client():
         import boto3
         from botocore.config import Config
     except ImportError as exc:
-        raise StorageConfigurationError("Dependência boto3 ausente no servidor.") from exc
+        raise RemoteStorageError("Dependência boto3 ausente no servidor.") from exc
 
     endpoint = os.environ["B2_ENDPOINT"].strip().rstrip("/")
     parsed = urlsplit(endpoint)
     host = parsed.hostname or ""
     if (parsed.scheme != "https" or parsed.path or parsed.query or parsed.fragment
             or not host.startswith("s3.") or not host.endswith(".backblazeb2.com")):
-        raise StorageConfigurationError("B2_ENDPOINT deve ser o endpoint HTTPS S3 do bucket.")
+        raise RemoteStorageError("B2_ENDPOINT deve ser o endpoint HTTPS S3 do bucket.")
     region = host.removeprefix("s3.").removesuffix(".backblazeb2.com")
     client = boto3.client(
         "s3",

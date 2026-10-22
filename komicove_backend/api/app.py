@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from komicove_backend.api.routes import account, auth, moderation, moderator_tokens, moderators, publications, reports, contributor_tokens, updates
-from komicove_backend.api.failures import RequestDiagnostics
 from komicove_backend.db import init_db
 
 @asynccontextmanager
@@ -16,7 +15,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Komicove API", version="0.2.1", lifespan=lifespan)
-app.add_middleware(RequestDiagnostics)
 
 
 @app.get("/health")

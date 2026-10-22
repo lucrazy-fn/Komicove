@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from komicove_backend.db import Base
@@ -58,7 +58,6 @@ class User(Base):
 class SessionToken(Base):
     pass
     __tablename__ = "session_tokens"
-    __table_args__ = (Index("ix_phase9_sessions_user_created", "user_id", "created_at"),)
 
     token: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
@@ -173,7 +172,6 @@ class AppUpdateSelection(Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
-    __table_args__ = (Index("ix_phase9_notifications_user_created", "user_id", "created_at"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(120))

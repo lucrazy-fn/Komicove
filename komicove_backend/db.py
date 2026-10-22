@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -18,39 +19,10 @@ def _database_url() -> str:
     return setting("KOMICOVE_DATABASE_URL", "sqlite:///./" + local_name)
 
 
-def _pool_int(name: str, default: int, *, minimum: int = 0) -> int:
-    try:
-        value = int(setting(name, str(default)))
-    except ValueError:
-        raise ValueError(f"{name} must be an integer") from None
-    if value < minimum:
-        raise ValueError(f"{name} must be at least {minimum}")
-    return value
-
-
-def _pool_bool(name: str, default: bool) -> bool:
-    value = setting(name, "true" if default else "false").lower()
-    if value not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
-        raise ValueError(f"{name} must be a boolean")
-    return value in {"1", "true", "yes", "on"}
-
-
-def _create_engine(url: str):
-    if url.startswith("sqlite"):
-        return create_engine(url, connect_args={"check_same_thread": False})
-    if url.startswith(("postgresql://", "postgresql+")):
-        return create_engine(
-            url,
-            pool_pre_ping=_pool_bool("KOMICOVE_DB_POOL_PRE_PING", True),
-            pool_size=_pool_int("KOMICOVE_DB_POOL_SIZE", 5, minimum=1),
-            max_overflow=_pool_int("KOMICOVE_DB_MAX_OVERFLOW", 10),
-            pool_timeout=_pool_int("KOMICOVE_DB_POOL_TIMEOUT", 30, minimum=1),
-            pool_recycle=_pool_int("KOMICOVE_DB_POOL_RECYCLE", 1800, minimum=-1),
-        )
-    return create_engine(url)
-
-
-_engine = _create_engine(_database_url())
+_engine = create_engine(
+    _database_url(),
+    connect_args={"check_same_thread": False} if _database_url().startswith("sqlite") else {},
+)
 _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 
@@ -64,19 +36,6 @@ def init_db() -> None:
 
     Base.metadata.create_all(_engine)
     _migrate_legacy_schema()
-    _migrate_phase9_indexes()
-
-
-def _migrate_phase9_indexes() -> None:
-    # create_all does not add indexes to tables that already exist.
-    inspector = inspect(_engine)
-    tables = set(inspector.get_table_names())
-    for table_name in ("publications", "notifications", "session_tokens"):
-        if table_name not in tables:
-            continue
-        for index in Base.metadata.tables[table_name].indexes:
-            if index.name and index.name.startswith("ix_phase9_"):
-                index.create(bind=_engine, checkfirst=True)
 
 
 def _migrate_legacy_schema() -> None:
@@ -99,35 +58,32 @@ def _migrate_legacy_schema() -> None:
     if "last_seen_at" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP"))
-    false_default = "FALSE" if _engine.dialect.name == "postgresql" else "0"
-    true_value = "TRUE" if _engine.dialect.name == "postgresql" else "1"
-    date_type = "TIMESTAMP" if _engine.dialect.name == "postgresql" else "DATETIME"
     if "is_moderator" not in columns:
         with _engine.begin() as connection:
             connection.execute(text(
-                f"ALTER TABLE users ADD COLUMN is_moderator BOOLEAN NOT NULL DEFAULT {false_default}"
+                "ALTER TABLE users ADD COLUMN is_moderator BOOLEAN NOT NULL DEFAULT 0"
             ))
     if "suspended_until" not in columns:
         with _engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE users ADD COLUMN suspended_until {date_type}"))
+            connection.execute(text("ALTER TABLE users ADD COLUMN suspended_until DATETIME"))
     if "punishment_reason" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN punishment_reason VARCHAR(255)"))
     if "deleted_at" not in columns:
         with _engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE users ADD COLUMN deleted_at {date_type}"))
+            connection.execute(text("ALTER TABLE users ADD COLUMN deleted_at DATETIME"))
     if "role" not in columns:
         with _engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"))
-            connection.execute(text(f"UPDATE users SET role = 'moderator' WHERE is_moderator = {true_value}"))
+            connection.execute(text("UPDATE users SET role = 'moderator' WHERE is_moderator = 1"))
             connection.execute(text(
                 "UPDATE users SET role = 'owner' WHERE id = ("
-                f"SELECT id FROM users WHERE is_moderator = {true_value} AND deleted_at IS NULL "
+                "SELECT id FROM users WHERE is_moderator = 1 AND deleted_at IS NULL "
                 "ORDER BY created_at ASC LIMIT 1)"
             ))
     with _engine.begin() as connection:
         if "email_verified" not in columns:
-            connection.execute(text(f"ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT {false_default}"))
+            connection.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0"))
         if "totp_secret" not in columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64)"))
         if "totp_enabled" not in columns:
